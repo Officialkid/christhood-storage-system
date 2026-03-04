@@ -1,0 +1,317 @@
+// Christhood CMMS — Prisma Schema
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  UPLOADER
+  EDITOR
+}
+
+enum FileType {
+  PHOTO
+  VIDEO
+}
+
+enum FileStatus {
+  RAW
+  EDITING_IN_PROGRESS
+  EDITED
+  PUBLISHED
+  ARCHIVED
+  DELETED   /// soft-deleted — file is in Trash, R2 object still exists
+  PURGED    /// permanently removed from R2 after 30-day window expired
+}
+
+// ─────────────────────────────────────────────
+// Users & Auth
+// ─────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  username      String?   @unique          /// nullable for OAuth-created accounts
+  email         String    @unique
+  passwordHash  String?                    /// null for OAuth-only accounts
+  phone         String?
+  role          Role      @default(UPLOADER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Optional fields required by @next-auth/prisma-adapter
+  name          String?
+  emailVerified DateTime?
+  image         String?
+
+  // Relations
+  accounts               Account[]
+  sessions               Session[]
+  uploads                MediaFile[]              @relation("uploader")
+  fileVersions           FileVersion[]
+  activityLogs           ActivityLog[]
+  trashedItems           TrashItem[]
+  resetTokens            PasswordResetToken[]
+  notifications          Notification[]
+  pushSubscriptions      PushSubscription[]
+  notificationPrefs      NotificationPreference[]
+  folderFollows          FolderFollow[]
+}
+
+// ─────────────────────────────────────────────
+// NextAuth adapter tables
+// ─────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─────────────────────────────────────────────
+// Year / Event Hierarchy
+// ─────────────────────────────────────────────
+
+model Year {
+  id         String          @id @default(cuid())
+  year       Int             @unique
+  createdAt  DateTime        @default(now())
+
+  categories EventCategory[]
+}
+
+/// e.g. Saturday Fellowships, Missions, Conferences, Special Events, Outreach Programs
+model EventCategory {
+  id      String  @id @default(cuid())
+  name    String
+  yearId  String
+
+  year    Year    @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  events  Event[]
+}
+
+model Event {
+  id          String         @id @default(cuid())
+  name        String
+  date        DateTime
+  categoryId  String
+  createdAt   DateTime       @default(now())
+
+  category     EventCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  subfolders   EventSubfolder[]
+  mediaFiles   MediaFile[]
+  activityLogs ActivityLog[]
+  tags         Tag[]          @relation("EventTags")
+  followers    FolderFollow[]
+}
+
+/// e.g. Friday, Saturday, Sunday
+model EventSubfolder {
+  id      String @id @default(cuid())
+  label   String
+  eventId String
+
+  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  mediaFiles MediaFile[]
+}
+
+// ─────────────────────────────────────────────
+// Media
+// ─────────────────────────────────────────────
+
+model MediaFile {
+  id            String     @id @default(cuid())
+  originalName  String
+  storedName    String
+  r2Key         String     @unique
+  fileType      FileType
+  fileSize      BigInt
+  status        FileStatus @default(RAW)
+  uploaderId    String
+  eventId       String
+  subfolderId   String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  uploader   User            @relation("uploader", fields: [uploaderId], references: [id])
+  event      Event           @relation(fields: [eventId], references: [id])
+  subfolder  EventSubfolder? @relation(fields: [subfolderId], references: [id])
+
+  thumbnailKey String?        /// R2 key of the generated JPEG thumbnail (null until processed)
+  purgedAt     DateTime?      /// set by the purge cron once the R2 object is deleted
+
+  versions     FileVersion[]
+  activityLogs ActivityLog[]
+  trashItem    TrashItem?
+  tags         Tag[]          @relation("MediaFileTags")
+}
+
+model FileVersion {
+  id            String   @id @default(cuid())
+  mediaFileId   String
+  versionNumber Int
+  r2Key         String
+  uploadedById  String
+  createdAt     DateTime @default(now())
+
+  mediaFile  MediaFile @relation(fields: [mediaFileId], references: [id], onDelete: Cascade)
+  uploadedBy User      @relation(fields: [uploadedById], references: [id])
+
+  @@unique([mediaFileId, versionNumber])
+}
+
+// ─────────────────────────────────────────────
+// Activity Log & Trash
+// ─────────────────────────────────────────────
+
+model ActivityLog {
+  id          String    @id @default(cuid())
+  action      String
+  userId      String
+  mediaFileId String?
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+
+  user      User       @relation(fields: [userId], references: [id])
+  mediaFile MediaFile? @relation(fields: [mediaFileId], references: [id], onDelete: SetNull)
+  event     Event?     @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  eventId   String?
+}
+
+model TrashItem {
+  id                String     @id @default(cuid())
+  mediaFileId       String     @unique
+  deletedById       String
+  deletedAt         DateTime   @default(now())
+  /// Set to deletedAt + 30 days on creation
+  scheduledPurgeAt  DateTime
+  /// Status the file had before deletion — used to restore it correctly
+  preDeleteStatus   FileStatus
+
+  mediaFile MediaFile @relation(fields: [mediaFileId], references: [id], onDelete: Cascade)
+  deletedBy User      @relation(fields: [deletedById], references: [id])
+}
+
+// ─────────────────────────────────────────────
+// Tagging
+// ─────────────────────────────────────────────
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  files  MediaFile[] @relation("MediaFileTags")
+  events Event[]     @relation("EventTags")
+}
+
+// ─────────────────────────────────────────────
+// Notifications
+// ─────────────────────────────────────────────
+
+/// In-app notification record for a single user
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  message   String
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+/// Web Push API subscription (VAPID)
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Per-user per-category opt-in flags for push + email channels
+model NotificationPreference {
+  id       String  @id @default(cuid())
+  userId   String
+  /// e.g. UPLOAD_IN_FOLLOWED_FOLDER | FILE_STATUS_CHANGED | NEW_EVENT_CREATED | FILE_RESTORED | WEEKLY_DIGEST | FILE_PUBLISHED_ALERT | STORAGE_THRESHOLD_ALERT
+  category String
+  push     Boolean @default(true)
+  email    Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category])
+}
+
+/// A user following an event folder — determines upload push notifications
+model FolderFollow {
+  id      String @id @default(cuid())
+  userId  String
+  eventId String
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+}
+
+// ─────────────────────────────────────────────
+// Password Reset
+// ─────────────────────────────────────────────
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <!-- Full bleed background for maskable -->
+  <rect width="192" height="192" fill="#0f172a"/>
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- Camera body — centred in safe zone (20% padding = 19px each side) -->
+  <rect x="42" y="76" width="108" height="70" rx="10" fill="url(#g)"/>
+  <!-- Camera lens -->
+  <circle cx="96" cy="110" r="22" fill="#0f172a"/>
+  <circle cx="96" cy="110" r="15" fill="url(#g)" opacity="0.9"/>
+  <circle cx="96" cy="110" r="7" fill="white" opacity="0.25"/>
+  <!-- Viewfinder bump -->
+  <rect x="72" y="62" width="32" height="16" rx="5" fill="url(#g)"/>
+  <!-- Flash -->
+  <circle cx="135" cy="88" r="5" fill="white" opacity="0.5"/>
+</svg>
