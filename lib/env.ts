@@ -90,9 +90,11 @@ export const env = {
 
   // ── Web Push (VAPID) ──────────────────────────────────────────────────────
   // Generate once: npx web-push generate-vapid-keys
-  // The public key is also used client-side (NEXT_PUBLIC_ prefix).
-  NEXT_PUBLIC_VAPID_PUBLIC_KEY: required('NEXT_PUBLIC_VAPID_PUBLIC_KEY'),
-  VAPID_PRIVATE_KEY:            required('VAPID_PRIVATE_KEY'),
+  // The public key is also read by lib/webpush.ts and api/push/vapid-key/route.ts
+  // using process.env.VAPID_PUBLIC_KEY directly (no NEXT_PUBLIC_ prefix needed
+  // because it is served via /api/push/vapid-key, not bundled client-side).
+  VAPID_PUBLIC_KEY:  required('VAPID_PUBLIC_KEY'),
+  VAPID_PRIVATE_KEY: required('VAPID_PRIVATE_KEY'),
 
   // ── Public app URL ────────────────────────────────────────────────────────
   // Used in email links, push notification click_action, and OG meta.
