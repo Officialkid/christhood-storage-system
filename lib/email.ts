@@ -3,7 +3,9 @@ import { Resend } from 'resend'
 // ─────────────────────────────────────────────────────────────────────────────
 // Config
 // ─────────────────────────────────────────────────────────────────────────────
-const resend  = new Resend(process.env.RESEND_API_KEY)
+// NOTE: Resend client is intentionally NOT constructed at module level.
+// Constructing it top-level causes Next.js to throw "Missing API key" during
+// the build phase (Collecting page data) when env vars are not yet available.
 const FROM    = process.env.FROM_EMAIL   ?? 'noreply@christhood.org'
 const APP_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3001'
 const APP     = 'Christhood CMMS'
@@ -22,6 +24,8 @@ export async function sendEmail({ to, subject, html }: SendOptions): Promise<voi
     console.warn(`[email] RESEND_API_KEY not set — skipping: "${subject}"`)
     return
   }
+
+  const resend = new Resend(process.env.RESEND_API_KEY)
 
   try {
     const { error } = await resend.emails.send({
