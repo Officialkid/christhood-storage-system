@@ -337,8 +337,11 @@ export default function AdminHierarchyPage() {
     setLoading(true)
     try {
       const res = await fetch('/api/hierarchy')
+      if (!res.ok) throw new Error('Failed to load hierarchy')
       const data = await res.json()
-      setYears(data)
+      setYears(data.years ?? [])
+    } catch {
+      setYears([])
     } finally {
       setLoading(false)
     }
