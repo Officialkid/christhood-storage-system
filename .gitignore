@@ -1,8 +1,16 @@
 node_modules
 .next
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+# NONE of these files should ever be committed.
+# Use .env.example (committed, no real values) as the canonical reference.
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
+.env.development.local
+
 coverage
 dist
 /.vercel
