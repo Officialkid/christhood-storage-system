@@ -1,0 +1,41 @@
+# ── Christhood CMMS — Development Image ──────────────────────────────────────
+#
+# This image is used ONLY for local development via docker-compose.dev.yml.
+# It is NOT used in production.
+#
+# Key differences from the production Dockerfile:
+#   - Single stage — no multi-stage build, no standalone output
+#   - Installs ALL dependencies (including devDependencies)
+#   - Source code is NOT copied in — it arrives via a bind mount at runtime
+#   - next dev is started by docker-compose.dev.yml, not this file
+#
+# Rebuild this image when package.json or package-lock.json changes:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml build app
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:20-alpine
+
+# libc6-compat: required by native Node addons (sharp, etc.) on Alpine
+# ffmpeg:       required by fluent-ffmpeg for video thumbnail generation
+# curl:         useful for debugging inside the container
+RUN apk add --no-cache libc6-compat ffmpeg curl
+
+WORKDIR /app
+
+# Copy only the dependency manifest files first so Docker can cache the
+# npm install layer independently of source code changes.
+COPY package.json package-lock.json ./
+
+# Copy the Prisma schema so the postinstall hook (prisma generate) works.
+COPY prisma ./prisma
+
+# Install all dependencies including devDependencies (TypeScript, ESLint, etc.)
+# --prefer-offline avoids re-downloading packages already in the npm cache.
+RUN npm ci
+
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV FFMPEG_PATH=/usr/bin/ffmpeg
+
+EXPOSE 3000
+
+# CMD is intentionally absent — docker-compose.dev.yml provides it.

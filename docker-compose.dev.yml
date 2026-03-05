@@ -1,0 +1,120 @@
+# ── Christhood CMMS — Development Compose Override ───────────────────────────
+#
+# This file is layered ON TOP of docker-compose.yml.  It overrides only the
+# parts that need to change for development; everything else (network, volumes,
+# healthchecks, env_file) is inherited from the base file.
+#
+# ── How to use ─────────────────────────────────────────────────────────────
+#
+#   Start the full dev stack (foreground, streaming logs):
+#     docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+#   Start detached (background):
+#     docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+#   Rebuild the app image after changing package.json:
+#     docker compose -f docker-compose.yml -f docker-compose.dev.yml build app
+#
+#   Stop and clean up (keeps the postgres_data volume):
+#     docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+#
+# ── Tip: create a shell alias ──────────────────────────────────────────────
+#   Add to ~/.bashrc or ~/.zshrc:
+#     alias dcdev='docker compose -f docker-compose.yml -f docker-compose.dev.yml'
+#   Then just: dcdev up  |  dcdev down  |  dcdev build app
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  # The database service is identical to production EXCEPT we expose port 5432
+  # to the host machine so developers can:
+  #   • Connect Prisma Studio:  npx prisma studio  (using localhost:5432)
+  #   • Open an admin GUI:      TablePlus, pgAdmin, DBeaver, etc.
+  #   • Run ad-hoc queries:     psql -h localhost -U christhood christhood_cmms
+  db:
+    ports:
+      - "5432:5432"   # host:container — NOT open in production compose
+
+  # ── Next.js App ────────────────────────────────────────────────────────────
+  app:
+    # Use the development image (single-stage, all deps, no standalone build)
+    # instead of the production multi-stage Dockerfile.
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+
+    # Run the Next.js development server instead of the compiled standalone
+    # server.  next dev provides:
+    #   • Hot Module Replacement (HMR) — React component changes in the
+    #     browser without a full page reload
+    #   • Fast Refresh — preserves React state across edits
+    #   • On-demand TypeScript/JSX compilation (no build step needed)
+    command: npx next dev
+
+    volumes:
+      # ── BIND MOUNT: source code ─────────────────────────────────────────
+      # Maps the entire project root on your host (.) into /app inside the
+      # container.  Any file you save in VS Code is immediately visible to
+      # the Next.js dev server — no image rebuild required.
+      - .:/app
+
+      # ── ANONYMOUS VOLUME: node_modules ──────────────────────────────────
+      # This is the most important trick in this file.
+      #
+      # Without it, the bind mount above would overwrite the container's
+      # /app/node_modules with your host's node_modules (which may be
+      # missing, for a different OS, or using different native binaries).
+      #
+      # Docker resolves volume mounts from most-specific to least-specific.
+      # By declaring /app/node_modules as an anonymous volume it "punches a
+      # hole" through the bind mount, keeping the node_modules that were
+      # installed inside the container during `docker build` intact.
+      - /app/node_modules
+
+      # ── ANONYMOUS VOLUME: .next build cache ─────────────────────────────
+      # Keeps the incremental compilation cache inside the container so it
+      # survives edits and is not overwritten by a (non-existent) host .next.
+      - /app/.next
+
+    environment:
+      # ── File watching on Windows and macOS ────────────────────────────────
+      # Docker bind mounts on Windows (WSL2) and macOS do not propagate
+      # inotify/kqueue filesystem events into the container reliably.
+      # Setting these to "true" switches Next.js and Webpack to polling mode:
+      # they check files every N milliseconds instead of waiting for an event.
+      #
+      # Polling is slightly less efficient than event-driven watching but is
+      # the only reliable way to detect saves on these host OSes.
+      # On Linux hosts you can set both to "false" for lower CPU usage.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+
+      NODE_ENV: development
+
+  # ── Background Worker ──────────────────────────────────────────────────────
+  worker:
+    # Override to install devDependencies (nodemon) and watch for changes.
+    build:
+      context: .
+      dockerfile: workers/Dockerfile
+      # Pass a build argument so the Dockerfile can conditionally install
+      # devDependencies.  The production Dockerfile uses --omit=dev;
+      # we swap that for a full install here via the command override.
+      args:
+        NODE_ENV: development
+
+    # nodemon watches index.js (and any file it requires) and restarts the
+    # worker process automatically when you save a change.
+    # --watch limits watching to index.js only so it does not trigger on
+    # prisma schema or other files it cannot reload cleanly.
+    command: npx nodemon --watch index.js index.js
+
+    volumes:
+      # Bind mount the workers/ directory into the container's WORKDIR (/app).
+      # Edits to workers/index.js on the host are visible instantly.
+      - ./workers:/app
+
+      # Anonymous volume: preserve the node_modules installed during build
+      # so the host directory cannot accidentally shadow them.
+      - /app/node_modules
