@@ -3,34 +3,38 @@ import { NextResponse } from 'next/server'
 
 export default withAuth(
   function middleware(req) {
-    const { pathname } = req.nextUrl
-    const role = req.nextauth.token?.role as string | undefined
+    try {
+      const { pathname } = req.nextUrl
+      const role = req.nextauth.token?.role as string | undefined
 
-    // ── Admin-only paths ──────────────────────────────
-    const isAdminPath =
-      pathname.startsWith('/admin') ||
-      pathname.startsWith('/api/admin')
+      // ── Admin-only paths ──────────────────────────────
+      const isAdminPath =
+        pathname.startsWith('/admin') ||
+        pathname.startsWith('/api/admin')
 
-    if (isAdminPath && role !== 'ADMIN') {
-      if (pathname.startsWith('/api/')) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      if (isAdminPath && role !== 'ADMIN') {
+        if (pathname.startsWith('/api/')) {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        }
+        return NextResponse.redirect(new URL('/dashboard', req.url))
       }
-      return NextResponse.redirect(new URL('/dashboard', req.url))
-    }
 
-    // ── Upload: ADMIN + UPLOADER + EDITOR ─────────────
-    const isUploadPath =
-      pathname.startsWith('/upload') ||
-      pathname.startsWith('/api/upload')
+      // ── Upload: ADMIN + UPLOADER + EDITOR ─────────────
+      const isUploadPath =
+        pathname.startsWith('/upload') ||
+        pathname.startsWith('/api/upload')
 
-    if (isUploadPath && !['ADMIN', 'UPLOADER', 'EDITOR'].includes(role ?? '')) {
-      if (pathname.startsWith('/api/')) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      if (isUploadPath && !['ADMIN', 'UPLOADER', 'EDITOR'].includes(role ?? '')) {
+        if (pathname.startsWith('/api/')) {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        }
+        return NextResponse.redirect(new URL('/dashboard', req.url))
       }
-      return NextResponse.redirect(new URL('/dashboard', req.url))
-    }
 
-    return NextResponse.next()
+      return NextResponse.next()
+    } catch {
+      return NextResponse.next()
+    }
   },
   {
     callbacks: {
@@ -45,6 +49,6 @@ export default withAuth(
 
 export const config = {
   matcher: [
-    '/((?!login|signup|forgot-password|reset-password|api/auth|_next/static|_next/image|favicon\.ico).*)'
+    '/((?!login|signup|forgot-password|reset-password|api/auth|_next/static|_next/image|favicon\\.ico).*)'
   ],
 }
