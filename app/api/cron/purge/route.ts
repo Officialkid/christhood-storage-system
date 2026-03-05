@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { deleteObject } from '@/lib/r2'
 import { log } from '@/lib/activityLog'
-import { FileStatus } from '@prisma/client'
 import { sendAdminPurgeAlert, type PurgedFileInfo } from '@/lib/email'
 
 /**
