@@ -9,11 +9,15 @@ export type LogAction =
   | 'FILE_DOWNLOADED'
   | 'FILE_DELETED'
   | 'FILE_RESTORED'
+  | 'FILE_ARCHIVED'
+  | 'FILE_UNARCHIVED'
   | 'STATUS_CHANGED'
   | 'BATCH_DOWNLOADED'
   | 'VERSION_UPLOADED'
   | 'VERSION_RESTORED'
   | 'TAG_CHANGED'
+  // Admin
+  | 'SETTINGS_CHANGED'
   // Folder / hierarchy
   | 'FOLDER_CREATED'
   | 'YEAR_CREATED'
@@ -43,7 +47,10 @@ export type HierarchyAction = LogAction
 export interface FileUploadedMeta    { fileName: string; storedName?: string; fileType?: string; fileSize?: number; mode?: string }
 export interface FileDownloadedMeta  { fileName: string }
 export interface FileDeletedMeta     { fileName: string; eventId?: string }
+export interface FileArchivedMeta    { fileName: string; previousStatus: string; auto?: boolean }
+export interface FileUnarchivedMeta  { fileName: string; restoredStatus: string }
 export interface StatusChangedMeta   { oldStatus: string; newStatus: string; fileName?: string }
+export interface SettingsChangedMeta { key: string; oldValue: string; newValue: string }
 export interface VersionUploadedMeta { fileName: string; versionNumber: number; r2Key: string }
 export interface VersionRestoredMeta { fileName: string; fromVersion: number; newVersionNumber: number }
 export interface TagChangedMeta      { tagIds: string[]; tagNames: string[]; fileName?: string; eventName?: string; target?: 'file' | 'event' }

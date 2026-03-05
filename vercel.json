@@ -1,0 +1,8 @@
+{
+  "crons": [
+    { "path": "/api/cron/archive",       "schedule": "0 2 * * *" },
+    { "path": "/api/cron/purge",         "schedule": "0 3 * * *" },
+    { "path": "/api/cron/storage-check", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/weekly-digest", "schedule": "0 8 * * 1" }
+  ]
+}

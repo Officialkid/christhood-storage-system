@@ -6,6 +6,7 @@ import { prisma }              from '@/lib/prisma'
 import { Breadcrumb }          from '@/components/Breadcrumb'
 import { MediaCard }           from '@/components/MediaCard'
 import { BatchDownloadButton } from '@/components/BatchDownloadButton'
+import { ArchiveSection }      from '@/components/ArchiveSection'
 import { getPresignedDownloadUrl } from '@/lib/r2'
 import { canBatchDownload }    from '@/lib/downloadAuth'
 import { CalendarDays, FolderOpen, Image, Upload } from 'lucide-react'
@@ -34,26 +35,52 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
 
   if (!event) notFound()
 
-  // Fetch media — scoped to subfolder if one is selected
-  const mediaFiles = await prisma.mediaFile.findMany({
-    where: {
-      eventId,
-      subfolderId: subfolderId ?? null,
-    },
-    orderBy: { createdAt: 'desc' },
-    include: {
-      uploader: { select: { username: true, email: true } },
-    },
-  })
+  const isAdmin = session?.user?.role === 'ADMIN'
 
-  // Presign download URLs
-  const enriched = await Promise.all(
-    mediaFiles.map(async m => ({
-      ...m,
-      fileSize:    m.fileSize.toString(),
-      downloadUrl: await getPresignedDownloadUrl(m.r2Key),
-    }))
-  )
+  // Fetch active + archived media separately
+  const [activeFiles, archivedFiles] = await Promise.all([
+    prisma.mediaFile.findMany({
+      where: {
+        eventId,
+        subfolderId: subfolderId ?? null,
+        status: { notIn: ['DELETED', 'PURGED', 'ARCHIVED'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        uploader: { select: { username: true, email: true } },
+        tags:     { orderBy: { name: 'asc' } },
+      },
+    }),
+    prisma.mediaFile.findMany({
+      where: {
+        eventId,
+        subfolderId: subfolderId ?? null,
+        status: 'ARCHIVED',
+      },
+      orderBy: { archivedAt: 'desc' },
+      include: {
+        uploader: { select: { username: true, email: true } },
+        tags:     { orderBy: { name: 'asc' } },
+      },
+    }),
+  ])
+
+  // Presign download + thumbnail URLs
+  const enrich = (files: typeof activeFiles) =>
+    Promise.all(
+      files.map(async m => {
+        const [downloadUrl, thumbnailUrl] = await Promise.all([
+          getPresignedDownloadUrl(m.r2Key),
+          m.thumbnailKey ? getPresignedDownloadUrl(m.thumbnailKey) : Promise.resolve(null),
+        ])
+        return { ...m, fileSize: m.fileSize.toString(), downloadUrl, thumbnailUrl }
+      })
+    )
+
+  const [enriched, enrichedArchived] = await Promise.all([
+    enrich(activeFiles),
+    enrich(archivedFiles),
+  ])
 
   // Build breadcrumb
   const activeSubfolder = subfolderId
@@ -162,7 +189,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
         </div>
       )}
 
-      {/* Media grid */}
+      {/* Active media grid */}
       {enriched.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {enriched.map(m => (
@@ -180,6 +207,11 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
             Upload files →
           </Link>
         </div>
+      )}
+
+      {/* Archived media section (admin-only collapsible) */}
+      {enrichedArchived.length > 0 && (
+        <ArchiveSection files={enrichedArchived as any} isAdmin={isAdmin} />
       )}
     </div>
   )

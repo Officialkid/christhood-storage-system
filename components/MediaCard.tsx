@@ -8,6 +8,7 @@ import type { MediaFile, AppRole, TagItem } from '@/types'
 import { DownloadButton } from '@/components/DownloadButton'
 import { StatusBadge } from '@/components/StatusBadge'
 import { StatusChangeDropdown } from '@/components/StatusChangeDropdown'
+import { ArchiveButton } from '@/components/ArchiveButton'
 import { TagPill } from '@/components/TagPill'
 
 interface Props {
@@ -18,9 +19,11 @@ interface Props {
   }
   /** Called with the file ID when the user clicks to preview. */
   onPreview?: (fileId: string) => void
+  /** Called after a successful archive/un-archive so parent can refresh. */
+  onStatusChanged?: (newStatus: string) => void
 }
 
-export function MediaCard({ media, onPreview }: Props) {
+export function MediaCard({ media, onPreview, onStatusChanged }: Props) {
   const [hovered, setHovered]   = useState(false)
   const [status,  setStatus]    = useState<string>(media.status)
   const { data: session }       = useSession()
@@ -126,6 +129,20 @@ export function MediaCard({ media, onPreview }: Props) {
           userRole={role}
           onChanged={(s) => setStatus(s)}
         />
+
+        {/* Archive toggle — ADMIN only */}
+        {role === 'ADMIN' && (
+          <ArchiveButton
+            fileId={media.id}
+            currentStatus={status}
+            compact={false}
+            className="mt-1 w-full"
+            onDone={(s) => {
+              setStatus(s)
+              onStatusChanged?.(s)
+            }}
+          />
+        )}
       </div>
 
       {/* File-type badge — top left */}

@@ -177,8 +177,10 @@ model MediaFile {
   event      Event           @relation(fields: [eventId], references: [id])
   subfolder  EventSubfolder? @relation(fields: [subfolderId], references: [id])
 
-  thumbnailKey String?        /// R2 key of the generated JPEG thumbnail (null until processed)
-  purgedAt     DateTime?      /// set by the purge cron once the R2 object is deleted
+  thumbnailKey      String?     /// R2 key of the generated JPEG thumbnail (null until processed)
+  purgedAt          DateTime?   /// set by the purge cron once the R2 object is deleted
+  archivedAt        DateTime?   /// set when the file is moved to ARCHIVED status
+  preArchiveStatus  FileStatus? /// status before archiving — restored on un-archive
 
   versions     FileVersion[]
   activityLogs ActivityLog[]
@@ -314,4 +316,17 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────
+// Application Settings
+// ─────────────────────────────────────────────
+
+/// Global admin-configurable key/value settings.
+/// Known keys: archive_threshold_months (default "6")
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedBy String?
+  updatedAt DateTime @updatedAt
 }

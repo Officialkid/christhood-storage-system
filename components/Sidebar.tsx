@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
 import {
-  LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText, Trash2, Bell,
+  LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText, Trash2, Bell, Settings,
 } from 'lucide-react'
 
 const navItems = [
@@ -60,6 +60,7 @@ export function Sidebar() {
               { label: 'Hierarchy',       href: '/admin/hierarchy', icon: Network    },
               { label: 'Activity Log',    href: '/admin/logs',      icon: ScrollText },
               { label: 'Trash',           href: '/admin/trash',     icon: Trash2     },
+              { label: 'Settings',        href: '/admin/settings',  icon: Settings   },
             ].map(({ label, href, icon: Icon }) => {
               const active = pathname.startsWith(href)
               return (
