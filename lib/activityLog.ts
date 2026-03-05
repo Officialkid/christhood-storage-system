@@ -77,7 +77,8 @@ export async function log(
         userId,
         eventId:     opts.eventId     ?? undefined,
         mediaFileId: opts.mediaFileId  ?? undefined,
-        metadata:    opts.metadata    ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        metadata:    opts.metadata as any,
       },
     })
   } catch (err) {
