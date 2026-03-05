@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma }                    from '@/lib/prisma'
+
+export const dynamic = 'force-dynamic'
 import { log }                       from '@/lib/activityLog'
 import { SETTING_DEFAULTS }          from '@/lib/settingDefaults'
 
