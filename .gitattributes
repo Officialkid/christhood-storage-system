@@ -1,0 +1,12 @@
+# ── .gitattributes ────────────────────────────────────────────────────────────
+# Ensures consistent line endings across Windows / macOS / Linux contributors.
+#
+# Rule of thumb:
+#   - Shell scripts (.sh) MUST be LF.  A CRLF shebang line (#!/bin/sh\r)
+#     causes a "no such file" error inside Alpine/Linux Docker containers.
+#   - All other text files use Git's default autocrlf behaviour.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Force LF for all shell scripts regardless of the developer's OS or
+# core.autocrlf / core.eol settings.
+*.sh text eol=lf
