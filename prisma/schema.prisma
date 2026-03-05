@@ -186,6 +186,14 @@ model MediaFile {
   activityLogs ActivityLog[]
   trashItem    TrashItem?
   tags         Tag[]          @relation("MediaFileTags")
+
+  @@index([uploaderId])
+  @@index([eventId])
+  @@index([status])
+  @@index([fileType])
+  @@index([createdAt])
+  @@index([uploaderId, eventId])
+  @@index([status, fileType, createdAt])
 }
 
 model FileVersion {

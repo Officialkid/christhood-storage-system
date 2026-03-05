@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
 import {
-  LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText, Trash2, Bell, Settings,
+  LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText, Trash2, Bell, Settings, Search,
 } from 'lucide-react'
 
 const navItems = [
@@ -12,6 +12,7 @@ const navItems = [
   { label: 'Media',        href: '/media',        icon: Image           },
   { label: 'Upload',       href: '/upload',       icon: Upload          },
   { label: 'Events',       href: '/events',       icon: CalendarDays    },
+  { label: 'Search',       href: '/search',       icon: Search          },
   { label: 'Notifications', href: '/notifications', icon: Bell           },
 ]
 

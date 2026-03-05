@@ -37,6 +37,9 @@ export default withAuth(
       // Must be authenticated for ALL protected routes
       authorized: ({ token }) => !!token,
     },
+    pages: {
+      signIn: '/login',
+    },
   }
 )
 
