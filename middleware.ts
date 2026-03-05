@@ -1,54 +1,61 @@
-import { withAuth } from 'next-auth/middleware'
-import { NextResponse } from 'next/server'
+import { getToken } from 'next-auth/jwt'
+import { NextRequest, NextResponse } from 'next/server'
 
-export default withAuth(
-  function middleware(req) {
-    try {
-      const { pathname } = req.nextUrl
-      const role = req.nextauth.token?.role as string | undefined
+export async function middleware(req: NextRequest) {
+  try {
+    const token = await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+    })
 
-      // ── Admin-only paths ──────────────────────────────
-      const isAdminPath =
-        pathname.startsWith('/admin') ||
-        pathname.startsWith('/api/admin')
+    const { pathname } = req.nextUrl
 
-      if (isAdminPath && role !== 'ADMIN') {
-        if (pathname.startsWith('/api/')) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-        }
-        return NextResponse.redirect(new URL('/dashboard', req.url))
+    // ── Not authenticated → redirect to login ─────────
+    if (!token) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
-
-      // ── Upload: ADMIN + UPLOADER + EDITOR ─────────────
-      const isUploadPath =
-        pathname.startsWith('/upload') ||
-        pathname.startsWith('/api/upload')
-
-      if (isUploadPath && !['ADMIN', 'UPLOADER', 'EDITOR'].includes(role ?? '')) {
-        if (pathname.startsWith('/api/')) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-        }
-        return NextResponse.redirect(new URL('/dashboard', req.url))
-      }
-
-      return NextResponse.next()
-    } catch {
-      return NextResponse.next()
+      const loginUrl = new URL('/login', req.url)
+      loginUrl.searchParams.set('callbackUrl', pathname)
+      return NextResponse.redirect(loginUrl)
     }
-  },
-  {
-    callbacks: {
-      // Must be authenticated for ALL protected routes
-      authorized: ({ token }) => !!token,
-    },
-    pages: {
-      signIn: '/login',
-    },
+
+    const role = token.role as string | undefined
+
+    // ── Admin-only paths ──────────────────────────────
+    const isAdminPath =
+      pathname.startsWith('/admin') ||
+      pathname.startsWith('/api/admin')
+
+    if (isAdminPath && role !== 'ADMIN') {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      return NextResponse.redirect(new URL('/dashboard', req.url))
+    }
+
+    // ── Upload: ADMIN + UPLOADER + EDITOR ─────────────
+    const isUploadPath =
+      pathname.startsWith('/upload') ||
+      pathname.startsWith('/api/upload')
+
+    if (isUploadPath && !['ADMIN', 'UPLOADER', 'EDITOR'].includes(role ?? '')) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      return NextResponse.redirect(new URL('/dashboard', req.url))
+    }
+
+    return NextResponse.next()
+  } catch {
+    // If anything crashes (e.g. missing secret on Edge runtime),
+    // redirect to login rather than surfacing a 500.
+    return NextResponse.redirect(new URL('/login', req.url))
   }
-)
+}
 
 export const config = {
   matcher: [
-    '/((?!login|signup|forgot-password|reset-password|api/auth|_next/static|_next/image|favicon\\.ico).*)'
+    '/((?!login|signup|forgot-password|reset-password|api/auth|_next/static|_next/image|favicon\\.ico).*)',
   ],
 }
