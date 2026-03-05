@@ -3,13 +3,7 @@ import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { log }                       from '@/lib/activityLog'
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Known setting keys + their defaults
-// ──────────────────────────────────────────────────────────────────────────────
-export const SETTING_DEFAULTS: Record<string, string> = {
-  archive_threshold_months: '6',
-}
+import { SETTING_DEFAULTS }          from '@/lib/settingDefaults'
 
 async function requireAdmin(req: NextRequest) {
   const session = await getServerSession(authOptions)

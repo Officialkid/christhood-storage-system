@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma }                    from '@/lib/prisma'
 import { log }                       from '@/lib/activityLog'
-import { SETTING_DEFAULTS }          from '@/app/api/admin/settings/route'
+import { SETTING_DEFAULTS }          from '@/lib/settingDefaults'
 
 /**
  * GET /api/cron/archive
