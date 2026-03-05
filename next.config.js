@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Produce a self-contained build in .next/standalone/ — required for Docker
+  output: 'standalone',
+
   reactStrictMode: true,
   webpack: (config) => {
     // Prevent ffmpeg packages from being bundled at build time;

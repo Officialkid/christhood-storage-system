@@ -1,0 +1,37 @@
+# Version control
+.git
+.gitignore
+
+# Dependencies — Docker installs these fresh inside the image
+node_modules
+
+# Previous build output — the builder stage produces a clean one
+.next
+
+# Environment files — NEVER bake secrets into the image
+# Inject them at runtime via docker run -e or docker-compose environment:
+.env
+.env.local
+.env.development
+.env.development.local
+.env.production
+.env.production.local
+.env.test
+.env.test.local
+
+# Docker files themselves
+Dockerfile
+.dockerignore
+
+# Documentation
+README.md
+*.md
+
+# Editor / OS noise
+.DS_Store
+.vscode
+*.log
+npm-debug.log*
+
+# TypeScript build info (can be large, not needed in image)
+tsconfig.tsbuildinfo
