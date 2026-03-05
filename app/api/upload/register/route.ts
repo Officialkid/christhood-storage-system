@@ -3,7 +3,7 @@ import { getServerSession }                  from 'next-auth'
 import { authOptions }                       from '@/lib/auth'
 import { prisma }                            from '@/lib/prisma'
 import { notifyUploadInFollowedFolder }      from '@/lib/notifications'
-import { generateAndStoreThumbnail }         from '@/lib/thumbnail'
+
 
 /**
  * POST /api/upload/register
@@ -72,13 +72,17 @@ export async function POST(req: NextRequest) {
     })
 
     // Fire-and-forget: generate thumbnail (never blocks the response)
-    generateAndStoreThumbnail(
-      mediaFile.id,
-      r2Key,
-      fileType as 'PHOTO' | 'VIDEO',
-      contentType,
-      originalName,
-    ).catch(() => {})
+    import('@/lib/thumbnail')
+      .then(({ generateAndStoreThumbnail }) =>
+        generateAndStoreThumbnail(
+          mediaFile.id,
+          r2Key,
+          fileType as 'PHOTO' | 'VIDEO',
+          contentType,
+          originalName,
+        ).catch(() => {})
+      )
+      .catch(() => {})
 
     // Fire-and-forget: notify followers of this event folder
     prisma.event.findUnique({ where: { id: eventId }, select: { name: true } })

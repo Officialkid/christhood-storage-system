@@ -116,7 +116,11 @@ export async function POST(req: NextRequest) {
       // Fire-and-forget: generate thumbnail (never blocks the response)
       const _ft = (fileType ?? 'PHOTO') as 'PHOTO' | 'VIDEO'
       const _ct = _ft === 'VIDEO' ? 'video/mp4' : 'image/jpeg'
-      generateAndStoreThumbnail(mediaFile.id, r2Key, _ft, _ct, originalName).catch(() => {})
+      import('@/lib/thumbnail')
+        .then(({ generateAndStoreThumbnail }) =>
+          generateAndStoreThumbnail(mediaFile.id, r2Key, _ft, _ct, originalName).catch(() => {})
+        )
+        .catch(() => {})
 
       // Fire-and-forget: notify followers
       prisma.event.findUnique({ where: { id: eventId }, select: { name: true } })
