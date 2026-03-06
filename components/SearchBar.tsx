@@ -52,7 +52,7 @@ export function SearchBar() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="relative flex items-center">
+    <form data-tour="search-bar" onSubmit={handleSubmit} className="relative flex items-center">
       <Search className="absolute left-3 w-4 h-4 text-slate-400 pointer-events-none" />
       <input
         ref={inputRef}

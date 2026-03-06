@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
 import {
-  LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText, Trash2, Bell, Settings, Search, BarChart2,
+  LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText, Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen,
 } from 'lucide-react'
 
 const navItems = [
@@ -14,6 +14,7 @@ const navItems = [
   { label: 'Events',       href: '/events',       icon: CalendarDays    },
   { label: 'Search',       href: '/search',       icon: Search          },
   { label: 'Notifications', href: '/notifications', icon: Bell           },
+  { label: 'User Guide',   href: '/docs',         icon: BookOpen        },
 ]
 
 export function Sidebar() {
@@ -22,7 +23,7 @@ export function Sidebar() {
   const isAdmin   = data?.user?.role === 'ADMIN'
 
   return (
-    <aside className="flex flex-col w-64 bg-slate-950 border-r border-slate-800/70 shrink-0">
+    <aside data-tour="sidebar" className="flex flex-col w-64 bg-slate-950 border-r border-slate-800/70 shrink-0">
       {/* Brand */}
       <div className="px-6 py-6 border-b border-slate-800/70">
         <h1 className="text-lg font-bold text-white tracking-tight">
@@ -87,12 +88,18 @@ export function Sidebar() {
       {/* User footer */}
       <div className="px-4 py-4 border-t border-slate-800/70">
         {data?.user && (
-          <div className="mb-3 px-2">
-            <p className="text-sm font-medium text-white truncate">
-              {data.user.username ?? data.user.name ?? data.user.email}
-            </p>
-            <p className="text-xs text-slate-500 truncate">{data.user.role}</p>
-          </div>
+          <Link
+            href="/profile"
+            className="flex items-center gap-2.5 mb-3 px-2 py-1.5 rounded-xl hover:bg-slate-800/70 transition-colors group"
+          >
+            <UserCircle className="w-4 h-4 text-slate-500 group-hover:text-slate-300 shrink-0 transition-colors" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-white truncate">
+                {data.user.username ?? data.user.name ?? data.user.email}
+              </p>
+              <p className="text-xs text-slate-500 truncate">{data.user.role}</p>
+            </div>
+          </Link>
         )}
         <button
           onClick={() => signOut({ callbackUrl: '/login' })}

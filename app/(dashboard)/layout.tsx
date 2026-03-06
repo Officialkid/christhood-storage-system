@@ -1,8 +1,28 @@
-import { Sidebar }       from '@/components/Sidebar'
-import { TopBar }        from '@/components/TopBar'
-import InstallBanner     from '@/components/InstallBanner'
+import { Sidebar }        from '@/components/Sidebar'
+import { TopBar }         from '@/components/TopBar'
+import InstallBanner      from '@/components/InstallBanner'
+import OnboardingTour     from '@/components/OnboardingTour'
+import { getServerSession } from 'next-auth'
+import { authOptions }    from '@/lib/auth'
+import { prisma }         from '@/lib/prisma'
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  // Fetch whether this user has already completed the onboarding tour.
+  // Default to true (don't show tour) for unauthenticated edge cases.
+  let hasCompletedOnboarding = true
+  try {
+    const session = await getServerSession(authOptions)
+    if (session?.user?.id) {
+      const user = await prisma.user.findUnique({
+        where:  { id: session.user.id },
+        select: { hasCompletedOnboarding: true },
+      })
+      hasCompletedOnboarding = user?.hasCompletedOnboarding ?? true
+    }
+  } catch {
+    // Non-critical — skip tour if anything goes wrong
+  }
+
   return (
     <div className="flex h-screen bg-slate-950 overflow-hidden">
       <Sidebar />
@@ -15,6 +35,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* PWA install prompt — renders as a fixed overlay when criteria are met */}
       <InstallBanner />
+
+      {/* First-time onboarding tour */}
+      <OnboardingTour initiallyDone={hasCompletedOnboarding} />
     </div>
   )
 }

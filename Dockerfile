@@ -109,9 +109,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 #   3. The prisma/ directory   — migration SQL files + schema.prisma
 # We copy these explicitly from the builder stage so the runner image stays
 # small while still shipping everything migrate deploy needs.
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma       ./node_modules/prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma      ./node_modules/@prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/prisma  ./node_modules/.bin/prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/        ./node_modules/.bin/
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma/      ./node_modules/prisma/
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/     ./node_modules/@prisma/
 COPY --from=builder --chown=nextjs:nodejs /app/prisma                    ./prisma
 
 # ── Startup script ────────────────────────────────────────────────────────────
