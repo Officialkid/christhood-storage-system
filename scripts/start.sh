@@ -12,18 +12,28 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -e
 
-echo "[start.sh] Running database migrations..."
+echo "[start.sh] Waiting for database to be reachable..."
 
-# prisma migrate deploy:
-#   - Applies every migration file in prisma/migrations/ that has not yet been
-#     applied to the target database.
-#   - Records each applied migration in the _prisma_migrations table.
-#   - Is idempotent: already-applied migrations are silently skipped.
-#   - Is safe for production: it never drops tables, never resets data, and
-#     never generates new migration files.
-#   - Exits with code 1 if a migration fails, which causes set -e to abort
-#     this script — the container will not start with a broken schema.
-node node_modules/.bin/prisma migrate deploy
+# Retry loop: Neon's serverless pooler may take a few seconds to wake up on
+# first connection, causing a P1001 error. We retry up to 10 times with a
+# 3-second delay before giving up and crashing the container.
+RETRIES=10
+DELAY=3
+i=1
+while [ "$i" -le "$RETRIES" ]; do
+  node node_modules/.bin/prisma migrate deploy && break
+  echo "[start.sh] Migration attempt $i/$RETRIES failed, retrying in ${DELAY}s..."
+  sleep $DELAY
+  i=$((i + 1))
+done
+
+# If all retries were exhausted the loop exited without break, meaning the
+# last attempt also failed. set -e won't catch that automatically inside a
+# while loop, so we re-run one final time outside so set -e can abort.
+if [ "$i" -gt "$RETRIES" ]; then
+  echo "[start.sh] All $RETRIES migration attempts failed. Aborting."
+  node node_modules/.bin/prisma migrate deploy
+fi
 
 echo "[start.sh] Migrations applied successfully."
 echo "[start.sh] Starting Next.js server..."
