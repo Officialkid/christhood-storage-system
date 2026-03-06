@@ -144,7 +144,9 @@ export async function POST(req: NextRequest) {
     : '/'
 
   // ── 4. Build system prompt ─────────────────────────────────────────────────
-  const systemPrompt = buildSystemPrompt(page)
+  const userName = (token.name as string | null) ?? (token.username as string | null) ?? 'there'
+  const userRole = (token.role as string | null) ?? 'team member'
+  const systemPrompt = buildSystemPrompt(page, userName, userRole)
 
   // ── 5. Call Anthropic and stream the response ──────────────────────────────
   // We use a ReadableStream to pipe SSE chunks back to the client.
