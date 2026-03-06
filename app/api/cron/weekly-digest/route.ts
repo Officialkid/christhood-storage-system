@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma }                    from '@/lib/prisma'
+import { sendWeeklyDigestEmail }     from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
-import { sendWeeklyDigestEmail }     from '@/lib/email'
 
 /**
  * POST /api/cron/weekly-digest

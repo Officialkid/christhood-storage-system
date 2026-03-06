@@ -9,7 +9,9 @@ FROM node:20-alpine AS deps
 
 # libc6-compat provides the GNU C library shims that sharp (image processing)
 # and some other native Node addons require on Alpine-based images.
-RUN apk add --no-cache libc6-compat
+# openssl is required so Prisma can detect the OpenSSL version (Alpine 3.17+
+# ships OpenSSL 3) and generate/load the correct linux-musl-openssl-3.0.x engine.
+RUN apk add --no-cache libc6-compat openssl
 
 WORKDIR /app
 
@@ -35,7 +37,7 @@ RUN npm ci
 # ═══════════════════════════════════════════════════════════════════════════════
 FROM node:20-alpine AS builder
 
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat openssl
 
 WORKDIR /app
 
@@ -68,7 +70,8 @@ FROM node:20-alpine AS runner
 # Install:
 #   ffmpeg  — system binary used by fluent-ffmpeg for video thumbnail generation
 #   curl    — used by Docker/orchestrators for health-check probes
-RUN apk add --no-cache ffmpeg curl
+#   openssl — required so Prisma loads the linux-musl-openssl-3.0.x engine at runtime
+RUN apk add --no-cache ffmpeg curl openssl
 
 WORKDIR /app
 
