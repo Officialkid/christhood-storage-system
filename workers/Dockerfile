@@ -17,7 +17,8 @@ FROM node:20-alpine
 
 # dumb-init acts as PID 1 and forwards signals (SIGTERM/SIGINT) to the Node
 # process, enabling graceful shutdown inside containers.
-RUN apk add --no-cache dumb-init
+# openssl is required so Prisma detects OpenSSL 3 and loads the correct engine.
+RUN apk add --no-cache dumb-init openssl
 
 WORKDIR /app
 
