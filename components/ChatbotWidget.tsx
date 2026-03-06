@@ -202,10 +202,16 @@ export default function ChatbotWidget() {
       // Non-2xx — read the error body and display it
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}))
-        const errText: string =
-          typeof data?.error === 'string'
+        let errText: string
+        if (res.status === 401) {
+          errText = 'You need to be signed in to use the assistant. Please refresh the page and log in first.'
+        } else if (res.status === 429) {
+          errText = typeof data?.error === 'string' ? data.error : 'You have sent too many messages. Please wait a while before trying again.'
+        } else {
+          errText = typeof data?.error === 'string'
             ? data.error
             : `Something went wrong (${res.status}). Please try again.`
+        }
         setMessages(prev =>
           prev.map(m =>
             m.id === streamId ? { ...m, content: errText, streaming: false } : m
@@ -309,8 +315,8 @@ export default function ChatbotWidget() {
           'fixed z-[60] flex flex-col bg-white shadow-2xl border border-slate-200 overflow-hidden',
           // Mobile: nearly full-screen, leaving room for the FAB below
           'inset-x-3 top-14 bottom-24 rounded-2xl',
-          // sm+: anchored to bottom-right, fixed size
-          'sm:inset-auto sm:bottom-28 sm:right-6 sm:top-auto sm:w-[22rem] sm:h-[560px]',
+          // sm+: anchored to bottom-right, capped at 560px but never taller than the viewport
+          'sm:inset-auto sm:bottom-20 sm:right-6 sm:top-auto sm:w-[22rem] sm:h-[min(560px,calc(100vh-6rem))]',
           // Open / close animation
           isOpen
             ? 'opacity-100 translate-y-0 pointer-events-auto'

@@ -22,6 +22,8 @@ export const metadata: Metadata = {
   other: {
     // Prevent phone number detection on iOS
     'format-detection': 'telephone=no',
+    // Chrome's modern equivalent of apple-mobile-web-app-capable (silences deprecation warning)
+    'mobile-web-app-capable': 'yes',
   },
 }
 
