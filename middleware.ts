@@ -60,6 +60,6 @@ export const config = {
     // - login/signup/auth pages
     // - Next.js internals (_next/*)
     // - Static public assets: favicon, manifest.json, icons/, sw.js, workbox files
-    '/((?!login|signup|forgot-password|reset-password|api/auth|_next/static|_next/image|favicon\.ico|manifest\.json|icons/|sw\.js|workbox-).*)',
+    '/((?!login|signup|forgot-password|reset-password|privacy|terms|api/auth|_next/static|_next/image|favicon\.ico|manifest\.json|icons/|sw\.js|workbox-).*)',
   ],
 }
