@@ -88,9 +88,11 @@ jobs:
       # container image already contains the prisma CLI and migration files.
       - name: Run database migrations
         run: |
-          # Pull the DB URLs from GCP Secret Manager (already authenticated via WIF)
-          DB_URL=$(gcloud secrets versions access latest --secret=DATABASE_URL --project=${{ secrets.GCP_PROJECT_ID }})
-          DIRECT=$(gcloud secrets versions access latest --secret=DIRECT_URL --project=${{ secrets.GCP_PROJECT_ID }})
+          # Pull DB URLs from GCP Secret Manager; strip any accidental wrapping quotes/newlines
+          DB_URL=$(gcloud secrets versions access latest --secret=DATABASE_URL --project=${{ secrets.GCP_PROJECT_ID }} | tr -d '\n' | sed 's/^"//' | sed 's/"$//')
+          DIRECT=$(gcloud secrets versions access latest --secret=DIRECT_URL --project=${{ secrets.GCP_PROJECT_ID }} | tr -d '\n' | sed 's/^"//' | sed 's/"$//')
+          echo "DATABASE_URL scheme prefix: ${DB_URL:0:25}"
+          echo "DIRECT_URL scheme prefix:   ${DIRECT:0:25}"
           npm ci --ignore-scripts
           DATABASE_URL="$DB_URL" DIRECT_URL="$DIRECT" npx prisma migrate deploy
 
