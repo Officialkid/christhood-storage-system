@@ -60,6 +60,17 @@ export async function POST(req: NextRequest) {
       await logActivity('CATEGORY_CREATED', session.user.id, { name: categoryName, year: yr })
     }
 
+    // Duplicate check — prevent two events with the same name under the same category
+    const duplicate = await prisma.event.findFirst({
+      where: { name, categoryId: category.id },
+    })
+    if (duplicate) {
+      return NextResponse.json(
+        { error: `An event named "${name}" already exists in ${categoryName} ${yr}.` },
+        { status: 409 }
+      )
+    }
+
     // Create Event
     const event = await prisma.event.create({
       data: {

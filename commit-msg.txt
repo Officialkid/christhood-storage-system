@@ -1,0 +1,10 @@
+fix: upload race condition, MIME validation; add upload test suite (57/58 pass)
+
+- lib/uploadNaming.ts: add generateR2Key() for presign (no sequence counter); add JSDoc warning that generateStoredName must run inside a transaction
+- app/api/upload/presign/route.ts: use generateR2Key; add 415 rejection for non-image/non-video MIME types; do not return storedName to client
+- app/api/upload/register/route.ts: generate storedName atomically inside prisma transaction (fixes C7 race condition on concurrent bulk uploads)
+- app/api/upload/multipart/route.ts: same atomic storedName in complete action
+- components/UploadZone.tsx: remove storedName from presign/resume requests; read storedName from register/complete server response instead
+- app/api/hierarchy/events/route.ts: 409 on duplicate event name (hierarchy fix)
+- scripts/test-upload.mjs: new upload test suite A-G (57/58 pass; F1 is known design gap - no event assignment gate enforced)
+- scripts/test-hierarchy.mjs: hierarchy test suite (39/39 pass)

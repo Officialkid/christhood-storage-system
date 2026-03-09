@@ -2,6 +2,7 @@ import { NextRequest, NextResponse }          from 'next/server'
 import { getServerSession }                  from 'next-auth'
 import { authOptions }                       from '@/lib/auth'
 import { prisma }                            from '@/lib/prisma'
+import { generateStoredName }                from '@/lib/uploadNaming'
 import { notifyUploadInFollowedFolder }      from '@/lib/notifications'
 
 
@@ -11,7 +12,10 @@ import { notifyUploadInFollowedFolder }      from '@/lib/notifications'
  * Called after a successful simple (single-PUT) upload to create the MediaFile
  * record and log the activity.
  *
- * Body: { r2Key, storedName, originalName, contentType, fileSize, eventId, subfolderId? }
+ * Body: { r2Key, originalName, contentType, fileSize, eventId, subfolderId? }
+ *
+ * storedName is generated server-side inside the transaction to avoid
+ * race conditions when multiple files are uploaded concurrently.
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -20,11 +24,10 @@ export async function POST(req: NextRequest) {
   }
 
   const {
-    r2Key, storedName, originalName,
+    r2Key, originalName,
     contentType, fileSize, eventId, subfolderId,
   } = await req.json() as {
     r2Key:        string
-    storedName:   string
     originalName: string
     contentType:  string
     fileSize:     number
@@ -32,7 +35,7 @@ export async function POST(req: NextRequest) {
     subfolderId?: string
   }
 
-  if (!r2Key || !storedName || !originalName || !contentType || !fileSize || !eventId) {
+  if (!r2Key || !originalName || !contentType || !fileSize || !eventId) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
@@ -40,6 +43,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const mediaFile = await prisma.$transaction(async tx => {
+      // Generate storedName atomically inside the transaction so concurrent
+      // uploads always get distinct sequence numbers.
+      const { storedName } = await generateStoredName(eventId, originalName, tx as any)
+
       const mf = await tx.mediaFile.create({
         data: {
           originalName,

@@ -53,7 +53,6 @@ interface UploadFile {
 interface ResumeState {
   r2Key:          string
   uploadId:       string
-  storedName:     string
   originalName:   string
   fileSize:       number
   contentType:    string
@@ -393,9 +392,9 @@ export function UploadZone({ defaultDestination, events }: Props) {
           }),
         })
         if (!presignRes.ok) throw new Error((await presignRes.json()).error)
-        const { uploadUrl, r2Key, storedName } = await presignRes.json()
+        const { uploadUrl, r2Key } = await presignRes.json()
 
-        updateFile(uid, { status: 'uploading', storedName, mode: 'simple' })
+        updateFile(uid, { status: 'uploading', mode: 'simple' })
 
         await xhrPut(uploadUrl, file, contentType, pct =>
           updateFile(uid, { progress: pct }),
@@ -407,7 +406,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({
-            r2Key, storedName,
+            r2Key,
             originalName: file.name,
             contentType,
             fileSize:     file.size,
@@ -416,23 +415,23 @@ export function UploadZone({ defaultDestination, events }: Props) {
           }),
         })
         if (!regRes.ok) throw new Error((await regRes.json()).error)
+        const { mediaFile: regMf } = await regRes.json()
 
-        updateFile(uid, { status: 'done', progress: 100 })
+        updateFile(uid, { status: 'done', progress: 100, storedName: regMf?.storedName })
 
       } else {
         // ── MULTIPART PATH ─────────────────────────────────────────────────────
         let resume = loadResume(file)
-        let r2Key: string, uploadId: string, storedName: string
+        let r2Key: string, uploadId: string
         let totalParts: number, completedParts: { PartNumber: number; ETag: string }[]
         let startFromPart: number
 
         if (resume && resume.eventId === destination.eventId) {
           // Resume
-          ;({ r2Key, uploadId, storedName, totalParts, completedParts } = resume)
+          ;({ r2Key, uploadId, totalParts, completedParts } = resume)
           startFromPart = completedParts.length + 1
           updateFile(uid, {
             status:     'uploading',
-            storedName,
             mode:       'multipart',
             totalParts,
             doneParts:  completedParts.length,
@@ -453,12 +452,12 @@ export function UploadZone({ defaultDestination, events }: Props) {
           })
           if (!presignRes.ok) throw new Error((await presignRes.json()).error)
           const data = await presignRes.json()
-          ;({ r2Key, uploadId, storedName, totalParts } = data)
+          ;({ r2Key, uploadId, totalParts } = data)
           completedParts = []
           startFromPart  = 1
 
           resume = {
-            r2Key, uploadId, storedName,
+            r2Key, uploadId,
             originalName: file.name,
             fileSize:     file.size,
             contentType,
@@ -470,7 +469,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
           }
           saveResume(file, resume)
           updateFile(uid, {
-            status: 'uploading', storedName, mode: 'multipart',
+            status: 'uploading', mode: 'multipart',
             totalParts, doneParts: 0, progress: 0,
           })
         }
@@ -512,7 +511,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
           body:    JSON.stringify({
             action: 'complete',
             r2Key,   uploadId,   parts: completedParts,
-            originalName: file.name, storedName,
+            originalName: file.name,
             fileType:     file.type.startsWith('video/') ? 'VIDEO' : 'PHOTO',
             fileSize:     file.size,
             eventId:      destination.eventId,
@@ -520,9 +519,10 @@ export function UploadZone({ defaultDestination, events }: Props) {
           }),
         })
         if (!completeRes.ok) throw new Error((await completeRes.json()).error)
+        const { mediaFile: completeMf } = await completeRes.json()
 
         clearResume(file)
-        updateFile(uid, { status: 'done', progress: 100 })
+        updateFile(uid, { status: 'done', progress: 100, storedName: completeMf?.storedName })
       }
     } catch (err: any) {
       updateFile(uid, { status: 'error', error: err.message ?? 'Upload failed' })

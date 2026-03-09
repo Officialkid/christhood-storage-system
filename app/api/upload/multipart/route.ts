@@ -7,6 +7,7 @@ import {
   abortMultipartUpload,
 }                                       from '@/lib/r2'
 import { prisma }                       from '@/lib/prisma'
+import { generateStoredName }           from '@/lib/uploadNaming'
 import { generateAndStoreThumbnail }    from '@/lib/thumbnail'
 import { notifyUploadInFollowedFolder } from '@/lib/notifications'
 
@@ -57,21 +58,20 @@ export async function POST(req: NextRequest) {
   if (action === 'complete') {
     const {
       r2Key, uploadId, parts,
-      originalName, storedName, fileType, fileSize,
+      originalName, fileType, fileSize,
       eventId, subfolderId,
     } = body as {
       r2Key:        string
       uploadId:     string
       parts:        { PartNumber: number; ETag: string }[]
       originalName: string
-      storedName:   string
       fileType:     'PHOTO' | 'VIDEO'
       fileSize:     number
       eventId:      string
       subfolderId?: string
     }
 
-    if (!r2Key || !uploadId || !parts?.length || !originalName || !storedName
+    if (!r2Key || !uploadId || !parts?.length || !originalName
         || !eventId || !fileSize) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
@@ -80,8 +80,12 @@ export async function POST(req: NextRequest) {
       // 1. Tell R2 to assemble the parts
       await completeMultipartUpload(r2Key, uploadId, parts)
 
-      // 2. Create the DB record in a transaction alongside the activity log
+      // 2. Create the DB record in a transaction alongside the activity log.
+      //    storedName is generated inside the transaction to ensure sequential
+      //    numbering is consistent even with concurrent uploads.
       const mediaFile = await prisma.$transaction(async tx => {
+        const { storedName } = await generateStoredName(eventId, originalName, tx as any)
+
         const mf = await tx.mediaFile.create({
           data: {
             originalName,
