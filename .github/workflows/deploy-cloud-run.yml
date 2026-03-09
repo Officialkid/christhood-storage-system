@@ -1,0 +1,138 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# .github/workflows/deploy-cloud-run.yml
+#
+# Christhood CMMS — Build & Deploy to Google Cloud Run
+#
+# Trigger:  push to `main` branch, or manual dispatch
+# Pipeline: Checkout → Auth to GCP → Build Docker image →
+#           Push to Artifact Registry → Deploy to Cloud Run
+#
+# Authentication: Workload Identity Federation (keyless — no long-lived keys)
+#   See DEPLOY.md §3 for the one-time GCP setup instructions.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+name: Build & Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:          # Allow manual triggers from the GitHub Actions UI
+
+# ── Shared variables ──────────────────────────────────────────────────────────
+env:
+  REGION:     us-central1
+  SERVICE:    christhood-cmms                  # Cloud Run service name
+  AR_REPO:    christhood-repo                  # Artifact Registry repository name
+  IMAGE_NAME: app                              # Image name inside the AR repo
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    # id-token: write is required for Workload Identity Federation.
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      # ── 1. Checkout source ──────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Authenticate to Google Cloud (keyless via WIF) ──────────────────
+      # GCP_WORKLOAD_IDENTITY_PROVIDER format:
+      #   projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL/providers/PROVIDER
+      # GCP_SERVICE_ACCOUNT format:
+      #   deploy-sa@PROJECT_ID.iam.gserviceaccount.com
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account:            ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      # ── 3. Set up gcloud CLI ────────────────────────────────────────────────
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # ── 4. Configure Docker to push to Artifact Registry ───────────────────
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      # ── 5. Build Docker image ───────────────────────────────────────────────
+      # Tagged with the immutable commit SHA and the mutable "latest" pointer.
+      # --build-arg passes NEXT_TELEMETRY_DISABLED at build time so next build
+      # never phones home even if the ENV instruction is cached differently.
+      - name: Build Docker image
+        env:
+          IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}
+        run: |
+          docker build \
+            --build-arg NEXT_TELEMETRY_DISABLED=1 \
+            --tag "$IMAGE:${{ github.sha }}" \
+            --tag "$IMAGE:latest" \
+            .
+
+      # ── 6. Push image to Artifact Registry ─────────────────────────────────
+      - name: Push image to Artifact Registry
+        env:
+          IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}
+        run: |
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      # ── 7. Deploy to Cloud Run ──────────────────────────────────────────────
+      # All application secrets are stored in Google Secret Manager and mounted
+      # as env vars at runtime — they are never baked into the container image.
+      # Non-secret config is passed directly as env_vars.
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region:  ${{ env.REGION }}
+          image:   ${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          flags: >-
+            --allow-unauthenticated
+            --port=3000
+            --min-instances=0
+            --max-instances=10
+            --memory=1Gi
+            --cpu=1
+            --cpu-throttling
+            --timeout=300
+            --concurrency=80
+            --startup-cpu-boost
+            --service-account=deploy-sa@dotted-spot-476513-i2.iam.gserviceaccount.com
+          env_vars: |
+            NODE_ENV=production
+            NEXT_TELEMETRY_DISABLED=1
+            FFMPEG_PATH=/usr/bin/ffmpeg
+          # Secrets are mounted from Google Secret Manager.
+          # Format: ENV_VAR_NAME=SECRET_MANAGER_NAME:VERSION
+          # All secrets listed here must exist in Secret Manager BEFORE deploying.
+          # See DEPLOY.md §4 for the `gcloud secrets create` commands.
+          secrets: |
+            DATABASE_URL=DATABASE_URL:latest
+            DIRECT_URL=DIRECT_URL:latest
+            NEXTAUTH_SECRET=NEXTAUTH_SECRET:latest
+            NEXTAUTH_URL=NEXTAUTH_URL:latest
+            NEXT_PUBLIC_APP_URL=NEXT_PUBLIC_APP_URL:latest
+            GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest
+            GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest
+            CLOUDFLARE_R2_ACCOUNT_ID=CLOUDFLARE_R2_ACCOUNT_ID:latest
+            CLOUDFLARE_R2_ACCESS_KEY_ID=CLOUDFLARE_R2_ACCESS_KEY_ID:latest
+            CLOUDFLARE_R2_SECRET_ACCESS_KEY=CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest
+            CLOUDFLARE_R2_BUCKET_NAME=CLOUDFLARE_R2_BUCKET_NAME:latest
+            RESEND_API_KEY=RESEND_API_KEY:latest
+            FROM_EMAIL=FROM_EMAIL:latest
+            VAPID_PUBLIC_KEY=VAPID_PUBLIC_KEY:latest
+            VAPID_PRIVATE_KEY=VAPID_PRIVATE_KEY:latest
+            VAPID_SUBJECT=VAPID_SUBJECT:latest
+            CRON_SECRET=CRON_SECRET:latest
+            GEMINI_API_KEY=GEMINI_API_KEY:latest
+
+      # ── 8. Print deployed URL ───────────────────────────────────────────────
+      - name: Print live URL
+        run: echo "Deployed to ${{ steps.deploy.outputs.url }}"

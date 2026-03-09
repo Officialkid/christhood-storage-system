@@ -125,14 +125,21 @@ RUN chmod +x ./start.sh
 # Switch to the non-root user for all subsequent commands, including CMD.
 USER nextjs
 
-# Inform Docker (and orchestrators) which port the server listens on.
-# This is metadata only — the actual binding is done by server.js.
-EXPOSE 3000
-
+# ── Port configuration ────────────────────────────────────────────────────────
+# HOSTNAME — must be 0.0.0.0 so the server binds on all interfaces inside the
+#            container (required for Cloud Run's load balancer to reach it).
+# PORT     — Next.js standalone server.js reads process.env.PORT at startup.
+#            3000 is the local / Docker Compose default.
+#            Cloud Run overrides this at runtime with the value from --port=3000
+#            in the deploy command, so local and cloud behaviour stay in sync.
+# EXPOSE   — metadata only; the actual binding is controlled by server.js.
+#            Use --port=3000 in your `gcloud run deploy` command to match.
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
+EXPOSE 3000
 
 # start.sh applies pending Prisma migrations then exec-starts the Next.js
 # server.  Using "exec" inside the script means node replaces sh and receives
-# OS signals (SIGTERM) directly — enabling graceful shutdown.
+# OS signals (SIGTERM) directly — enabling graceful shutdown without an extra
+# signal-forwarding layer.
 CMD ["sh", "start.sh"]
