@@ -103,7 +103,7 @@ jobs:
             --cpu-throttling
             --timeout=300
             --concurrency=80
-            --startup-cpu-boost
+            --cpu-boost
             --service-account=deploy-sa@dotted-spot-476513-i2.iam.gserviceaccount.com
           env_vars: |
             NODE_ENV=production
