@@ -1,17 +1,15 @@
 import { NextRequest }    from 'next/server'
 import { getToken }       from 'next-auth/jwt'
-import Anthropic          from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import { buildSystemPrompt } from '@/lib/chatbotSystemPrompt'
 
 export const dynamic = 'force-dynamic'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Anthropic client
+// Gemini client
 // The API key is read server-side only — it is never sent to the browser.
 // ─────────────────────────────────────────────────────────────────────────────
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '')
 
 // ─────────────────────────────────────────────────────────────────────────────
 // In-memory rate limiter  (20 requests per user per hour)
@@ -148,7 +146,7 @@ export async function POST(req: NextRequest) {
   const userRole = (token.role as string | null) ?? 'team member'
   const systemPrompt = buildSystemPrompt(page, userName, userRole)
 
-  // ── 5. Call Anthropic and stream the response ──────────────────────────────
+  // ── 5. Call Gemini and stream the response ────────────────────────────────
   // We use a ReadableStream to pipe SSE chunks back to the client.
   // Each chunk is: "data: <text>\n\n"
   // The stream ends with: "data: [DONE]\n\n"
@@ -161,28 +159,34 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        const anthropicStream = await anthropic.messages.stream({
-          model:      'claude-sonnet-4-20250514',
-          max_tokens: 600,
-          system:     systemPrompt,
-          messages:   cappedMessages,
+        const model = genAI.getGenerativeModel({
+          model: 'gemini-1.5-flash',
+          systemInstruction: systemPrompt,
+          generationConfig: { maxOutputTokens: 600 },
         })
 
-        for await (const chunk of anthropicStream) {
-          if (
-            chunk.type === 'content_block_delta' &&
-            chunk.delta.type === 'text_delta'
-          ) {
-            // JSON-encode the text so special characters (quotes, newlines)
-            // survive the SSE transport safely.
-            sendEvent(JSON.stringify({ text: chunk.delta.text }))
+        // Convert message history to Gemini format (all messages except the last)
+        const history = cappedMessages.slice(0, -1).map(m => ({
+          role:  m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        }))
+
+        const chat = model.startChat({ history })
+        const result = await chat.sendMessageStream(
+          cappedMessages[cappedMessages.length - 1].content
+        )
+
+        for await (const chunk of result.stream) {
+          const text = chunk.text()
+          if (text) {
+            // JSON-encode so special characters survive SSE transport safely.
+            sendEvent(JSON.stringify({ text }))
           }
         }
 
         sendEvent('[DONE]')
       } catch (err) {
-        // Log server-side for debugging; send a safe message to the client.
-        console.error('[/api/chat] Anthropic stream error:', err)
+        console.error('[/api/chat] Gemini stream error:', err)
         sendEvent(
           JSON.stringify({
             error:
