@@ -262,6 +262,10 @@ export function UploadZone({ defaultDestination, events }: Props) {
   // ── Register background sync when coming back online ───────────────────────
   useEffect(() => {
     if (!isOnline) return
+
+    // Auto-retry files that errored during a mid-upload connection drop
+    if (filesRef.current.some(f => f.status === 'error')) uploadAll()
+
     // Try Background Sync (Chrome/Android) — gracefully ignores on iOS/Firefox
     navigator.serviceWorker?.ready.then(reg => {
       ;(reg as any).sync?.register('cmms-upload-sync').catch(() => {
