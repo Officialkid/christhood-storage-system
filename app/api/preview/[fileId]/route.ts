@@ -35,49 +35,61 @@ export async function GET(
 
   const { fileId } = params
 
-  const file = await prisma.mediaFile.findUnique({
-    where:   { id: fileId },
-    include: {
-      uploader: { select: { username: true, email: true } },
-      _count:   { select: { versions: true } },
-    },
-  })
-
-  if (!file) {
-    return NextResponse.json({ error: 'File not found' }, { status: 404 })
-  }
-
-  // Only non-deleted / non-purged files can be previewed by non-admins
-  if (
-    (file.status === 'DELETED' || file.status === 'PURGED') &&
-    session.user.role !== 'ADMIN'
-  ) {
-    return NextResponse.json({ error: 'File not available' }, { status: 403 })
-  }
-
-  // Generate presigned URLs in parallel (thumbnail is optional)
-  const [url, thumbnailUrl] = await Promise.all([
-    getPresignedDownloadUrl(file.r2Key, PREVIEW_EXPIRY_SECONDS),
-    file.thumbnailKey
-      ? getPresignedDownloadUrl(file.thumbnailKey, PREVIEW_EXPIRY_SECONDS)
-      : Promise.resolve(null),
-  ])
-
-  return NextResponse.json({
-    url,
-    thumbnailUrl,
-    file: {
-      id:           file.id,
-      originalName: file.originalName,
-      fileType:     file.fileType,
-      fileSize:     file.fileSize.toString(),
-      status:       file.status,
-      createdAt:    file.createdAt.toISOString(),
-      versionCount: file._count.versions,
-      uploader: {
-        username: file.uploader.username,
-        email:    file.uploader.email,
+  try {
+    const file = await prisma.mediaFile.findUnique({
+      where:   { id: fileId },
+      include: {
+        uploader: { select: { username: true, email: true } },
+        _count:   { select: { versions: true } },
       },
-    },
-  })
+    })
+
+    if (!file) {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 })
+    }
+
+    // Only non-deleted / non-purged files can be previewed by non-admins
+    if (
+      (file.status === 'DELETED' || file.status === 'PURGED') &&
+      session.user.role !== 'ADMIN'
+    ) {
+      return NextResponse.json({ error: 'File not available' }, { status: 403 })
+    }
+
+    // Generate presigned URLs in parallel (thumbnail is optional)
+    const [url, thumbnailUrl] = await Promise.all([
+      getPresignedDownloadUrl(file.r2Key, PREVIEW_EXPIRY_SECONDS),
+      file.thumbnailKey
+        ? getPresignedDownloadUrl(file.thumbnailKey, PREVIEW_EXPIRY_SECONDS)
+        : Promise.resolve(null),
+    ])
+
+    return NextResponse.json({
+      url,
+      thumbnailUrl,
+      file: {
+        id:           file.id,
+        originalName: file.originalName,
+        fileType:     file.fileType,
+        fileSize:     file.fileSize.toString(),
+        status:       file.status,
+        createdAt:    file.createdAt.toISOString(),
+        versionCount: file._count.versions,
+        uploader: {
+          username: file.uploader.username,
+          email:    file.uploader.email,
+        },
+      },
+    })
+  } catch (err) {
+    console.error('[preview] error for fileId=%s:', fileId, err)
+    const code = (err as any)?.code
+    if (code === 'P1001' || code === 'P1008' || code === 'P1017') {
+      return NextResponse.json(
+        { error: 'Database temporarily unavailable, please retry' },
+        { status: 503 },
+      )
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
 }

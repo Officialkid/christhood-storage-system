@@ -427,10 +427,18 @@ async function main() {
 
         if (completeB.body?.mediaFile?.id) {
           b_mediaFileId = completeB.body.mediaFile.id
-          const previewRes = await fetch(
+          // Retry once on 503/500 — Neon serverless DB may need a moment to wake
+          let previewRes = await fetch(
             `${BASE_URL}/api/preview/${b_mediaFileId}`,
             { headers: { Cookie: uploaderCookie } }
           )
+          if (previewRes.status >= 500) {
+            await new Promise(r => setTimeout(r, 3000))
+            previewRes = await fetch(
+              `${BASE_URL}/api/preview/${b_mediaFileId}`,
+              { headers: { Cookie: uploaderCookie } }
+            )
+          }
           report('B6', 'Post-refresh file accessible via /api/preview', previewRes.status === 200,
             `status=${previewRes.status}`)
         }
