@@ -19,12 +19,13 @@ export const dynamic = 'force-dynamic'
 export async function GET(req: NextRequest) {
   // ── Auth ─────────────────────────────────────────────────────────────────
   const secret = process.env.CRON_SECRET
-  if (secret) {
-    const authHeader = req.headers.get('authorization') ?? ''
-    const token      = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
-    if (token !== secret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  if (!secret) {
+    return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 })
+  }
+  const authHeader = req.headers.get('authorization') ?? ''
+  const token      = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+  if (token !== secret) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   // ── Read threshold setting ────────────────────────────────────────────────

@@ -5,20 +5,23 @@ import { sendWeeklyDigestEmail }     from '@/lib/email'
 export const dynamic = 'force-dynamic'
 
 /**
- * POST /api/cron/weekly-digest
+ * GET /api/cron/weekly-digest
  *
- * Intended to be called every Monday at 08:00 UTC by an external cron service
- * (e.g., Vercel Cron, GitHub Actions, Upstash QStash).
+ * Called every Monday at 08:00 UTC by Google Cloud Scheduler.
  *
  * Sends a summary of uploads from the past 7 days to all ADMIN + EDITOR users
  * who have not opted out of WEEKLY_DIGEST emails.
  *
  * Secured by Bearer token: Authorization: Bearer <CRON_SECRET>
  */
-export async function POST(req: NextRequest) {
-  const auth = req.headers.get('authorization') ?? ''
+export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
-  if (!secret || auth !== `Bearer ${secret}`) {
+  if (!secret) {
+    return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 })
+  }
+  const authHeader = req.headers.get('authorization') ?? ''
+  const token      = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+  if (token !== secret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
