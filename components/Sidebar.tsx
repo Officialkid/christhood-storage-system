@@ -8,6 +8,7 @@ import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
 } from 'lucide-react'
+import { useSidebar } from './DashboardShell'
 
 const navItems = [
   { label: 'Dashboard',     href: '/dashboard',     icon: LayoutDashboard },
@@ -32,17 +33,15 @@ export function Sidebar() {
   const pathname = usePathname()
   const { data } = useSession()
   const isAdmin  = data?.user?.role === 'ADMIN'
+  const { mobileOpen, closeMobile } = useSidebar()
 
-  // Persist collapsed state across page navigations
+  // Persist collapsed state across page navigations (desktop only)
   const [collapsed, setCollapsed] = useState(false)
-  const [mounted, setMounted] = useState(false)
+  const [mounted,   setMounted]   = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed')
-    const isMobile = window.innerWidth < 768
-    // On mobile, always start collapsed regardless of saved preference.
-    // On desktop, respect the saved preference.
-    if (saved === 'true' || isMobile) setCollapsed(true)
+    if (saved === 'true') setCollapsed(true)
     setMounted(true)
   }, [])
 
@@ -56,11 +55,21 @@ export function Sidebar() {
   // Avoid layout shift on first render — match server default (expanded)
   const isCollapsed = mounted ? collapsed : false
 
+  // Close mobile drawer when navigating
+  useEffect(() => { closeMobile() }, [pathname, closeMobile])
+
   return (
     <aside
       data-tour="sidebar"
-      className={`relative flex flex-col bg-slate-950 border-r border-slate-800/70 shrink-0 transition-all duration-200
-        ${isCollapsed ? 'w-16' : 'w-64'}`}
+      className={`
+        flex flex-col bg-slate-950 border-r border-slate-800/70 transition-all duration-200
+        /* ── Mobile: off-canvas drawer ── */
+        fixed inset-y-0 left-0 z-50 w-72 shrink-0
+        ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+        /* ── Desktop (md+): inline sidebar, no translate ── */
+        md:relative md:inset-auto md:z-auto md:translate-x-0 md:shadow-none
+        ${isCollapsed ? 'md:w-16' : 'md:w-64'}
+      `}
     >
       {/* Toggle button — sits at the right edge of the sidebar */}
       <button

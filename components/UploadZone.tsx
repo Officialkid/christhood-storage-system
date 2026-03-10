@@ -247,6 +247,25 @@ export function UploadZone({ defaultDestination, events }: Props) {
     }
   }, [])
 
+  // ── Warn before unload / close tab when uploads are in progress ─────────────
+  useEffect(() => {
+    const hasActive = filesState.some(f =>
+      ['pending', 'starting', 'uploading', 'completing'].includes(f.status)
+    )
+    if (!hasActive) return
+
+    const handler = (e: BeforeUnloadEvent) => {
+      // Standard way to show native browser "leave site?" dialog
+      e.preventDefault()
+      // Older browsers also need returnValue set (any non-empty string)
+      e.returnValue = 'You have uploads in progress. If you leave, they will be lost. Are you sure?'
+      return e.returnValue
+    }
+
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [filesState])
+
   // ── SW message: drain offline queue when connectivity is restored ───────────
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {

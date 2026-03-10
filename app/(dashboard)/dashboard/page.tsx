@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import Link from 'next/link'
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions)
@@ -26,9 +27,9 @@ export default async function DashboardPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        <StatCard label="Total Media"      value={totalMedia}  />
-        <StatCard label="Events"           value={totalEvents} />
-        <StatCard label="Your Role"        value={session?.user?.role ?? '—'} text />
+        <StatCard label="Total Media"      value={totalMedia}  href="/media"   />
+        <StatCard label="Events"           value={totalEvents} href="/events"  />
+        <StatCard label="Your Role"        value={session?.user?.role ?? '—'} href="/profile" text />
       </div>
 
       {/* Recent uploads */}
@@ -58,16 +59,25 @@ export default async function DashboardPage() {
 function StatCard({
   label,
   value,
+  href,
   text
 }: {
   label: string
   value: string | number
+  href:  string
   text?: boolean
 }) {
   return (
-    <div className="rounded-2xl bg-slate-800 p-6 border border-slate-700">
-      <p className="text-sm text-slate-400">{label}</p>
+    <Link
+      href={href}
+      className="block rounded-2xl bg-slate-800 p-6 border border-slate-700
+                 hover:border-slate-600 hover:bg-slate-700/80 transition-all group"
+    >
+      <p className="text-sm text-slate-400 group-hover:text-slate-300 transition-colors">{label}</p>
       <p className={`mt-1 font-bold text-white ${text ? 'text-xl' : 'text-4xl'}`}>{value}</p>
-    </div>
+      <p className="mt-2 text-xs text-slate-500 group-hover:text-indigo-400 transition-colors">
+        View {label.toLowerCase()} →
+      </p>
+    </Link>
   )
 }
