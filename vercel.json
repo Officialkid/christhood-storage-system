@@ -1,3 +1,17 @@
 {
-  "_comment": "Cron jobs are managed via Google Cloud Scheduler, not Vercel. See scripts/setup-cloud-scheduler.sh"
+  "_comment": "Cron jobs are managed via Google Cloud Scheduler, not Vercel. See scripts/setup-cloud-scheduler.sh",
+  "crons": [
+    {
+      "path": "/api/cron/purge",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/archive",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/purge-transfers",
+      "schedule": "0 2 * * *"
+    }
+  ]
 }
