@@ -37,6 +37,14 @@ enum FileStatus {
   PURGED    /// permanently removed from R2 after 30-day window expired
 }
 
+enum TransferStatus {
+  PENDING    /// sent — recipient has not downloaded yet
+  DOWNLOADED /// recipient has downloaded the files
+  RESPONDED  /// recipient has uploaded edited files back
+  COMPLETED  /// admin has downloaded the response and marked complete
+  EXPIRED    /// auto-purged after expiry date
+}
+
 // ─────────────────────────────────────────────
 // Users & Auth
 // ─────────────────────────────────────────────
@@ -69,6 +77,11 @@ model User {
   pushSubscriptions      PushSubscription[]
   notificationPrefs      NotificationPreference[]
   folderFollows          FolderFollow[]
+
+  // File Transfer relations
+  sentTransfers          Transfer[]          @relation("sender")
+  receivedTransfers      Transfer[]          @relation("recipient")
+  transferResponses      TransferResponse[]  @relation("responseUploader")
 }
 
 // ─────────────────────────────────────────────
@@ -340,4 +353,95 @@ model AppSetting {
   value     String
   updatedBy String?
   updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────
+// File Transfer System
+// ─────────────────────────────────────────────
+//
+// QUALITY CONTRACT:
+// -- Files in this system are NEVER recompressed, resized, or altered in any way.
+// -- Checksums are computed on upload and verified on download to guarantee byte-for-byte integrity.
+// -- The ZIP packaging uses STORE method (no compression) for already-compressed formats (jpg, mp4, png)
+// -- and DEFLATE only for uncompressed formats (raw, tiff, bmp) to preserve maximum quality.
+
+/// Admin sends a batch of files to a specific user for editing.
+/// The recipient downloads them, edits them, then uploads edited versions back.
+model Transfer {
+  id              String         @id @default(cuid())
+  senderId        String
+  recipientId     String
+  subject         String         /// brief description, e.g. "Saturday Fellowship Photos for Editing"
+  message         String?        /// optional admin note to the recipient
+  status          TransferStatus @default(PENDING)
+  folderStructure Json?          /// original folder structure if files were in subfolders
+  r2Prefix        String         /// R2 path prefix, e.g. "transfers/[transferId]/"
+  totalFiles      Int
+  totalSize       BigInt         /// total bytes of all files combined
+  expiresAt       DateTime       /// 30 days after COMPLETED, or 60 days after createdAt if never completed
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  sender    User               @relation("sender",    fields: [senderId],    references: [id])
+  recipient User               @relation("recipient", fields: [recipientId], references: [id])
+  files     TransferFile[]
+  response  TransferResponse?
+
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+/// Individual file sent as part of a Transfer.
+model TransferFile {
+  id           String   @id @default(cuid())
+  transferId   String
+  originalName String   /// exact filename as uploaded by admin — never altered
+  r2Key        String   @unique
+  fileSize     BigInt
+  mimeType     String
+  folderPath   String?  /// relative path if inside a subfolder, e.g. "Saturday/raw/"
+  checksum     String   /// MD5 or SHA-256 hash — verified on download to guarantee integrity
+  createdAt    DateTime @default(now())
+
+  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+
+  @@index([transferId])
+}
+
+/// The recipient's reply: edited files uploaded back to the admin.
+model TransferResponse {
+  id                String   @id @default(cuid())
+  transferId        String   @unique  /// one response set per transfer
+  uploadedById      String
+  message           String?  /// optional note from recipient back to admin
+  r2Prefix          String   /// R2 path for response files, e.g. "transfers/[transferId]/response/"
+  totalFiles        Int
+  totalSize         BigInt
+  downloadedByAdmin Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  transfer   Transfer               @relation(fields: [transferId],   references: [id], onDelete: Cascade)
+  uploadedBy User                   @relation("responseUploader", fields: [uploadedById], references: [id])
+  files      TransferResponseFile[]
+
+  @@index([uploadedById])
+}
+
+/// Individual edited file uploaded by the recipient as part of their TransferResponse.
+model TransferResponseFile {
+  id           String   @id @default(cuid())
+  responseId   String
+  originalName String
+  r2Key        String   @unique
+  fileSize     BigInt
+  mimeType     String
+  folderPath   String?
+  checksum     String   /// verified on admin download to ensure no corruption in transit
+  createdAt    DateTime @default(now())
+
+  response TransferResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@index([responseId])
 }
