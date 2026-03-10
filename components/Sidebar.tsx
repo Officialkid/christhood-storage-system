@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
+  Send,
 } from 'lucide-react'
 import { useSidebar } from './DashboardShell'
 
@@ -22,6 +23,7 @@ const navItems = [
 
 const adminItems = [
   { label: 'User Management', href: '/admin/users',     icon: Shield     },
+  { label: 'File Transfers',  href: '/transfers/new',   icon: Send       },
   { label: 'Hierarchy',       href: '/admin/hierarchy', icon: Network    },
   { label: 'Activity Log',    href: '/admin/logs',      icon: ScrollText },
   { label: 'Trash',           href: '/admin/trash',     icon: Trash2     },
