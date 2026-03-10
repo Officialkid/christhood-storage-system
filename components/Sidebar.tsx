@@ -71,11 +71,11 @@ export function Sidebar() {
         ${isCollapsed ? 'md:w-16' : 'md:w-64'}
       `}
     >
-      {/* Toggle button — sits at the right edge of the sidebar */}
+      {/* Toggle button — desktop only, sits at the right edge of the sidebar */}
       <button
         onClick={toggle}
         title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className="absolute -right-3 top-7 z-10 flex items-center justify-center w-6 h-6
+        className="absolute -right-3 top-7 z-10 hidden md:flex items-center justify-center w-6 h-6
                    rounded-full bg-slate-800 border border-slate-700 text-white
                    hover:bg-slate-700 transition-colors shadow-md"
       >
@@ -122,13 +122,13 @@ export function Sidebar() {
                   : 'text-slate-200 hover:bg-slate-800/70 hover:text-white'
                 }`}
             >
-              <Icon className="w-4 h-4 shrink-0" />
+              <Icon className="w-4 h-4 shrink-0 text-current" />
               {!isCollapsed && label}
             </Link>
           )
         })}
 
-        {/* Admin-only items */}
+        {/* Admin-only items */
         {isAdmin && (
           <>
             <div className={`my-2 h-px bg-slate-800/70 ${isCollapsed ? 'mx-1' : 'mx-3'}`} />
@@ -146,7 +146,7 @@ export function Sidebar() {
                       : 'text-slate-200 hover:bg-slate-800/70 hover:text-white'
                     }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
+                  <Icon className="w-4 h-4 shrink-0 text-current" />
                   {!isCollapsed && label}
                 </Link>
               )
