@@ -4,6 +4,7 @@ import { authOptions }                  from '@/lib/auth'
 import { prisma }                       from '@/lib/prisma'
 import { getPresignedDownloadUrl }      from '@/lib/r2'
 import { log }                          from '@/lib/activityLog'
+import { createSHA256Transform }        from '@/lib/transferIntegrity'
 import archiver                         from 'archiver'
 import { PassThrough, Readable }        from 'stream'
 
@@ -57,6 +58,8 @@ export async function GET(
   const archive = archiver('zip', { store: false, zlib: { level: 6 } })
   archive.pipe(pass)
 
+  const integrityFailures: Array<{ fileId: string; fileName: string }> = []
+
   ;(async () => {
     for (const file of transfer.files) {
       const ext  = file.originalName.split('.').pop()?.toLowerCase() ?? ''
@@ -69,7 +72,27 @@ export async function GET(
           console.warn(`[transfer-zip] skipping ${file.originalName}: R2 fetch failed`)
           continue
         }
-        const nodeStream = Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0])
+        const rawStream  = Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0])
+        const hashXform  = createSHA256Transform()
+        const piped      = rawStream.pipe(hashXform)
+
+        // Verify checksum after bytes have been fully consumed by the archive
+        if (file.checksum) {
+          const capturedId   = file.id
+          const capturedName = file.originalName
+          const storedHash   = file.checksum.toLowerCase()
+          const userId       = session.user.id
+          hashXform.once('finish', () => {
+            const actual = hashXform.getDigest()
+            if (actual !== storedHash) {
+              integrityFailures.push({ fileId: capturedId, fileName: capturedName })
+              log('TRANSFER_INTEGRITY_FAILURE', userId, {
+                metadata: { transferId, fileId: capturedId, fileName: capturedName,
+                            expected: storedHash, actual, source: 'zip-download' },
+              }).catch((e: unknown) => console.warn('[transfer-zip] integrity log failed:', e))
+            }
+          })
+        }
 
         // Reconstruct folder path inside ZIP
         const entryName = file.folderPath
@@ -77,9 +100,9 @@ export async function GET(
           : file.originalName
 
         if (store) {
-          archive.append(nodeStream, { name: entryName, store: true })
+          archive.append(piped, { name: entryName, store: true })
         } else {
-          archive.append(nodeStream, { name: entryName })
+          archive.append(piped, { name: entryName })
         }
       } catch (err) {
         console.warn(`[transfer-zip] error adding ${file.originalName}:`, err)

@@ -6,7 +6,7 @@ import {
   File as FileIcon, Folder, ChevronDown, ChevronRight,
   Clock, CheckCircle2, RefreshCcw, Archive, AlertCircle,
   User2, CheckCheck, X, Ban, Send, MessageSquare,
-  CalendarDays, AlertTriangle,
+  CalendarDays, AlertTriangle, ShieldCheck, ShieldAlert, Loader2,
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 
@@ -22,6 +22,7 @@ interface TransferFileItem {
   fileSize:     number
   mimeType:     string
   folderPath:   string | null
+  checksum:     string
 }
 
 interface ResponseFileItem {
@@ -30,6 +31,7 @@ interface ResponseFileItem {
   fileSize:     number
   mimeType:     string
   folderPath:   string | null
+  checksum:     string
 }
 
 interface ResponseData {
@@ -128,10 +130,12 @@ function FileRow({
   file,
   onDownload,
   downloading,
+  integrityPass,
 }: {
-  file:        TransferFileItem | ResponseFileItem
-  onDownload:  (fileId: string, filename: string) => void
-  downloading: boolean
+  file:           TransferFileItem | ResponseFileItem
+  onDownload:     (fileId: string, filename: string) => void
+  downloading:    boolean
+  integrityPass?: boolean | null
 }) {
   return (
     <div className="flex items-center justify-between gap-2 py-1.5 group">
@@ -139,6 +143,16 @@ function FileRow({
         {fileIcon(file.mimeType)}
         <span className="text-xs text-slate-300 truncate">{file.originalName}</span>
         <span className="text-xs text-slate-600 shrink-0">{fmtSize(file.fileSize)}</span>
+        {integrityPass === true  && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-400 shrink-0">
+            <ShieldCheck className="w-3 h-3" />Verified
+          </span>
+        )}
+        {integrityPass === false && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-red-400 shrink-0">
+            <ShieldAlert className="w-3 h-3" />Issue
+          </span>
+        )}
       </div>
       <button
         onClick={() => onDownload(file.id, file.originalName)}
@@ -163,10 +177,12 @@ function FolderTreeNode({
   node,
   onDownloadFile,
   downloadingFile,
+  integrityMap,
 }: {
-  node:           FolderNode
-  onDownloadFile: (fileId: string, filename: string) => void
+  node:            FolderNode
+  onDownloadFile:  (fileId: string, filename: string) => void
   downloadingFile: string | null
+  integrityMap?:   Record<string, boolean | null>
 }) {
   const [open, setOpen] = useState(true)
   if (node.children.size === 0 && node.files.length === 0) return null
@@ -194,6 +210,7 @@ function FolderTreeNode({
               file={f}
               onDownload={onDownloadFile}
               downloading={downloadingFile === f.id}
+              integrityPass={integrityMap ? (integrityMap[f.id] ?? null) : undefined}
             />
           ))}
           {Array.from(node.children.values()).map(child => (
@@ -202,6 +219,7 @@ function FolderTreeNode({
               node={child}
               onDownloadFile={onDownloadFile}
               downloadingFile={downloadingFile}
+              integrityMap={integrityMap}
             />
           ))}
         </div>
@@ -272,6 +290,10 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
   const [cancelling,    setCancelling]    = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [cancelError,   setCancelError]   = useState<string | null>(null)
+  const [verifying,     setVerifying]     = useState(false)
+  const [verifyDone,    setVerifyDone]    = useState(false)
+  const [verifyFailed,  setVerifyFailed]  = useState(false)
+  const [integrityMap,  setIntegrityMap]  = useState<Record<string, boolean | null>>({})
 
   const { label, cls, Icon } = STATUS_META[currentStatus]
   const recipientLabel = transfer.recipient.username ?? transfer.recipient.name ?? transfer.recipient.email
@@ -408,6 +430,31 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
     }
   }, [transfer.id, cancelling])
 
+  // ── Verify integrity from R2 ─────────────────────────────────────────────────────────
+  const handleVerify = useCallback(async () => {
+    if (verifying) return
+    setVerifying(true)
+    try {
+      const res = await fetch(`/api/transfers/${transfer.id}/verify`)
+      if (!res.ok) return
+      const data = await res.json() as {
+        allPassed: boolean
+        transferFiles: { id: string; originalName: string; pass: boolean | null }[]
+        responseFiles: { id: string; originalName: string; pass: boolean | null }[]
+      }
+      const map: Record<string, boolean | null> = {}
+      for (const f of data.transferFiles) map[f.id] = f.pass
+      for (const f of data.responseFiles)  map[f.id] = f.pass
+      setIntegrityMap(map)
+      setVerifyFailed(!data.allPassed)
+      setVerifyDone(true)
+    } catch {
+      // silent — verify is optional
+    } finally {
+      setVerifying(false)
+    }
+  }, [transfer.id, verifying])
+
   const origTree = buildFolderTree(transfer.files)
   const respTree = existingResponse ? buildFolderTree(existingResponse.files) : null
 
@@ -498,6 +545,7 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
           node={origTree}
           onDownloadFile={handleDownloadOrigFile}
           downloadingFile={downloadingOrigFile}
+          integrityMap={verifyDone ? integrityMap : undefined}
         />
       </section>
 
@@ -540,6 +588,7 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
               node={respTree}
               onDownloadFile={handleDownloadRespFile}
               downloadingFile={downloadingRespFile}
+              integrityMap={verifyDone ? integrityMap : undefined}
             />
           </div>
 
@@ -693,6 +742,58 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
             />
           </div>
         </div>
+      </section>
+
+      {/* ── Transfer Integrity ───────────────────────────────────────────────── */}
+      <section className="rounded-xl bg-slate-800/30 border border-slate-700/30 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-slate-400 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4" />
+            Transfer Integrity
+          </h2>
+          <button
+            onClick={handleVerify}
+            disabled={verifying}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white text-xs font-medium transition-colors disabled:opacity-50"
+          >
+            {verifying
+              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Verifying…</>
+              : verifyDone ? <><ShieldCheck className="w-3.5 h-3.5" /> Re-verify</> : <><ShieldCheck className="w-3.5 h-3.5" /> Verify from Storage</>
+            }
+          </button>
+        </div>
+
+        {!verifyDone && (
+          <p className="text-xs text-slate-500 leading-relaxed">
+            SHA-256 checksums are computed and stored at upload time, ensuring
+            byte‑for‑byte fidelity. Click “Verify from Storage” to re‑download
+            and confirm every file matches its stored checksum.
+          </p>
+        )}
+
+        {verifyDone && !verifyFailed && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <p className="text-sm text-emerald-300 font-medium">
+              All {transfer.totalFiles + (existingResponse?.totalFiles ?? 0)} file{(transfer.totalFiles + (existingResponse?.totalFiles ?? 0)) !== 1 ? 's' : ''} verified — original quality confirmed ✓
+            </p>
+          </div>
+        )}
+
+        {verifyDone && verifyFailed && (
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-amber-300 font-medium">
+                ⚠️ One or more files may have been altered during storage.
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Files marked with “Issue” did not match their stored checksum.
+                Please contact the system administrator to investigate.
+              </p>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   )

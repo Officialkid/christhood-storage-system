@@ -6,7 +6,7 @@ import {
   FileText, Image as ImageIcon, Video as VideoIcon, Music,
   Clock, CheckCircle2, RefreshCcw, Archive, AlertCircle,
   User2, Upload, X, FolderOpen, Lock, Send, AlertTriangle,
-  CheckCheck,
+  CheckCheck, ShieldCheck, ShieldAlert, Loader2,
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 
@@ -22,6 +22,7 @@ interface TransferFileItem {
   fileSize: number
   mimeType: string
   folderPath: string | null
+  checksum: string
 }
 
 interface ResponseFile {
@@ -30,6 +31,7 @@ interface ResponseFile {
   fileSize: number
   mimeType: string
   folderPath: string | null
+  checksum: string
 }
 
 interface TransferResponseData {
@@ -117,12 +119,14 @@ function FolderTreeView({
   transferId,
   onDownloadFile,
   downloadingFile,
+  integrityMap,
   depth = 0,
 }: {
   node: FolderNode
   transferId: string
   onDownloadFile: (file: TransferFileItem) => void
   downloadingFile: string | null
+  integrityMap?: Record<string, boolean | null>
   depth?: number
 }) {
   const [open, setOpen] = useState(true)
@@ -149,6 +153,16 @@ function FolderTreeView({
                 {mimeIcon(f.mimeType)}
                 <span className="text-xs text-slate-300 truncate">{f.originalName}</span>
                 <span className="text-xs text-slate-600 shrink-0">{fmtSize(f.fileSize)}</span>
+                {integrityMap && integrityMap[f.id] === true  && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-400 shrink-0">
+                    <ShieldCheck className="w-3 h-3" />Verified
+                  </span>
+                )}
+                {integrityMap && integrityMap[f.id] === false && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-red-400 shrink-0">
+                    <ShieldAlert className="w-3 h-3" />Issue
+                  </span>
+                )}
               </div>
               <button
                 onClick={() => onDownloadFile(f)}
@@ -170,6 +184,7 @@ function FolderTreeView({
               transferId={transferId}
               onDownloadFile={onDownloadFile}
               downloadingFile={downloadingFile}
+              integrityMap={integrityMap}
               depth={0}
             />
           ))}
@@ -494,6 +509,7 @@ function ResponseSection({
           fileSize:     f.fileSize,
           mimeType:     f.mimeType,
           folderPath:   f.folderPath,
+          checksum:     '',
         })),
       }
 
@@ -720,6 +736,10 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
   const [existingResp,   setExistingResp]   = useState<TransferResponseData | null>(transfer.response)
   const [downloadingZip, setDownloadingZip] = useState(false)
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null)
+  const [verifying,      setVerifying]      = useState(false)
+  const [verifyDone,     setVerifyDone]     = useState(false)
+  const [verifyFailed,   setVerifyFailed]   = useState(false)
+  const [integrityMap,   setIntegrityMap]   = useState<Record<string, boolean | null>>({})
 
   const { label, cls, Icon } = STATUS_META[currentStatus]
   const senderName = transfer.sender.username ?? transfer.sender.name ?? transfer.sender.email ?? 'Admin'
@@ -774,6 +794,30 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
     setExistingResp(response)
     setCurrentStatus('RESPONDED')
   }, [])
+
+  const handleVerify = useCallback(async () => {
+    if (verifying) return
+    setVerifying(true)
+    try {
+      const res = await fetch(`/api/transfers/${transfer.id}/verify`)
+      if (!res.ok) return
+      const data = await res.json() as {
+        allPassed: boolean
+        transferFiles: { id: string; originalName: string; pass: boolean | null }[]
+        responseFiles: { id: string; originalName: string; pass: boolean | null }[]
+      }
+      const map: Record<string, boolean | null> = {}
+      for (const f of data.transferFiles) map[f.id] = f.pass
+      for (const f of data.responseFiles)  map[f.id] = f.pass
+      setIntegrityMap(map)
+      setVerifyFailed(!data.allPassed)
+      setVerifyDone(true)
+    } catch {
+      // silent — verify is optional
+    } finally {
+      setVerifying(false)
+    }
+  }, [transfer.id, verifying])
 
   const tree = buildFolderTree(transfer.files)
 
@@ -849,6 +893,7 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
             transferId={transfer.id}
             onDownloadFile={handleDownloadFile}
             downloadingFile={downloadingFile}
+            integrityMap={verifyDone ? integrityMap : undefined}
           />
         </div>
       </div>
@@ -869,7 +914,57 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
           onSubmitted={handleResponseSubmitted}
         />
       </div>
+      {/* ── Transfer Integrity ───────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4" />
+            Transfer Integrity
+          </h2>
+          <button
+            onClick={handleVerify}
+            disabled={verifying}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white text-xs font-medium transition-colors disabled:opacity-50"
+          >
+            {verifying
+              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Verifying…</>
+              : verifyDone ? <><ShieldCheck className="w-3.5 h-3.5" /> Re-verify</> : <><ShieldCheck className="w-3.5 h-3.5" /> Verify from Storage</>
+            }
+          </button>
+        </div>
 
+        {!verifyDone && (
+          <p className="text-xs text-slate-500 leading-relaxed">
+            SHA-256 checksums are stored at upload time to guarantee the files you
+            received are byte‑for‑byte identical to what was sent. Click “Verify”
+            to re‑confirm against current R2 storage.
+          </p>
+        )}
+
+        {verifyDone && !verifyFailed && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <p className="text-sm text-emerald-300 font-medium">
+              All {transfer.totalFiles} file{transfer.totalFiles !== 1 ? 's' : ''} verified — original quality confirmed ✓
+            </p>
+          </div>
+        )}
+
+        {verifyDone && verifyFailed && (
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-amber-300 font-medium">
+                ⚠️ One or more files may have been altered during storage.
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Files marked with “Issue” did not match their stored checksum.
+                Please contact the admin immediately.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -42,6 +42,7 @@ export type LogAction =
   | 'TRANSFER_COMPLETED'
   | 'TRANSFER_CANCELLED'
   | 'TRANSFER_PURGED'
+  | 'TRANSFER_INTEGRITY_FAILURE'
   // Legacy aliases (kept for backward compat)
   | 'MEDIA_UPLOADED'
   | 'MEDIA_DOWNLOADED'

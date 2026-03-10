@@ -57,6 +57,7 @@ export default async function SentTransferDetailPage({ params }: Props) {
       fileSize:     Number(f.fileSize),
       mimeType:     f.mimeType,
       folderPath:   f.folderPath ?? null,
+      checksum:     f.checksum,
     })),
     response: transfer.response
       ? {
@@ -72,6 +73,7 @@ export default async function SentTransferDetailPage({ params }: Props) {
             fileSize:     Number(f.fileSize),
             mimeType:     f.mimeType,
             folderPath:   f.folderPath ?? null,
+            checksum:     f.checksum,
           })),
         }
       : null,
