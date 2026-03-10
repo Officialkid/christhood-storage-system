@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getPresignedDownloadUrl } from '@/lib/r2'
+import { log } from '@/lib/activityLog'
 
 /**
  * GET /api/media
@@ -19,9 +20,14 @@ export async function GET(req: NextRequest) {
   const type    = searchParams.get('type')    ?? undefined
   const eventId = searchParams.get('eventId') ?? undefined
 
+  const isAdmin    = session.user.role === 'ADMIN'
+  // Non-admins must not see DELETED or PURGED files
+  const statusFilter = { notIn: (isAdmin ? ['PURGED'] : ['PURGED', 'DELETED']) as string[] }
+
   const [items, total] = await Promise.all([
     prisma.mediaFile.findMany({
       where: {
+        status: statusFilter,
         ...(type    ? { fileType: type as 'PHOTO' | 'VIDEO' } : {}),
         ...(eventId ? { eventId }                             : {})
       },
@@ -35,6 +41,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.mediaFile.count({
       where: {
+        status: statusFilter,
         ...(type    ? { fileType: type as 'PHOTO' | 'VIDEO' } : {}),
         ...(eventId ? { eventId }                             : {})
       }
@@ -64,6 +71,21 @@ export async function PATCH(req: NextRequest) {
 
   const { id, status, tags, description } = await req.json()
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+
+  const role = session.user.role as string
+
+  if (role !== 'ADMIN' && role !== 'EDITOR') {
+    // UPLOADERs may only update their own files
+    const file = await prisma.mediaFile.findUnique({ where: { id }, select: { uploaderId: true } })
+    if (!file) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (file.uploaderId !== session.user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    // UPLOADERs can only flip their files to READY (to complete the upload flow)
+    if (status && status !== 'READY') {
+      return NextResponse.json({ error: 'Forbidden: insufficient role to set this status' }, { status: 403 })
+    }
+  }
 
   const updated = await prisma.mediaFile.update({
     where: { id },
@@ -97,14 +119,27 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Move to trash instead of hard-delete
-  await prisma.trashItem.create({
-    data: {
-      mediaFileId:      id,
-      deletedById:      session.user.id,
-      scheduledPurgeAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      preDeleteStatus:  mediaFile.status,
-    }
+  // Atomically mark file as DELETED and move to trash
+  await prisma.$transaction([
+    prisma.mediaFile.update({
+      where: { id },
+      data:  { status: 'DELETED' },
+    }),
+    prisma.trashItem.create({
+      data: {
+        mediaFileId:      id,
+        deletedById:      session.user.id,
+        scheduledPurgeAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        preDeleteStatus:  mediaFile.status,
+      }
+    }),
+  ])
+
+  await log('FILE_DELETED', session.user.id, {
+    mediaFileId: id,
+    eventId:     mediaFile.eventId,
+    metadata:    { fileName: mediaFile.originalName, eventId: mediaFile.eventId },
   })
+
   return NextResponse.json({ success: true })
 }
