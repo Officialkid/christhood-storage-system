@@ -89,7 +89,7 @@ export default function ProfilePage() {
 
   // Sync if session loads after mount
   if (session?.user?.name  && !name)  setName(session.user.name)
-  if ((session?.user as any)?.phone && !phone) setPhone((session.user as any).phone)
+  if ((session?.user as any)?.phone && !phone) setPhone((session?.user as any).phone)
 
   async function saveField(field: 'name' | 'phone', value: string) {
     const res = await fetch('/api/user/profile', {

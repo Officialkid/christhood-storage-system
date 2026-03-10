@@ -64,8 +64,8 @@ export function Sidebar() {
         onClick={toggle}
         title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         className="absolute -right-3 top-7 z-10 flex items-center justify-center w-6 h-6
-                   rounded-full bg-slate-800 border border-slate-700 text-slate-400
-                   hover:text-white hover:bg-slate-700 transition-colors shadow-md"
+                   rounded-full bg-slate-800 border border-slate-700 text-white
+                   hover:bg-slate-700 transition-colors shadow-md"
       >
         {isCollapsed
           ? <ChevronRight className="w-3.5 h-3.5" />
@@ -107,7 +107,7 @@ export function Sidebar() {
                 ${isCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'}
                 ${active
                   ? 'bg-indigo-600/90 text-white shadow-sm shadow-indigo-500/20'
-                  : 'text-slate-400 hover:bg-slate-800/70 hover:text-white'
+                  : 'text-slate-200 hover:bg-slate-800/70 hover:text-white'
                 }`}
             >
               <Icon className="w-4 h-4 shrink-0" />
@@ -131,7 +131,7 @@ export function Sidebar() {
                     ${isCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'}
                     ${active
                       ? 'bg-violet-600/80 text-white shadow-sm shadow-violet-500/20'
-                      : 'text-slate-400 hover:bg-slate-800/70 hover:text-white'
+                      : 'text-slate-200 hover:bg-slate-800/70 hover:text-white'
                     }`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
@@ -152,7 +152,7 @@ export function Sidebar() {
             className={`flex items-center mb-2 rounded-xl hover:bg-slate-800/70 transition-colors group
               ${isCollapsed ? 'justify-center px-2 py-2' : 'gap-2.5 px-2 py-1.5'}`}
           >
-            <UserCircle className="w-4 h-4 text-slate-500 group-hover:text-slate-300 shrink-0 transition-colors" />
+            <UserCircle className="w-4 h-4 text-slate-300 group-hover:text-white shrink-0 transition-colors" />
             {!isCollapsed && (
               <div className="min-w-0">
                 <p className="text-sm font-medium text-white truncate">
@@ -167,7 +167,7 @@ export function Sidebar() {
           onClick={() => signOut({ callbackUrl: '/login' })}
           title={isCollapsed ? 'Sign out' : undefined}
           className={`w-full flex items-center rounded-xl bg-slate-800/60 hover:bg-slate-800
-                      py-2 text-sm text-slate-400 hover:text-white transition-all
+                      py-2 text-sm text-slate-200 hover:text-white transition-all
                       ${isCollapsed ? 'justify-center px-2' : 'gap-2 px-3'}`}
         >
           <LogOut className="w-4 h-4" />
