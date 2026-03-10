@@ -60,6 +60,8 @@ export const config = {
     // - login/signup/auth pages
     // - Next.js internals (_next/*)
     // - Static public assets: favicon, manifest.json, icons/, sw.js, workbox files
-    '/((?!login|signup|forgot-password|reset-password|privacy|terms|api/auth|_next/static|_next/image|favicon\.ico|manifest\.json|icons/|sw\.js|workbox-).*)',
+    // - api/health: Cloud Run / load-balancer health probes (no session)
+    // - api/cron/*: secured by Bearer CRON_SECRET, not by session cookie
+    '/((?!login|signup|forgot-password|reset-password|privacy|terms|api/auth|api/health|api/cron|_next/static|_next/image|favicon\\.ico|manifest\\.json|icons/|sw\\.js|workbox-).*)',
   ],
 }
