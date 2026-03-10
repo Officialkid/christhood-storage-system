@@ -7,18 +7,19 @@ import { useEffect, useState } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
-  Send,
+  Send, Inbox,
 } from 'lucide-react'
 import { useSidebar } from './DashboardShell'
 
 const navItems = [
-  { label: 'Dashboard',     href: '/dashboard',     icon: LayoutDashboard },
-  { label: 'Media',         href: '/media',         icon: Image           },
-  { label: 'Upload',        href: '/upload',         icon: Upload          },
-  { label: 'Events',        href: '/events',         icon: CalendarDays    },
-  { label: 'Search',        href: '/search',         icon: Search          },
-  { label: 'Notifications', href: '/notifications',  icon: Bell            },
-  { label: 'User Guide',    href: '/docs',           icon: BookOpen        },
+  { label: 'Dashboard',     href: '/dashboard',        icon: LayoutDashboard },
+  { label: 'Media',         href: '/media',            icon: Image           },
+  { label: 'Upload',        href: '/upload',           icon: Upload          },
+  { label: 'Events',        href: '/events',           icon: CalendarDays    },
+  { label: 'Search',        href: '/search',           icon: Search          },
+  { label: 'My Inbox',      href: '/transfers/inbox',  icon: Inbox           },
+  { label: 'Notifications', href: '/notifications',    icon: Bell            },
+  { label: 'User Guide',    href: '/docs',             icon: BookOpen        },
 ]
 
 const adminItems = [
