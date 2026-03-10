@@ -26,12 +26,10 @@ steps:
     id: build
     args:
       - 'build'
-      - '--tag=$$_IMAGE:$COMMIT_SHA'
-      - '--tag=$$_IMAGE:latest'
+      - '--tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/app:$COMMIT_SHA'
+      - '--tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/app:latest'
       - '--build-arg=NEXT_TELEMETRY_DISABLED=1'
       - '.'
-    env:
-      - '_IMAGE=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/app'
 
   # ── Step 2: Push both tags to Artifact Registry ─────────────────────────────
   - name: 'gcr.io/cloud-builders/docker'
