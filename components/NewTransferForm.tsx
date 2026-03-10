@@ -250,7 +250,7 @@ export function NewTransferForm() {
 
   // ── Recipient search ─────────────────────────────────────────────────────
   useEffect(() => {
-    clearTimeout(searchTimer.current)
+    clearTimeout(searchTimer.current ?? undefined)
     if (recipientSearch.trim().length < 2) { setSearchResults([]); return }
     setSearchLoading(true)
     searchTimer.current = setTimeout(async () => {
@@ -262,7 +262,7 @@ export function NewTransferForm() {
         setSearchLoading(false)
       }
     }, 300)
-    return () => clearTimeout(searchTimer.current)
+    return () => clearTimeout(searchTimer.current ?? undefined)
   }, [recipientSearch])
 
   // ── Send ─────────────────────────────────────────────────────────────────

@@ -131,7 +131,7 @@ export function Sidebar() {
           )
         })}
 
-        {/* Admin-only items */
+        {/* Admin-only items */}
         {isAdmin && (
           <>
             <div className={`my-2 h-px bg-slate-800/70 ${isCollapsed ? 'mx-1' : 'mx-3'}`} />

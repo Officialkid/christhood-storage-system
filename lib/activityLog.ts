@@ -37,6 +37,7 @@ export type LogAction =
   // File Transfer system
   | 'TRANSFER_SENT'
   | 'TRANSFER_DOWNLOADED'
+  | 'TRANSFER_RESPONDED'
   // Legacy aliases (kept for backward compat)
   | 'MEDIA_UPLOADED'
   | 'MEDIA_DOWNLOADED'

@@ -15,7 +15,6 @@ export default async function TransferInboxPage() {
     where:   { recipientId: session.user.id },
     include: {
       sender: { select: { id: true, username: true, name: true, email: true } },
-      files:  { select: { id: true, originalName: true, fileSize: true, mimeType: true, folderPath: true } },
     },
     orderBy: { createdAt: 'desc' },
   })
@@ -24,7 +23,6 @@ export default async function TransferInboxPage() {
   const serialised = transfers.map(t => ({
     ...t,
     totalSize: Number(t.totalSize),
-    files: t.files.map(f => ({ ...f, fileSize: Number(f.fileSize) })),
   }))
 
   return (

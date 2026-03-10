@@ -470,3 +470,51 @@ export async function sendAdminPurgeAlert(
     html:    layout(`${count} file${count !== 1 ? 's' : ''} were permanently removed from the trash.`, body),
   })
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. Transfer Responded — admin gets this when recipient uploads edited files back
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sendTransferRespondedEmail(opts: {
+  toEmail:       string
+  toName:        string
+  recipientName: string
+  subject:       string
+  recipientMsg:  string | null
+  fileCount:     number
+  totalSize:     number
+  transferId:    string
+}): Promise<void> {
+  const link      = `${APP_URL}/transfers/sent/${opts.transferId}`
+  const sizeLabel = opts.totalSize < 1024 ** 2
+    ? `${(opts.totalSize / 1024).toFixed(1)} KB`
+    : opts.totalSize < 1024 ** 3
+    ? `${(opts.totalSize / 1024 ** 2).toFixed(1)} MB`
+    : `${(opts.totalSize / 1024 ** 3).toFixed(2)} GB`
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#10b981;text-transform:uppercase;letter-spacing:0.6px;">Transfer Response</p>
+    <h1 style="margin:0 0 18px;font-size:26px;font-weight:700;color:#0f172a;line-height:1.2;">Edited files received</h1>
+    <p style="margin:0 0 14px;font-size:15px;color:#334155;line-height:1.6;">
+      Hi <strong>${esc(opts.toName)}</strong>,
+      <strong>${esc(opts.recipientName)}</strong> has uploaded their edited files for your transfer request.
+    </p>
+    ${infoBox(`
+      <strong>Transfer:</strong>&nbsp;${esc(opts.subject)}<br>
+      <strong>Files returned:</strong>&nbsp;${opts.fileCount} file${opts.fileCount !== 1 ? 's' : ''} (${sizeLabel})<br>
+      <strong>Sent by:</strong>&nbsp;${esc(opts.recipientName)}
+      ${opts.recipientMsg ? `<br><strong>Note:</strong>&nbsp;${esc(opts.recipientMsg)}` : ''}
+    `)}
+    <p style="margin:0 0 4px;font-size:15px;color:#334155;line-height:1.6;">
+      Download the response files from your sent transfers to review the work.
+    </p>
+    ${btn('View Response →', link)}
+    <p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">
+      Response files are stored securely in the same transfer folder.
+    </p>`
+
+  await sendEmail({
+    to:      opts.toEmail,
+    subject: `[${APP}] Response received: ${esc(opts.subject)}`,
+    html:    layout(`${opts.recipientName} sent back ${opts.fileCount} file${opts.fileCount !== 1 ? 's' : ''} for your transfer.`, body),
+  })
+}
