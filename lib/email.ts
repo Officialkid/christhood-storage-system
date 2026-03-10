@@ -376,6 +376,53 @@ export async function sendStorageThresholdEmail(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 7. File Transfer Received — sent to the recipient when admin sends files
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sendTransferReceivedEmail(opts: {
+  toEmail:    string
+  toName:     string
+  senderName: string
+  subject:    string
+  message:    string | null
+  fileCount:  number
+  totalSize:  number
+}): Promise<void> {
+  const link      = `${APP_URL}/transfers/inbox`
+  const sizeLabel = opts.totalSize < 1024 ** 2
+    ? `${(opts.totalSize / 1024).toFixed(1)} KB`
+    : opts.totalSize < 1024 ** 3
+    ? `${(opts.totalSize / 1024 ** 2).toFixed(1)} MB`
+    : `${(opts.totalSize / 1024 ** 3).toFixed(2)} GB`
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#6366f1;text-transform:uppercase;letter-spacing:0.6px;">New File Transfer</p>
+    <h1 style="margin:0 0 18px;font-size:26px;font-weight:700;color:#0f172a;line-height:1.2;">You have files waiting for you</h1>
+    <p style="margin:0 0 14px;font-size:15px;color:#334155;line-height:1.6;">
+      Hi <strong>${esc(opts.toName)}</strong>, <strong>${esc(opts.senderName)}</strong> has sent you
+      ${opts.fileCount} file${opts.fileCount !== 1 ? 's' : ''} to review and edit.
+    </p>
+    ${infoBox(`
+      <strong>Subject:</strong>&nbsp;${esc(opts.subject)}<br>
+      <strong>Files:</strong>&nbsp;${opts.fileCount} file${opts.fileCount !== 1 ? 's' : ''} (${sizeLabel})<br>
+      <strong>From:</strong>&nbsp;${esc(opts.senderName)}
+      ${opts.message ? `<br><strong>Message:</strong>&nbsp;${esc(opts.message)}` : ''}
+    `)}
+    <p style="margin:0 0 4px;font-size:15px;color:#334155;line-height:1.6;">
+      Download the files, make your edits, then upload your completed work back through your inbox.
+    </p>
+    ${btn('Go to My Inbox →', link)}
+    <p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">
+      Files are stored securely and will expire after 60 days.
+    </p>`
+
+  await sendEmail({
+    to:      opts.toEmail,
+    subject: `[${APP}] New transfer from ${esc(opts.senderName)}: ${esc(opts.subject)}`,
+    html:    layout(`${opts.senderName} sent you ${opts.fileCount} file${opts.fileCount !== 1 ? 's' : ''} on ${APP}.`, body),
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 3. Admin Purge Alert — batch summary sent to all admins after cron purge
 // ─────────────────────────────────────────────────────────────────────────────
 export async function sendAdminPurgeAlert(

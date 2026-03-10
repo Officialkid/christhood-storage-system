@@ -34,6 +34,8 @@ export type LogAction =
   | 'USER_CREATED'
   | 'USER_LOGIN'
   | 'ROLE_CHANGED'
+  // File Transfer system
+  | 'TRANSFER_SENT'
   // Legacy aliases (kept for backward compat)
   | 'MEDIA_UPLOADED'
   | 'MEDIA_DOWNLOADED'

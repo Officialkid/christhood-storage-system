@@ -21,6 +21,7 @@ export type NotificationCategory =
   | 'WEEKLY_DIGEST'
   | 'FILE_PUBLISHED_ALERT'
   | 'STORAGE_THRESHOLD_ALERT'
+  | 'TRANSFER_RECEIVED'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // createInAppNotification
