@@ -39,7 +39,10 @@ export function Sidebar() {
 
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed')
-    if (saved === 'true') setCollapsed(true)
+    const isMobile = window.innerWidth < 768
+    // On mobile, always start collapsed regardless of saved preference.
+    // On desktop, respect the saved preference.
+    if (saved === 'true' || isMobile) setCollapsed(true)
     setMounted(true)
   }, [])
 

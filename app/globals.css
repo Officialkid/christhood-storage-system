@@ -2,9 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* App is always dark-mode. Set the baseline text/background to match slate-950 dark theme
+   so elements that don't have an explicit Tailwind text colour still render legibly. */
 :root {
-  --foreground-rgb: 15, 23, 42;
-  --background-rgb: 248, 250, 252;
+  --foreground-rgb: 226, 232, 240;   /* slate-200 — readable on dark bg  */
+  --background-rgb:  15,  23,  42;   /* slate-900 — dark baseline */
 }
 
 body {
