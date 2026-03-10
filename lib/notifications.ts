@@ -23,6 +23,8 @@ export type NotificationCategory =
   | 'STORAGE_THRESHOLD_ALERT'
   | 'TRANSFER_RECEIVED'
   | 'TRANSFER_RESPONDED'
+  | 'TRANSFER_COMPLETED'
+  | 'TRANSFER_CANCELLED'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // createInAppNotification
