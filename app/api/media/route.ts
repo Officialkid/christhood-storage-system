@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getPresignedDownloadUrl } from '@/lib/r2'
 import { log } from '@/lib/activityLog'
+import type { FileStatus } from '@prisma/client'
 
 /**
  * GET /api/media
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
 
   const isAdmin    = session.user.role === 'ADMIN'
   // Non-admins must not see DELETED or PURGED files
-  const statusFilter = { notIn: (isAdmin ? ['PURGED'] : ['PURGED', 'DELETED']) as string[] }
+  const statusFilter = { notIn: (isAdmin ? ['PURGED'] : ['PURGED', 'DELETED']) as FileStatus[] }
 
   const [items, total] = await Promise.all([
     prisma.mediaFile.findMany({
