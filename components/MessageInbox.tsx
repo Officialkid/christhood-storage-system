@@ -260,7 +260,7 @@ function MessageDetail({
 
 // ─── Main inbox component ─────────────────────────────────────────────────────
 
-export function MessageInbox() {
+export function MessageInbox({ className }: { className?: string }) {
   const [messages,     setMessages]     = useState<InboxMessage[]>([])
   const [loading,      setLoading]      = useState(true)
   const [selectedId,   setSelectedId]   = useState<string | null>(null)
@@ -309,7 +309,7 @@ export function MessageInbox() {
   const unreadCount     = messages.filter((m) => !m.read).length
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] rounded-2xl overflow-hidden border border-slate-800/70 bg-slate-900">
+    <div className={className ?? 'flex h-[calc(100vh-8rem)] rounded-2xl overflow-hidden border border-slate-800/70 bg-slate-900'}>
 
       {/* ── Left: Inbox list ────────────────────────────────────────────── */}
       <div className={`flex flex-col border-r border-slate-800/70 bg-slate-900

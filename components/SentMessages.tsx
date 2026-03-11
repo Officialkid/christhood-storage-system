@@ -291,7 +291,7 @@ function ReceiptsPanel({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function SentMessages() {
+export function SentMessages({ className }: { className?: string }) {
   const [messages,    setMessages]    = useState<SentMessage[]>([])
   const [loading,     setLoading]     = useState(true)
   const [selectedId,  setSelectedId]  = useState<string | null>(null)
@@ -330,7 +330,7 @@ export function SentMessages() {
   const selectedMessage = messages.find((m) => m.id === selectedId) ?? null
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] rounded-2xl overflow-hidden border border-slate-800/70 bg-slate-900">
+    <div className={className ?? 'flex h-[calc(100vh-8rem)] rounded-2xl overflow-hidden border border-slate-800/70 bg-slate-900'}>
 
       {/* ── Left: Sent list ─────────────────────────────────────────────── */}
       <div className={`flex flex-col border-r border-slate-800/70 bg-slate-900

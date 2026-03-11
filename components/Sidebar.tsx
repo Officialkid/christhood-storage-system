@@ -7,30 +7,26 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
-  Send, Inbox, MailOpen, MessageSquarePlus, MessageSquare, MailCheck,
+  Send, Inbox, MailOpen, MessageSquarePlus, MessageSquare, MailCheck, MessagesSquare,
 } from 'lucide-react'
 import { useSidebar } from './DashboardShell'
 
 type NavItem = { label: string; href: string; icon: React.ElementType; badge?: boolean }
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard',     href: '/dashboard',        icon: LayoutDashboard },
-  { label: 'Media',         href: '/media',            icon: Image           },
-  { label: 'Upload',        href: '/upload',           icon: Upload          },
-  { label: 'Events',        href: '/events',           icon: CalendarDays    },
-  { label: 'Search',        href: '/search',           icon: Search          },
-  { label: 'Messages',      href: '/messages/inbox',   icon: MessageSquare, badge: true },
-  { label: 'My Inbox',      href: '/transfers/inbox',  icon: Inbox           },
-  { label: 'Notifications', href: '/notifications',    icon: Bell            },
-  { label: 'User Guide',    href: '/docs',             icon: BookOpen        },
+  { label: 'Dashboard',      href: '/dashboard',        icon: LayoutDashboard },
+  { label: 'Media',          href: '/media',            icon: Image           },
+  { label: 'Upload',         href: '/upload',           icon: Upload          },
+  { label: 'Events',         href: '/events',           icon: CalendarDays    },
+  { label: 'Search',         href: '/search',           icon: Search          },
+  { label: 'Communications', href: '/communications',   icon: MessagesSquare, badge: true },
+  { label: 'Notifications',  href: '/notifications',    icon: Bell            },
+  { label: 'User Guide',     href: '/docs',             icon: BookOpen        },
 ]
 
 const adminItems = [
   { label: 'User Management', href: '/admin/users',     icon: Shield              },
-  { label: 'File Transfers',  href: '/transfers/new',   icon: Send                },
-  { label: 'Sent Transfers',  href: '/transfers/sent',  icon: MailOpen            },
-  { label: 'Messages',        href: '/messages/new',    icon: MessageSquarePlus   },
-  { label: 'Sent Messages',   href: '/messages/sent',   icon: MailCheck            },
+
   { label: 'Hierarchy',       href: '/admin/hierarchy', icon: Network             },
   { label: 'Activity Log',    href: '/admin/logs',      icon: ScrollText          },
   { label: 'Trash',           href: '/admin/trash',     icon: Trash2              },
@@ -46,7 +42,8 @@ export function Sidebar() {
 
   const [collapsed,  setCollapsed]  = useState(false)
   const [mounted,    setMounted]    = useState(false)
-  const [msgUnread,  setMsgUnread]  = useState(0)
+  const [commsCount, setCommsCount] = useState(0)
+  const [commsUrgent, setCommsUrgent] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed')
@@ -54,28 +51,28 @@ export function Sidebar() {
     setMounted(true)
   }, [])
 
-  // Poll message unread count for the nav badge
-  const refreshMsgCount = useCallback(async () => {
+  // Poll combined Communications badge count
+  const refreshCommsCount = useCallback(async () => {
     try {
-      const res  = await fetch('/api/messages/inbox')
+      const res  = await fetch('/api/communications/counts')
       if (!res.ok) return
-      const json = await res.json()
-      const msgs = (json.messages ?? []) as { read: boolean }[]
-      setMsgUnread(msgs.filter((m) => !m.read).length)
+      const data = await res.json()
+      setCommsCount((data.transfersCount ?? 0) + (data.messagesCount ?? 0))
+      setCommsUrgent(data.hasUrgent ?? false)
     } catch { /* ignore */ }
   }, [])
 
   useEffect(() => {
-    refreshMsgCount()
-    const id = setInterval(refreshMsgCount, 60_000)
+    refreshCommsCount()
+    const id = setInterval(refreshCommsCount, 60_000)
     return () => clearInterval(id)
-  }, [refreshMsgCount])
+  }, [refreshCommsCount])
 
   useEffect(() => {
-    const handler = () => refreshMsgCount()
+    const handler = () => refreshCommsCount()
     window.addEventListener('messagemarkedread', handler)
     return () => window.removeEventListener('messagemarkedread', handler)
-  }, [refreshMsgCount])
+  }, [refreshCommsCount])
 
   const toggle = () => {
     setCollapsed(c => {
@@ -142,7 +139,8 @@ export function Sidebar() {
       <nav className={`flex-1 py-4 space-y-0.5 overflow-hidden ${isCollapsed ? 'px-1.5' : 'px-3'}`}>
         {navItems.map(({ label, href, icon: Icon, badge }) => {
           const active       = pathname.startsWith(href)
-          const badgeCount   = badge ? msgUnread : 0
+          const badgeCount   = badge ? commsCount : 0
+          const badgeUrgent  = badge ? commsUrgent : false
           return (
             <Link
               key={href}
@@ -158,16 +156,18 @@ export function Sidebar() {
               <span className="relative shrink-0">
                 <Icon className="w-4 h-4 text-current" />
                 {isCollapsed && badgeCount > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center
-                                   rounded-full bg-indigo-500 px-0.5 text-[9px] font-bold text-white leading-none">
+                  <span className={`absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center
+                                   rounded-full px-0.5 text-[9px] font-bold text-white leading-none
+                                   ${badgeUrgent ? 'bg-red-500' : 'bg-indigo-500'}`}>
                     {badgeCount > 99 ? '99+' : badgeCount}
                   </span>
                 )}
               </span>
               {!isCollapsed && label}
               {!isCollapsed && badgeCount > 0 && (
-                <span className="ml-auto rounded-full bg-indigo-500 px-1.5 py-0.5
-                                 text-[10px] font-bold text-white leading-none">
+                <span className={`ml-auto rounded-full px-1.5 py-0.5
+                                 text-[10px] font-bold text-white leading-none
+                                 ${badgeUrgent ? 'bg-red-500' : 'bg-indigo-500'}`}>
                   {badgeCount > 99 ? '99+' : badgeCount}
                 </span>
               )}
