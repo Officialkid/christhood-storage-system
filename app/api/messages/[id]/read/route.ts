@@ -40,5 +40,11 @@ export async function PATCH(
     })
   }
 
-  return NextResponse.json({ ok: true })
+  // Return updated unread counts so clients can decrement the badge immediately
+  const [msgUnread, notifUnread] = await Promise.all([
+    prisma.messageRecipient.count({ where: { recipientId: session.user.id, read: false } }),
+    prisma.notification.count({ where: { userId: session.user.id, read: false } }),
+  ])
+
+  return NextResponse.json({ ok: true, unreadCount: msgUnread + notifUnread })
 }

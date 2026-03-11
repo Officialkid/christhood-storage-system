@@ -35,6 +35,20 @@ export function NotificationBell() {
     return () => clearInterval(id)
   }, [refreshCount])
 
+  // Refresh immediately when a message is marked read from the inbox
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ unreadCount?: number }>).detail
+      if (typeof detail?.unreadCount === 'number') {
+        setUnreadCount(detail.unreadCount)
+      } else {
+        refreshCount()
+      }
+    }
+    window.addEventListener('messagemarkedread', handler)
+    return () => window.removeEventListener('messagemarkedread', handler)
+  }, [refreshCount])
+
   // Reset unread indicator when panel is opened
   useEffect(() => {
     if (open) {

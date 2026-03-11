@@ -3,20 +3,23 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
-  Send, Inbox, MailOpen, MessageSquarePlus,
+  Send, Inbox, MailOpen, MessageSquarePlus, MessageSquare,
 } from 'lucide-react'
 import { useSidebar } from './DashboardShell'
 
-const navItems = [
+type NavItem = { label: string; href: string; icon: React.ElementType; badge?: boolean }
+
+const navItems: NavItem[] = [
   { label: 'Dashboard',     href: '/dashboard',        icon: LayoutDashboard },
   { label: 'Media',         href: '/media',            icon: Image           },
   { label: 'Upload',        href: '/upload',           icon: Upload          },
   { label: 'Events',        href: '/events',           icon: CalendarDays    },
   { label: 'Search',        href: '/search',           icon: Search          },
+  { label: 'Messages',      href: '/messages/inbox',   icon: MessageSquare, badge: true },
   { label: 'My Inbox',      href: '/transfers/inbox',  icon: Inbox           },
   { label: 'Notifications', href: '/notifications',    icon: Bell            },
   { label: 'User Guide',    href: '/docs',             icon: BookOpen        },
@@ -40,15 +43,38 @@ export function Sidebar() {
   const isAdmin  = data?.user?.role === 'ADMIN'
   const { mobileOpen, closeMobile } = useSidebar()
 
-  // Persist collapsed state across page navigations (desktop only)
-  const [collapsed, setCollapsed] = useState(false)
-  const [mounted,   setMounted]   = useState(false)
+  const [collapsed,  setCollapsed]  = useState(false)
+  const [mounted,    setMounted]    = useState(false)
+  const [msgUnread,  setMsgUnread]  = useState(0)
 
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed')
     if (saved === 'true') setCollapsed(true)
     setMounted(true)
   }, [])
+
+  // Poll message unread count for the nav badge
+  const refreshMsgCount = useCallback(async () => {
+    try {
+      const res  = await fetch('/api/messages/inbox')
+      if (!res.ok) return
+      const json = await res.json()
+      const msgs = (json.messages ?? []) as { read: boolean }[]
+      setMsgUnread(msgs.filter((m) => !m.read).length)
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => {
+    refreshMsgCount()
+    const id = setInterval(refreshMsgCount, 60_000)
+    return () => clearInterval(id)
+  }, [refreshMsgCount])
+
+  useEffect(() => {
+    const handler = () => refreshMsgCount()
+    window.addEventListener('messagemarkedread', handler)
+    return () => window.removeEventListener('messagemarkedread', handler)
+  }, [refreshMsgCount])
 
   const toggle = () => {
     setCollapsed(c => {
@@ -113,8 +139,9 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className={`flex-1 py-4 space-y-0.5 overflow-hidden ${isCollapsed ? 'px-1.5' : 'px-3'}`}>
-        {navItems.map(({ label, href, icon: Icon }) => {
-          const active = pathname.startsWith(href)
+        {navItems.map(({ label, href, icon: Icon, badge }) => {
+          const active       = pathname.startsWith(href)
+          const badgeCount   = badge ? msgUnread : 0
           return (
             <Link
               key={href}
@@ -127,8 +154,22 @@ export function Sidebar() {
                   : 'text-slate-200 hover:bg-slate-800/70 hover:text-white'
                 }`}
             >
-              <Icon className="w-4 h-4 shrink-0 text-current" />
+              <span className="relative shrink-0">
+                <Icon className="w-4 h-4 text-current" />
+                {isCollapsed && badgeCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center
+                                   rounded-full bg-indigo-500 px-0.5 text-[9px] font-bold text-white leading-none">
+                    {badgeCount > 99 ? '99+' : badgeCount}
+                  </span>
+                )}
+              </span>
               {!isCollapsed && label}
+              {!isCollapsed && badgeCount > 0 && (
+                <span className="ml-auto rounded-full bg-indigo-500 px-1.5 py-0.5
+                                 text-[10px] font-bold text-white leading-none">
+                  {badgeCount > 99 ? '99+' : badgeCount}
+                </span>
+              )}
             </Link>
           )
         })}
