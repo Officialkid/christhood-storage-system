@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter }            from 'next/navigation'
@@ -11,8 +11,10 @@ import { SentTransfersList }     from './SentTransfersList'
 import type { SentTransferItem } from './SentTransfersList'
 import { MessageInbox }          from './MessageInbox'
 import { SentMessages }          from './SentMessages'
+import { useUnreadCount }        from '@/hooks/useUnreadCount'
+import { CommsBadge }            from './CommsBadge'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type MainTab         = 'transfers' | 'messages'
 type TransferSubTab  = 'inbox' | 'sent'
@@ -36,20 +38,22 @@ interface Props {
   isAdmin:    boolean
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function CommunicationsHub({ initialTab, isAdmin }: Props) {
   const router = useRouter()
 
-  const [activeTab,       setActiveTab]       = useState<MainTab>(initialTab)
-  const [transferSubTab,  setTransferSubTab]  = useState<TransferSubTab>('inbox')
-  const [msgSubTab,       setMsgSubTab]       = useState<MessageSubTab>(isAdmin ? 'sent' : 'inbox')
+  const [activeTab,      setActiveTab]      = useState<MainTab>(initialTab)
+  const [transferSubTab, setTransferSubTab] = useState<TransferSubTab>('inbox')
+  const [msgSubTab,      setMsgSubTab]      = useState<MessageSubTab>(isAdmin ? 'sent' : 'inbox')
 
-  // Badge counts (polled every 60 s)
-  const [transfersBadge,  setTransfersBadge]  = useState(0)
-  const [messagesBadge,   setMessagesBadge]   = useState(0)
-  const [hasUrgent,       setHasUrgent]       = useState(false)
-  const [totalTransfers,  setTotalTransfers]  = useState<number | null>(null)
+  // â”€â”€ Shared unread counts via the centralised hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // baseTitle is null here â€” the Sidebar instance owns the document.title update
+  const { transfers: transfersBadge, messages: messagesBadge, urgent: hasUrgent } =
+    useUnreadCount({ baseTitle: null })
+
+  // Derive total transfers for the unified empty state
+  const [totalTransfers, setTotalTransfers] = useState<number | null>(null)
 
   // Transfer inbox data (received)
   const [receivedTransfers, setReceivedTransfers] = useState<ReceivedTransferItem[]>([])
@@ -61,33 +65,7 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
   const [sentLoading,   setSentLoading]   = useState(false)
   const [sentFetched,   setSentFetched]   = useState(false)
 
-  // ─── Counts polling ─────────────────────────────────────────────────────────
-
-  const fetchCounts = useCallback(async () => {
-    try {
-      const res = await fetch('/api/communications/counts')
-      if (!res.ok) return
-      const data = await res.json()
-      setTransfersBadge(data.transfersCount  ?? 0)
-      setMessagesBadge (data.messagesCount   ?? 0)
-      setHasUrgent     (data.hasUrgent       ?? false)
-      setTotalTransfers(data.totalTransfers  ?? 0)
-    } catch { /* ignore */ }
-  }, [])
-
-  useEffect(() => {
-    fetchCounts()
-    const id = setInterval(fetchCounts, 60_000)
-    return () => clearInterval(id)
-  }, [fetchCounts])
-
-  useEffect(() => {
-    const handler = () => fetchCounts()
-    window.addEventListener('messagemarkedread', handler)
-    return () => window.removeEventListener('messagemarkedread', handler)
-  }, [fetchCounts])
-
-  // ─── Transfer data loading (lazy) ───────────────────────────────────────────
+  // â”€â”€â”€ Transfer data loading (lazy) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const loadReceived = useCallback(async () => {
     if (receivedFetched) return
@@ -96,12 +74,14 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
       const res  = await fetch('/api/transfers/inbox')
       if (!res.ok) return
       const data = await res.json()
-      setReceivedTransfers(data.transfers ?? [])
+      const list = (data.transfers ?? []) as ReceivedTransferItem[]
+      setReceivedTransfers(list)
+      if (!isAdmin) setTotalTransfers(list.length)
     } catch { /* ignore */ } finally {
       setReceivedLoading(false)
       setReceivedFetched(true)
     }
-  }, [receivedFetched])
+  }, [receivedFetched, isAdmin])
 
   const loadSent = useCallback(async () => {
     if (sentFetched) return
@@ -127,14 +107,14 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
     }
   }, [activeTab, isAdmin, transferSubTab, loadReceived, loadSent])
 
-  // ─── Tab switching ───────────────────────────────────────────────────────────
+  // â”€â”€â”€ Tab switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const switchTab = (tab: MainTab) => {
     setActiveTab(tab)
     router.replace(`/communications/${tab}`, { scroll: false })
   }
 
-  // ─── Unified empty state for non-admin ──────────────────────────────────────
+  // â”€â”€â”€ Unified empty state for non-admin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const isUnifiedEmpty =
     !isAdmin &&
@@ -150,7 +130,7 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
     <div className="flex h-[calc(100vh-8rem)] flex-col rounded-2xl overflow-hidden
                     border border-slate-800/70 bg-slate-900">
 
-      {/* ── Main tab bar ────────────────────────────────────────────────── */}
+      {/* â”€â”€ Main tab bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="shrink-0 flex items-center justify-between gap-2
                       px-3 py-2 border-b border-slate-800/70 bg-slate-950/60">
 
@@ -160,24 +140,20 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
             onClick={() => switchTab('transfers')}
             label="Transfers"
             icon={<FolderInput className="w-4 h-4" />}
-            badge={transfersBadge}
-            badgeCls="bg-amber-500/20 text-amber-300 border border-amber-500/30"
-          />
+          >
+            <CommsBadge count={transfersBadge} />
+          </TabBtn>
           <TabBtn
             active={activeTab === 'messages'}
             onClick={() => switchTab('messages')}
             label="Messages"
             icon={<MessageSquare className="w-4 h-4" />}
-            badge={messagesBadge}
-            badgeCls={
-              hasUrgent
-                ? 'bg-red-500/20 text-red-300 border border-red-500/30'
-                : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-            }
-          />
+          >
+            <CommsBadge count={messagesBadge} urgent={hasUrgent} />
+          </TabBtn>
         </div>
 
-        {/* Action button visible to admin only */}
+        {/* Action button â€” admin only */}
         {isAdmin && (
           <Link
             href={activeTab === 'transfers' ? '/transfers/new' : '/messages/new'}
@@ -200,7 +176,7 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
         )}
       </div>
 
-      {/* ── Content area ────────────────────────────────────────────────── */}
+      {/* â”€â”€ Content area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
 
         {isUnifiedEmpty ? (
@@ -237,7 +213,7 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
   )
 }
 
-// ─── Transfers tab ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Transfers tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function TransferTabContent({
   isAdmin, subTab, setSubTab,
@@ -268,7 +244,7 @@ function TransferTabContent({
             active={subTab === 'sent'}
             onClick={() => setSubTab('sent')}
             label="Sent"
-            badge={transfersBadge > 0 && subTab !== 'sent' ? transfersBadge : undefined}
+            badge={subTab !== 'sent' ? transfersBadge : 0}
           />
         </div>
       )}
@@ -288,7 +264,7 @@ function TransferTabContent({
   )
 }
 
-// ─── Messages tab ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Messages tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function MessageTabContent({
   isAdmin, subTab, setSubTab,
@@ -310,11 +286,8 @@ function MessageTabContent({
             active={subTab === 'inbox'}
             onClick={() => setSubTab('inbox')}
             label="Inbox"
-            badge={
-              messagesBadge > 0 && subTab !== 'inbox'
-                ? messagesBadge
-                : undefined
-            }
+            badge={subTab !== 'inbox' ? messagesBadge : 0}
+            urgent={subTab !== 'inbox' ? hasUrgent : false}
           />
           <SubTabBtn
             active={subTab === 'sent'}
@@ -336,17 +309,16 @@ function MessageTabContent({
   )
 }
 
-// ─── Shared mini-components ───────────────────────────────────────────────────
+// â”€â”€â”€ Shared mini-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function TabBtn({
-  active, onClick, label, icon, badge, badgeCls,
+  active, onClick, label, icon, children,
 }: {
-  active:   boolean
-  onClick:  () => void
-  label:    string
-  icon:     React.ReactNode
-  badge:    number
-  badgeCls: string
+  active:    boolean
+  onClick:   () => void
+  label:     string
+  icon:      React.ReactNode
+  children?: React.ReactNode
 }) {
   return (
     <button
@@ -359,22 +331,19 @@ function TabBtn({
     >
       {icon}
       <span className="hidden sm:inline">{label}</span>
-      {badge > 0 && (
-        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none border ${badgeCls}`}>
-          {badge > 99 ? '99+' : badge}
-        </span>
-      )}
+      {children}
     </button>
   )
 }
 
 function SubTabBtn({
-  active, onClick, label, badge,
+  active, onClick, label, badge = 0, urgent = false,
 }: {
-  active:  boolean
-  onClick: () => void
-  label:   string
-  badge?:  number
+  active:   boolean
+  onClick:  () => void
+  label:    string
+  badge?:   number
+  urgent?:  boolean
 }) {
   return (
     <button
@@ -386,12 +355,7 @@ function SubTabBtn({
         }`}
     >
       {label}
-      {badge != null && badge > 0 && (
-        <span className="rounded-full bg-indigo-500/20 text-indigo-300
-                         px-1.5 py-0.5 text-[9px] font-bold leading-none">
-          {badge > 99 ? '99+' : badge}
-        </span>
-      )}
+      <CommsBadge count={badge} urgent={urgent} />
     </button>
   )
 }
@@ -399,7 +363,7 @@ function SubTabBtn({
 function LoadingSpinner() {
   return (
     <div className="flex items-center justify-center py-16 text-slate-500 text-sm">
-      Loading…
+      Loadingâ€¦
     </div>
   )
 }

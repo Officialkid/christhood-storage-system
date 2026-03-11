@@ -3,11 +3,12 @@
 import Link                 from 'next/link'
 import { usePathname }      from 'next/navigation'
 import { useSession }       from 'next-auth/react'
-import { useState, useEffect, useCallback } from 'react'
 import {
   LayoutDashboard, Image, MessagesSquare, Bell, Menu,
 } from 'lucide-react'
 import { useSidebar }       from './DashboardShell'
+import { useUnreadCount }   from '@/hooks/useUnreadCount'
+import { CommsBadgeSmall }  from './CommsBadge'
 
 /**
  * MobileBottomNav — fixed bottom navigation bar visible only on mobile devices (< md breakpoint).
@@ -15,35 +16,13 @@ import { useSidebar }       from './DashboardShell'
  * with a combined badge showing unread messages + pending transfers.
  */
 export function MobileBottomNav() {
-  const pathname             = usePathname()
-  const { data: session }    = useSession()
-  const { toggleMobile }     = useSidebar()
+  const pathname          = usePathname()
+  const { data: session } = useSession()
+  const { toggleMobile }  = useSidebar()
 
-  const [badge,    setBadge]    = useState(0)
-  const [hasUrgent, setHasUrgent] = useState(false)
-
-  const fetchCounts = useCallback(async () => {
-    if (!session?.user?.id) return
-    try {
-      const res  = await fetch('/api/communications/counts')
-      if (!res.ok) return
-      const data = await res.json()
-      setBadge((data.transfersCount ?? 0) + (data.messagesCount ?? 0))
-      setHasUrgent(data.hasUrgent ?? false)
-    } catch { /* ignore */ }
-  }, [session?.user?.id])
-
-  useEffect(() => {
-    fetchCounts()
-    const id = setInterval(fetchCounts, 60_000)
-    return () => clearInterval(id)
-  }, [fetchCounts])
-
-  useEffect(() => {
-    const handler = () => fetchCounts()
-    window.addEventListener('messagemarkedread', handler)
-    return () => window.removeEventListener('messagemarkedread', handler)
-  }, [fetchCounts])
+  const { total: badge, urgent: hasUrgent } = useUnreadCount({
+    skip: !session?.user?.id,
+  })
 
   const isComms = pathname.startsWith('/communications') ||
                   pathname.startsWith('/transfers')       ||
@@ -85,13 +64,7 @@ export function MobileBottomNav() {
       >
         <span className="relative">
           <MessagesSquare className="w-5 h-5" />
-          {badge > 0 && (
-            <span className={`absolute -top-1.5 -right-2 flex h-4 min-w-4 items-center justify-center
-                              rounded-full px-0.5 text-[9px] font-bold text-white leading-none
-                              ${hasUrgent ? 'bg-red-500' : 'bg-indigo-500'}`}>
-              {badge > 99 ? '99+' : badge}
-            </span>
-          )}
+          <CommsBadgeSmall count={badge} urgent={hasUrgent} />
         </span>
         <span>Comms</span>
       </Link>

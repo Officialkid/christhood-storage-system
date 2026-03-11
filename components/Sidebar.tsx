@@ -3,13 +3,15 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
-  Send, Inbox, MailOpen, MessageSquarePlus, MessageSquare, MailCheck, MessagesSquare,
+  MessagesSquare,
 } from 'lucide-react'
-import { useSidebar } from './DashboardShell'
+import { useSidebar }       from './DashboardShell'
+import { useUnreadCount }   from '@/hooks/useUnreadCount'
+import { CommsBadge, CommsBadgeSmall } from './CommsBadge'
 
 type NavItem = { label: string; href: string; icon: React.ElementType; badge?: boolean }
 
@@ -40,39 +42,19 @@ export function Sidebar() {
   const isAdmin  = data?.user?.role === 'ADMIN'
   const { mobileOpen, closeMobile } = useSidebar()
 
-  const [collapsed,  setCollapsed]  = useState(false)
-  const [mounted,    setMounted]    = useState(false)
-  const [commsCount, setCommsCount] = useState(0)
-  const [commsUrgent, setCommsUrgent] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const [mounted,   setMounted]   = useState(false)
+
+  const { total: commsCount, urgent: commsUrgent } = useUnreadCount({
+    baseTitle: 'Christhood CMMS',
+    skip:      !data?.user?.id,
+  })
 
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed')
     if (saved === 'true') setCollapsed(true)
     setMounted(true)
   }, [])
-
-  // Poll combined Communications badge count
-  const refreshCommsCount = useCallback(async () => {
-    try {
-      const res  = await fetch('/api/communications/counts')
-      if (!res.ok) return
-      const data = await res.json()
-      setCommsCount((data.transfersCount ?? 0) + (data.messagesCount ?? 0))
-      setCommsUrgent(data.hasUrgent ?? false)
-    } catch { /* ignore */ }
-  }, [])
-
-  useEffect(() => {
-    refreshCommsCount()
-    const id = setInterval(refreshCommsCount, 60_000)
-    return () => clearInterval(id)
-  }, [refreshCommsCount])
-
-  useEffect(() => {
-    const handler = () => refreshCommsCount()
-    window.addEventListener('messagemarkedread', handler)
-    return () => window.removeEventListener('messagemarkedread', handler)
-  }, [refreshCommsCount])
 
   const toggle = () => {
     setCollapsed(c => {
@@ -155,21 +137,13 @@ export function Sidebar() {
             >
               <span className="relative shrink-0">
                 <Icon className="w-4 h-4 text-current" />
-                {isCollapsed && badgeCount > 0 && (
-                  <span className={`absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center
-                                   rounded-full px-0.5 text-[9px] font-bold text-white leading-none
-                                   ${badgeUrgent ? 'bg-red-500' : 'bg-indigo-500'}`}>
-                    {badgeCount > 99 ? '99+' : badgeCount}
-                  </span>
+                {isCollapsed && (
+                  <CommsBadgeSmall count={badgeCount} urgent={badgeUrgent} />
                 )}
               </span>
               {!isCollapsed && label}
-              {!isCollapsed && badgeCount > 0 && (
-                <span className={`ml-auto rounded-full px-1.5 py-0.5
-                                 text-[10px] font-bold text-white leading-none
-                                 ${badgeUrgent ? 'bg-red-500' : 'bg-indigo-500'}`}>
-                  {badgeCount > 99 ? '99+' : badgeCount}
-                </span>
+              {!isCollapsed && (
+                <CommsBadge count={badgeCount} urgent={badgeUrgent} className="ml-auto" />
               )}
             </Link>
           )
