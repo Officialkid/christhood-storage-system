@@ -25,6 +25,7 @@ export type NotificationCategory =
   | 'TRANSFER_RESPONDED'
   | 'TRANSFER_COMPLETED'
   | 'TRANSFER_CANCELLED'
+  | 'DIRECT_MESSAGE'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // createInAppNotification
@@ -275,5 +276,32 @@ export async function notifyFilePublished(opts: {
     }, link)
   } catch (err) {
     console.error('[notifications] notifyFilePublished failed:', err)
+  }
+}
+
+/**
+ * Called when an admin sends a direct or broadcast message.
+ * Creates in-app notifications + push for all recipients.
+ */
+export async function notifyDirectMessage(opts: {
+  messageId:    string
+  senderName:   string
+  subject:      string
+  priority:     'NORMAL' | 'URGENT'
+  recipientIds: string[]
+}): Promise<void> {
+  try {
+    const link    = `${APP_URL}/messages/${opts.messageId}`
+    const preview = opts.subject.length > 80 ? opts.subject.slice(0, 80) + '…' : opts.subject
+    const msgText = `${opts.senderName}: ${preview}`
+
+    await notifyManyUsers(opts.recipientIds, 'DIRECT_MESSAGE', msgText, {
+      title: opts.priority === 'URGENT' ? '🔴 Urgent Message' : '📬 New Message',
+      body:  msgText,
+      url:   link,
+      tag:   `message-${opts.messageId}`,
+    }, link)
+  } catch (err) {
+    console.error('[notifications] notifyDirectMessage failed:', err)
   }
 }

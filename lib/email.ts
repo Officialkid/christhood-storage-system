@@ -518,3 +518,38 @@ export async function sendTransferRespondedEmail(opts: {
     html:    layout(`${opts.recipientName} sent back ${opts.fileCount} file${opts.fileCount !== 1 ? 's' : ''} for your transfer.`, body),
   })
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. Urgent Direct Message — sent immediately when priority = URGENT
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sendUrgentMessageEmail(opts: {
+  toEmail:    string
+  toName:     string
+  senderName: string
+  subject:    string
+  body:       string
+  messageId:  string
+}): Promise<void> {
+  const link    = `${APP_URL}/messages/${opts.messageId}`
+  const preview = opts.body.length > 160 ? opts.body.slice(0, 160) + '…' : opts.body
+
+  const emailBody = `
+    <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#dc2626;text-transform:uppercase;letter-spacing:0.6px;">🔴 Urgent Message</p>
+    <h1 style="margin:0 0 18px;font-size:26px;font-weight:700;color:#0f172a;line-height:1.2;">${esc(opts.subject)}</h1>
+    <p style="margin:0 0 14px;font-size:15px;color:#334155;line-height:1.6;">
+      Hi <strong>${esc(opts.toName)}</strong>, you have received an urgent message from
+      <strong>${esc(opts.senderName)}</strong>.
+    </p>
+    ${infoBox(`<p style="margin:0;white-space:pre-line;">${esc(preview)}</p>`)}
+    ${btn('Read Full Message →', link)}
+    <p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">
+      This message was marked <strong>Urgent</strong> by the sender and delivered immediately
+      regardless of your notification preferences.
+    </p>`
+
+  await sendEmail({
+    to:      opts.toEmail,
+    subject: `[URGENT] ${esc(opts.subject)} — ${APP}`,
+    html:    layout(`Urgent message from ${opts.senderName}: ${opts.subject}`, emailBody),
+  })
+}
