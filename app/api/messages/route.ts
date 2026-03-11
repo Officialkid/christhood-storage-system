@@ -3,8 +3,7 @@ import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { log }                       from '@/lib/activityLog'
-import { notifyDirectMessage }       from '@/lib/notifications'
-import { sendUrgentMessageEmail }    from '@/lib/email'
+import { deliverMessage }            from '@/lib/messageDelivery'
 
 /**
  * POST /api/messages
@@ -129,36 +128,8 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  // ── Notifications (fire-and-forget) ──────────────────────────────────────
-  const senderName = session.user.name ?? session.user.username ?? 'Admin'
-
-  void notifyDirectMessage({
-    messageId:    message.id,
-    senderName,
-    subject:      subject.trim(),
-    priority:     resolvedPriority,
-    recipientIds: targetUserIds,
-  })
-
-  // For URGENT: send email to every recipient immediately
-  if (resolvedPriority === 'URGENT') {
-    const recipients = await prisma.user.findMany({
-      where:  { id: { in: targetUserIds } },
-      select: { email: true, username: true, name: true },
-    })
-    void Promise.all(
-      recipients.map((u) =>
-        sendUrgentMessageEmail({
-          toEmail:    u.email,
-          toName:     u.username ?? u.name ?? u.email,
-          senderName,
-          subject:    subject.trim(),
-          body:       msgBody.trim(),
-          messageId:  message.id,
-        }),
-      ),
-    )
-  }
+  // ── Delivery: push + email per recipient preferences (fire-and-forget) ───
+  void deliverMessage(message.id)
 
   return NextResponse.json({ id: message.id, recipientCount: targetUserIds.length })
 }

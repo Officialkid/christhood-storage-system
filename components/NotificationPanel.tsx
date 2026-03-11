@@ -3,14 +3,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
-import { X, Bell, CheckCheck } from 'lucide-react'
+import { X, Bell, CheckCheck, MessageSquare } from 'lucide-react'
 
 interface NotificationItem {
-  id:        string
-  message:   string
-  link:      string | null
-  read:      boolean
-  createdAt: string
+  id:          string
+  itemType:    'notification' | 'message'
+  message:     string
+  subject?:    string
+  senderName?: string
+  priority?:   'NORMAL' | 'URGENT'
+  link:        string | null
+  read:        boolean
+  createdAt:   string
 }
 
 interface Props {
@@ -45,9 +49,13 @@ export function NotificationPanel({ onClose }: Props) {
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [onClose])
 
-  async function markRead(id: string) {
-    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
-    await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' })
+  async function markRead(item: NotificationItem) {
+    setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)))
+    if (item.itemType === 'message') {
+      await fetch(`/api/messages/${item.id}/read`, { method: 'PATCH' })
+    } else {
+      await fetch(`/api/notifications/${item.id}/read`, { method: 'PATCH' })
+    }
   }
 
   async function markAllRead() {
@@ -110,17 +118,37 @@ export function NotificationPanel({ onClose }: Props) {
         )}
 
         {!loading && items.map((n) => {
+          const isUrgentMsg  = n.itemType === 'message' && n.priority === 'URGENT'
+          const dotColor     = n.read ? 'bg-transparent' : isUrgentMsg ? 'bg-red-400' : 'bg-indigo-400'
+          const rowBg        = n.read
+            ? 'hover:bg-slate-800/40'
+            : isUrgentMsg
+              ? 'bg-red-950/20 hover:bg-red-950/30'
+              : 'bg-indigo-950/30 hover:bg-indigo-950/50'
+
           const inner = (
             <div
-              className={`flex gap-3 px-4 py-3 border-b border-slate-800/60 transition-colors cursor-pointer
-                          ${n.read ? 'hover:bg-slate-800/40' : 'bg-indigo-950/30 hover:bg-indigo-950/50'}`}
-              onClick={() => { if (!n.read) markRead(n.id) }}
+              className={`flex gap-3 px-4 py-3 border-b border-slate-800/60 transition-colors cursor-pointer ${rowBg}`}
+              onClick={() => { if (!n.read) markRead(n) }}
             >
-              {/* Unread dot */}
+              {/* Unread indicator dot */}
               <div className="mt-1.5 shrink-0">
-                <div className={`w-2 h-2 rounded-full ${n.read ? 'bg-transparent' : 'bg-indigo-400'}`} />
+                <div className={`w-2 h-2 rounded-full ${dotColor}`} />
               </div>
+
               <div className="flex-1 min-w-0">
+                {/* Message-type tag row */}
+                {n.itemType === 'message' && (
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <MessageSquare className="w-3 h-3 text-slate-500 shrink-0" />
+                    <span className={`text-[10px] font-semibold uppercase tracking-wide ${
+                      isUrgentMsg ? 'text-red-400' : 'text-indigo-400'
+                    }`}>
+                      {isUrgentMsg ? 'Urgent Message' : 'Message'}
+                    </span>
+                  </div>
+                )}
+
                 <p className={`text-sm leading-snug ${n.read ? 'text-slate-400' : 'text-white'}`}>
                   {n.message}
                 </p>
@@ -132,11 +160,11 @@ export function NotificationPanel({ onClose }: Props) {
           )
 
           return n.link ? (
-            <Link key={n.id} href={n.link} onClick={() => { markRead(n.id); onClose() }}>
+            <Link key={`${n.itemType}-${n.id}`} href={n.link} onClick={() => { markRead(n); onClose() }}>
               {inner}
             </Link>
           ) : (
-            <div key={n.id}>{inner}</div>
+            <div key={`${n.itemType}-${n.id}`}>{inner}</div>
           )
         })}
       </div>

@@ -522,6 +522,7 @@ export async function sendTransferRespondedEmail(opts: {
 // ─────────────────────────────────────────────────────────────────────────────
 // 9. Urgent Direct Message — sent immediately when priority = URGENT
 // ─────────────────────────────────────────────────────────────────────────────
+/** @deprecated Use sendMessageEmail which handles both NORMAL and URGENT. */
 export async function sendUrgentMessageEmail(opts: {
   toEmail:    string
   toName:     string
@@ -530,26 +531,76 @@ export async function sendUrgentMessageEmail(opts: {
   body:       string
   messageId:  string
 }): Promise<void> {
-  const link    = `${APP_URL}/messages/${opts.messageId}`
-  const preview = opts.body.length > 160 ? opts.body.slice(0, 160) + '…' : opts.body
+  return sendMessageEmail({ ...opts, priority: 'URGENT', attachmentTransfer: null })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. Internal Message — branded email for both NORMAL and URGENT messages
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sendMessageEmail(opts: {
+  toEmail:             string
+  toName:              string
+  senderName:          string
+  subject:             string
+  body:                string
+  priority:            'NORMAL' | 'URGENT'
+  messageId:           string
+  attachmentTransfer?: {
+    id:        string
+    subject:   string
+    fileCount: number
+  } | null
+}): Promise<void> {
+  const isUrgent = opts.priority === 'URGENT'
+  const link     = `${APP_URL}/messages/inbox/${opts.messageId}`
+
+  const transferSection = opts.attachmentTransfer
+    ? `<p style="margin:20px 0 6px;font-size:15px;color:#334155;line-height:1.6;">
+        They also attached <strong>${opts.attachmentTransfer.fileCount}&nbsp;file${opts.attachmentTransfer.fileCount !== 1 ? 's' : ''}</strong> for you to work on.
+      </p>
+      ${btn('View Transfer →', `${APP_URL}/transfers/inbox`)}`
+    : ''
+
+  const prefNote = isUrgent
+    ? `<p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">
+        This message was marked <strong>Urgent</strong> and delivered immediately
+        regardless of your notification preferences.
+      </p>`
+    : `<p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">
+        Manage notification preferences at <a href="${APP_URL}/notifications">${APP_URL}/notifications</a>.
+      </p>`
 
   const emailBody = `
-    <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#dc2626;text-transform:uppercase;letter-spacing:0.6px;">🔴 Urgent Message</p>
+    <p style="margin:0 0 6px;font-size:13px;font-weight:600;${isUrgent ? 'color:#dc2626;' : 'color:#6366f1;'}text-transform:uppercase;letter-spacing:0.6px;">${isUrgent ? '🔴 Urgent Message' : '📬 New Message'}</p>
     <h1 style="margin:0 0 18px;font-size:26px;font-weight:700;color:#0f172a;line-height:1.2;">${esc(opts.subject)}</h1>
     <p style="margin:0 0 14px;font-size:15px;color:#334155;line-height:1.6;">
-      Hi <strong>${esc(opts.toName)}</strong>, you have received an urgent message from
-      <strong>${esc(opts.senderName)}</strong>.
+      Hi <strong>${esc(opts.toName)}</strong>,
     </p>
-    ${infoBox(`<p style="margin:0;white-space:pre-line;">${esc(preview)}</p>`)}
-    ${btn('Read Full Message →', link)}
-    <p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">
-      This message was marked <strong>Urgent</strong> by the sender and delivered immediately
-      regardless of your notification preferences.
-    </p>`
+    <p style="margin:0 0 14px;font-size:15px;color:#334155;line-height:1.6;">
+      <strong>${esc(opts.senderName)}</strong> sent you a message:
+    </p>
+    ${infoBox(`
+      <p style="margin:0 0 8px;font-size:13px;color:#64748b;"><strong>Subject:</strong>&nbsp;${esc(opts.subject)}</p>
+      <hr style="border:none;border-top:1px solid #e2e8f0;margin:8px 0;">
+      <p style="margin:0;font-size:14px;color:#334155;line-height:1.7;white-space:pre-line;">${esc(opts.body)}</p>
+    `)}
+    ${transferSection}
+    ${btn('View Full Message →', link)}
+    ${prefNote}
+    <p style="margin:18px 0 0;font-size:13px;color:#94a3b8;">— ${APP}</p>`
+
+  const subjectLine = isUrgent
+    ? `[URGENT] ${opts.subject} — from ${opts.senderName}`
+    : `${opts.subject} — from ${opts.senderName}`
 
   await sendEmail({
     to:      opts.toEmail,
-    subject: `[URGENT] ${esc(opts.subject)} — ${APP}`,
-    html:    layout(`Urgent message from ${opts.senderName}: ${opts.subject}`, emailBody),
+    subject: subjectLine,
+    html:    layout(
+      isUrgent
+        ? `Urgent message from ${opts.senderName}: ${opts.subject}`
+        : `New message from ${opts.senderName}: ${opts.subject}`,
+      emailBody,
+    ),
   })
 }
