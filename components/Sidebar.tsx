@@ -7,7 +7,7 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
-  Send, Inbox, MailOpen, MessageSquarePlus, MessageSquare,
+  Send, Inbox, MailOpen, MessageSquarePlus, MessageSquare, MailCheck,
 } from 'lucide-react'
 import { useSidebar } from './DashboardShell'
 
@@ -30,6 +30,7 @@ const adminItems = [
   { label: 'File Transfers',  href: '/transfers/new',   icon: Send                },
   { label: 'Sent Transfers',  href: '/transfers/sent',  icon: MailOpen            },
   { label: 'Messages',        href: '/messages/new',    icon: MessageSquarePlus   },
+  { label: 'Sent Messages',   href: '/messages/sent',   icon: MailCheck            },
   { label: 'Hierarchy',       href: '/admin/hierarchy', icon: Network             },
   { label: 'Activity Log',    href: '/admin/logs',      icon: ScrollText          },
   { label: 'Trash',           href: '/admin/trash',     icon: Trash2              },
