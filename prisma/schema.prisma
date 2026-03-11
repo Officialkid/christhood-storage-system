@@ -45,6 +45,11 @@ enum TransferStatus {
   EXPIRED    /// auto-purged after expiry date
 }
 
+enum MessagePriority {
+  NORMAL  /// standard notification — blue badge
+  URGENT  /// red badge + immediate email regardless of user preferences
+}
+
 // ─────────────────────────────────────────────
 // Users & Auth
 // ─────────────────────────────────────────────
@@ -82,6 +87,10 @@ model User {
   sentTransfers          Transfer[]          @relation("sender")
   receivedTransfers      Transfer[]          @relation("recipient")
   transferResponses      TransferResponse[]  @relation("responseUploader")
+
+  // Internal messaging relations
+  sentMessages           Message[]           @relation("messageSender")
+  messageRecipients      MessageRecipient[]  @relation("messageRecipient")
 }
 
 // ─────────────────────────────────────────────
@@ -386,6 +395,7 @@ model Transfer {
   recipient User               @relation("recipient", fields: [recipientId], references: [id])
   files     TransferFile[]
   response  TransferResponse?
+  linkedMessages  Message[]
 
   @@index([senderId])
   @@index([recipientId])
@@ -444,4 +454,45 @@ model TransferResponseFile {
   response TransferResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
 
   @@index([responseId])
+}
+
+// ─────────────────────────────────────────────
+// Internal Messaging
+// ─────────────────────────────────────────────
+
+/// A direct or broadcast message sent by an Admin to one user or an entire role group.
+model Message {
+  id                   String          @id @default(cuid())
+  senderId             String
+  subject              String          /// max 150 chars
+  body                 String          /// max 2000 chars
+  priority             MessagePriority @default(NORMAL)
+  broadcastRole        String?         /// "UPLOADER" | "EDITOR" | "ALL" — if set, message was sent to the whole role group
+  attachmentTransferId String?         /// optionally link an existing Transfer to this message
+  createdAt            DateTime        @default(now())
+
+  sender             User               @relation("messageSender", fields: [senderId], references: [id])
+  attachmentTransfer Transfer?          @relation(fields: [attachmentTransferId], references: [id], onDelete: SetNull)
+  recipients         MessageRecipient[]
+
+  @@index([senderId])
+  @@index([createdAt])
+  @@index([broadcastRole])
+}
+
+/// A single user's copy of a Message — tracks read state.
+model MessageRecipient {
+  id          String    @id @default(cuid())
+  messageId   String
+  recipientId String
+  read        Boolean   @default(false)
+  readAt      DateTime? /// timestamp when the user first opened the message
+  createdAt   DateTime  @default(now())
+
+  message   Message @relation(fields: [messageId],   references: [id], onDelete: Cascade)
+  recipient User    @relation("messageRecipient", fields: [recipientId], references: [id])
+
+  @@unique([messageId, recipientId])
+  @@index([recipientId, read])
+  @@index([messageId])
 }
