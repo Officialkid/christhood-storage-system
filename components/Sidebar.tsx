@@ -132,7 +132,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className={`flex-1 py-4 space-y-0.5 overflow-hidden ${isCollapsed ? 'px-1.5' : 'px-3'}`}>
+      <nav className={`flex-1 py-4 space-y-0.5 overflow-y-auto ${isCollapsed ? 'px-1.5' : 'px-3'}`}>
         {navItems.map(({ label, href, icon: Icon, badge }) => {
           const active       = pathname.startsWith(href)
           const badgeCount   = badge ? commsCount : 0

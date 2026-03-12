@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
-import { Film, Image as ImageIcon } from 'lucide-react'
+import { Film, Image as ImageIcon, Play } from 'lucide-react'
 import type { MediaFile, AppRole, TagItem } from '@/types'
 import { DownloadButton } from '@/components/DownloadButton'
 import { StatusBadge } from '@/components/StatusBadge'
@@ -24,14 +24,22 @@ interface Props {
 }
 
 export function MediaCard({ media, onPreview, onStatusChanged }: Props) {
-  const [hovered, setHovered]   = useState(false)
-  const [status,  setStatus]    = useState<string>(media.status)
+  const [hovered,       setHovered]       = useState(false)
+  const [status,        setStatus]        = useState<string>(media.status)
+  const [videoThumbErr, setVideoThumbErr] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
   const { data: session }       = useSession()
   const role                    = (session?.user?.role ?? 'UPLOADER') as AppRole
 
   const isVideo = media.fileType === 'VIDEO'
   const kb      = Math.round(Number(media.fileSize) / 1024)
   const size    = kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`
+
+  // Capture first frame of video as "thumbnail" once metadata loads
+  function handleVideoMeta() {
+    const vid = videoRef.current
+    if (vid) vid.currentTime = 0.001   // seek to near-start to expose first frame
+  }
 
   return (
     <div
@@ -54,8 +62,28 @@ export function MediaCard({ media, onPreview, onStatusChanged }: Props) {
             className="w-full h-full object-cover"
             loading="lazy"
           />
+        ) : isVideo && !videoThumbErr ? (
+          /* Video first-frame thumbnail — browser seeks to t=0.001 on metadata load */
+          <div className="relative w-full h-full">
+            <video
+              ref={videoRef}
+              src={media.downloadUrl}
+              preload="metadata"
+              muted
+              playsInline
+              className="w-full h-full object-cover"
+              onLoadedMetadata={handleVideoMeta}
+              onError={() => setVideoThumbErr(true)}
+            />
+            {/* Play icon overlay so it's clear this is a video */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
+                <Play className="w-5 h-5 text-white fill-white ml-0.5" />
+              </div>
+            </div>
+          </div>
         ) : (
-          /* Fallback icon when thumbnail hasn't been generated yet */
+          /* Fallback icon when no thumbnail and video failed to load */
           <div className="flex flex-col items-center gap-2 text-slate-500">
             {isVideo
               ? <Film className="w-8 h-8 opacity-60" />

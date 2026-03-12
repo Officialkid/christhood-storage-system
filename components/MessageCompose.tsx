@@ -314,7 +314,8 @@ export function MessageCompose({ senderName }: { senderName: string }) {
 
       localStorage.removeItem('msg-draft')
       setSendSuccess(true)
-      setTimeout(() => router.push('/admin/logs'), 2000)
+      // Go straight to Communications → Messages → Sent so the admin can see their message
+      setTimeout(() => router.push('/communications/messages'), 2000)
     } catch {
       setSendError('Network error. Please try again.')
     } finally {
@@ -338,8 +339,11 @@ export function MessageCompose({ senderName }: { senderName: string }) {
         <div className="w-16 h-16 rounded-full bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center mb-4">
           <CheckCircle2 className="w-8 h-8 text-emerald-400" />
         </div>
-        <h2 className="text-xl font-bold text-white mb-2">Message Sent</h2>
-        <p className="text-sm text-slate-400">Redirecting…</p>
+        <h2 className="text-xl font-bold text-white mb-2">Message Sent!</h2>
+        <p className="text-sm text-slate-400 mb-1">
+          Recipients will see it in their <strong className="text-white">Communications → Messages → Inbox</strong>.
+        </p>
+        <p className="text-xs text-slate-500">Taking you to your Sent messages…</p>
       </div>
     )
   }
