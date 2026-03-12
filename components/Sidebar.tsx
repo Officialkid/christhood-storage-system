@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
-  MessagesSquare,
+  MessagesSquare, X,
 } from 'lucide-react'
 import { useSidebar }       from './DashboardShell'
 import { useUnreadCount }   from '@/hooks/useUnreadCount'
@@ -63,8 +63,9 @@ export function Sidebar() {
     })
   }
 
-  // Avoid layout shift on first render — match server default (expanded)
-  const isCollapsed = mounted ? collapsed : false
+  // Avoid layout shift on first render — match server default (expanded).
+  // On mobile overlay, ALWAYS show labels regardless of desktop collapsed state.
+  const isCollapsed = mounted && !mobileOpen ? collapsed : false
 
   // Close mobile drawer when navigating
   useEffect(() => { closeMobile() }, [pathname, closeMobile])
@@ -82,6 +83,19 @@ export function Sidebar() {
         ${isCollapsed ? 'md:w-16' : 'md:w-64'}
       `}
     >
+      {/* ── Mobile close button — pops outside the sidebar edge ── */}
+      {mobileOpen && (
+        <button
+          onClick={closeMobile}
+          aria-label="Close menu"
+          className="md:hidden absolute -right-12 top-4 z-50 flex items-center justify-center
+                     w-10 h-10 rounded-full bg-slate-800 border border-slate-700 text-white
+                     shadow-xl hover:bg-slate-700 transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      )}
+
       {/* Toggle button — desktop only, sits at the right edge of the sidebar */}
       <button
         onClick={toggle}

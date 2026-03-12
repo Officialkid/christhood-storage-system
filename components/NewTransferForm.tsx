@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Upload, X, FolderOpen, ChevronDown, ChevronRight, FileText, Film,
   Image as ImageIcon, File as FileIcon, Send, User, Search,
-  AlertTriangle, CheckCircle2, Loader2,
+  AlertTriangle, CheckCircle2, Loader2, RefreshCw, WifiOff,
 } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -22,6 +22,25 @@ interface RecipientUser {
   email:    string
   role:     string
 }
+
+// Saved after all R2 uploads succeed — lets us retry the DB-create step
+// without re-uploading if the network drops just before the final POST.
+interface PendingTransfer {
+  id:             string
+  recipientId:    string
+  recipientLabel: string   // display name for the banner
+  subject:        string
+  message:        string | null
+  files:          {
+    originalName: string; r2Key: string; fileSize: number
+    mimeType: string; folderPath: string | null; checksum: string
+  }[]
+  totalFiles:      number
+  totalSize:       number
+  folderStructure: Record<string, string[]> | null
+}
+
+const PENDING_KEY = 'cmms_pending_transfer'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const WARN_SIZE = 2 * 1024 * 1024 * 1024  // 2 GB
@@ -195,6 +214,17 @@ export function NewTransferForm() {
   const [progress,   setProgress]   = useState({ done: 0, total: 0 })
   const [errorMsg,   setErrorMsg]   = useState<string | null>(null)
 
+  // Pending transfer (saved after all R2 uploads, in case network drops before DB create)
+  const [pendingCreate, setPendingCreate] = useState<PendingTransfer | null>(null)
+
+  // Load any pending transfer that was interrupted
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PENDING_KEY)
+      if (saved) setPendingCreate(JSON.parse(saved) as PendingTransfer)
+    } catch { /* ignore corrupt data */ }
+  }, [])
+
   // Derived
   const totalSize = staged.reduce((s, f) => s + f.file.size, 0)
   const hasFolders = staged.some(f => f.folderPath)
@@ -269,16 +299,20 @@ export function NewTransferForm() {
   async function handleSend() {
     if (!canSend || !recipient) return
 
+    // Check network before we start
+    if (!navigator.onLine) {
+      setErrorMsg('You are offline. Please reconnect and try again.')
+      setSendStatus('error')
+      return
+    }
+
     const transferId = crypto.randomUUID()
     setSendStatus('uploading')
     setProgress({ done: 0, total: staged.length })
     setErrorMsg(null)
 
     try {
-      const uploadedFiles: {
-        originalName: string; r2Key: string; fileSize: number
-        mimeType: string; folderPath: string | null; checksum: string
-      }[] = []
+      const uploadedFiles: PendingTransfer['files'] = []
 
       for (const sf of staged) {
         // 1. Get presigned URL from server
@@ -317,29 +351,70 @@ export function NewTransferForm() {
         setProgress(p => ({ ...p, done: p.done + 1 }))
       }
 
-      // 4. Create transfer record in DB
-      setSendStatus('creating')
-      const createRes = await fetch('/api/transfers', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          id:              transferId,
-          recipientId:     recipient.id,
-          subject:         subject.trim(),
-          message:         message.trim() || null,
-          files:           uploadedFiles,
-          totalFiles:      staged.length,
-          totalSize:       totalSize,
-          folderStructure: hasFolders ? buildFolderStructureJson(staged) : null,
-        }),
-      })
-      if (!createRes.ok) throw new Error('Failed to save transfer')
+      // All files are safely in R2. Persist the create payload so we can retry
+      // if the network drops before the DB write completes.
+      const pending: PendingTransfer = {
+        id:              transferId,
+        recipientId:     recipient.id,
+        recipientLabel:  recipient.username ?? recipient.name ?? recipient.email,
+        subject:         subject.trim(),
+        message:         message.trim() || null,
+        files:           uploadedFiles,
+        totalFiles:      staged.length,
+        totalSize:       totalSize,
+        folderStructure: hasFolders ? buildFolderStructureJson(staged) : null,
+      }
+      localStorage.setItem(PENDING_KEY, JSON.stringify(pending))
+      setPendingCreate(pending)
 
-      setSendStatus('done')
+      // 4. Create transfer record in DB
+      await finishTransferCreate(pending)
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Transfer failed. Please try again.')
+      const msg = err instanceof Error ? err.message : 'Transfer failed. Please try again.'
+      setErrorMsg(msg)
       setSendStatus('error')
     }
+  }
+
+  // ── Retry just the DB-create step (files already in R2) ──────────────────
+  async function retryPendingCreate() {
+    if (!pendingCreate) return
+    if (!navigator.onLine) {
+      setErrorMsg('Still offline. Please reconnect and try again.')
+      setSendStatus('error')
+      return
+    }
+    setSendStatus('creating')
+    setErrorMsg(null)
+    try {
+      await finishTransferCreate(pendingCreate)
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Retry failed. Please try again.')
+      setSendStatus('error')
+    }
+  }
+
+  async function finishTransferCreate(pending: PendingTransfer) {
+    setSendStatus('creating')
+    const createRes = await fetch('/api/transfers', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        id:              pending.id,
+        recipientId:     pending.recipientId,
+        subject:         pending.subject,
+        message:         pending.message,
+        files:           pending.files,
+        totalFiles:      pending.totalFiles,
+        totalSize:       pending.totalSize,
+        folderStructure: pending.folderStructure,
+      }),
+    })
+    if (!createRes.ok) throw new Error('Failed to save transfer record — your files are safe, please retry.')
+
+    localStorage.removeItem(PENDING_KEY)
+    setPendingCreate(null)
+    setSendStatus('done')
   }
 
   function buildFolderStructureJson(files: StagedFile[]) {
@@ -360,6 +435,38 @@ export function NewTransferForm() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+
+      {/* ── Offline / interrupted transfer recovery banner ────────────────── */}
+      {pendingCreate && sendStatus === 'idle' && (
+        <div className="flex items-start gap-3 px-4 py-4 rounded-2xl
+                        bg-amber-500/10 border border-amber-500/30 text-amber-200">
+          <WifiOff className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Interrupted transfer detected</p>
+            <p className="text-xs text-amber-300/80 mt-0.5">
+              Files were uploaded to &ldquo;{pendingCreate.subject}&rdquo; for{' '}
+              <span className="font-medium">{pendingCreate.recipientLabel}</span> but the
+              transfer record could not be saved. Your files are safe.
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <button
+              onClick={retryPendingCreate}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                         bg-amber-500 hover:bg-amber-400 text-amber-950 transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Retry
+            </button>
+            <button
+              onClick={() => { localStorage.removeItem(PENDING_KEY); setPendingCreate(null) }}
+              className="text-xs text-amber-500/70 hover:text-amber-300 transition-colors"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Drop zone ─────────────────────────────────────────────────────── */}
       <div
@@ -621,7 +728,25 @@ export function NewTransferForm() {
       {sendStatus === 'error' && errorMsg && (
         <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-          <span>{errorMsg}</span>
+          <div className="flex-1">
+            <span>{errorMsg}</span>
+            {/* If files made it to R2 but the DB create failed, offer inline retry */}
+            {pendingCreate && (
+              <button
+                onClick={() => { setSendStatus('idle'); retryPendingCreate() }}
+                className="ml-3 underline text-amber-400 hover:text-amber-300 text-xs"
+              >
+                Retry now
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setSendStatus('idle')}
+            className="p-0.5 text-red-400/60 hover:text-red-300 shrink-0"
+            title="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 

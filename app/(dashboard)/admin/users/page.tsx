@@ -279,8 +279,8 @@ export default function AdminUsersPage() {
           />
         </div>
 
-        {/* Table */}
-        <div className="bg-slate-900/60 border border-slate-800/60 rounded-2xl overflow-hidden">
+        {/* Table — desktop (md+) */}
+        <div className="hidden md:block bg-slate-900/60 border border-slate-800/60 rounded-2xl overflow-hidden">
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-800/80">
@@ -346,6 +346,57 @@ export default function AdminUsersPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Cards — mobile (< md) */}
+        <div className="md:hidden space-y-3">
+          {filtered.length === 0 && (
+            <p className="text-center text-sm text-slate-500 py-10">
+              {search ? 'No users match your search.' : 'No users found.'}
+            </p>
+          )}
+          {filtered.map(u => (
+            <div key={u.id} className="bg-slate-900/60 border border-slate-800/60 rounded-2xl p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center
+                                justify-center text-sm font-semibold text-indigo-300 uppercase shrink-0">
+                  {(u.username ?? u.email)[0]}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-white truncate">
+                    {u.username ?? <span className="text-slate-500 italic">no username</span>}
+                  </p>
+                  <p className="text-xs text-slate-400 truncate">{u.email}</p>
+                </div>
+                <RoleBadge role={u.role} />
+              </div>
+              <div className="mt-3 flex items-center justify-between border-t border-slate-800/50 pt-3">
+                <span className="text-xs text-slate-500">
+                  Joined {new Date(u.createdAt).toLocaleDateString()}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setEditUser(u); setModal('edit') }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                               text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 transition"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Edit role
+                  </button>
+                  {u.id !== session?.user?.id && (
+                    <button
+                      onClick={() => handleDelete(u.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                                 text-red-400 bg-red-500/10 hover:bg-red-500/20 transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </>

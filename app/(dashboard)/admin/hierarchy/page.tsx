@@ -667,7 +667,7 @@ function EventNode({
 
         {/* Action buttons */}
         {!isEditing && (
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition shrink-0 ml-1">
+          <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shrink-0 ml-1">
             <button
               title="Add subfolder"
               onClick={() => onAddSubfolder(event.id, event.name)}
@@ -749,7 +749,7 @@ function SubfolderNode({
       )}
 
       {!isEditing && (
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition shrink-0 ml-1">
+        <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shrink-0 ml-1">
           <button
             title="Rename"
             onClick={() => onSetEditing({ type: 'subfolder', id: subfolder.id, currentName: subfolder.label })}
