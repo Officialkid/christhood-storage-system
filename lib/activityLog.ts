@@ -33,6 +33,9 @@ export type LogAction =
   // Users / auth
   | 'USER_CREATED'
   | 'USER_LOGIN'
+  | 'USER_LOGIN_SUCCESS'
+  | 'USER_LOGIN_FAILED'
+  | 'USER_UNLOCKED'
   | 'ROLE_CHANGED'
   // File Transfer system
   | 'TRANSFER_SENT'
@@ -69,6 +72,9 @@ export interface FolderCreatedMeta   { folderType: 'year' | 'category' | 'event'
 export interface UserCreatedMeta     { newUserId: string; role: string; email?: string }
 export interface UserLoginMeta       { ipAddress?: string; userAgent?: string }
 export interface RoleChangedMeta     { targetUserId: string; oldRole: string; newRole: string }
+export interface UserLoginSuccessMeta { identifier: string; ip?: string }
+export interface UserLoginFailedMeta  { reason: 'WRONG_PASSWORD' | 'ACCOUNT_LOCKED'; identifier: string; ip?: string; attempt?: number; locked?: boolean }
+export interface UserUnlockedMeta     { unlockedUserId: string; unlockedEmail?: string }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Core log function

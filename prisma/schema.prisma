@@ -91,6 +91,10 @@ model User {
   // Internal messaging relations
   sentMessages           Message[]           @relation("messageSender")
   messageRecipients      MessageRecipient[]  @relation("messageRecipient")
+
+  // Brute-force protection (Layer 3 — account lockout)
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
 }
 
 // ─────────────────────────────────────────────

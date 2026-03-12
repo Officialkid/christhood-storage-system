@@ -4,7 +4,7 @@ import { useState, Suspense } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { User, Lock, Eye, EyeOff, LogIn, Loader2 } from 'lucide-react'
+import { User, Lock, Eye, EyeOff, LogIn, Loader2, ShieldAlert, Clock } from 'lucide-react'
 
 function LoginInner() {
   const router        = useRouter()
@@ -16,11 +16,14 @@ function LoginInner() {
   const [showPw,     setShowPw]     = useState(false)
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState('')
+  const [errorType,  setErrorType]  = useState<'generic' | 'rateLimit' | 'locked' | 'hint'>('generic')
+  const [failCount,  setFailCount]  = useState(0)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
+    setErrorType('generic')
 
     const res = await signIn('credentials', {
       identifier,
@@ -30,16 +33,75 @@ function LoginInner() {
 
     setLoading(false)
 
-    if (res?.error) {
-      setError('Invalid username / email or password.')
-    } else {
+    // ── Success ─────────────────────────────────────────────────────────────
+    if (!res?.error) {
       router.push(callbackUrl)
+      return
+    }
+
+    // ── Layer 1: IP rate-limited (middleware returned HTTP 429) ──────────────
+    if (res.status === 429) {
+      setErrorType('rateLimit')
+      setError('Too many login attempts from your location. Please try again in 15 minutes.')
+      return
+    }
+
+    // ── Track consecutive failures for the "Having trouble?" hint ────────────
+    const newCount = failCount + 1
+    setFailCount(newCount)
+
+    // ── Query account-status to detect Layer 3 lockout ──────────────────────
+    try {
+      const statusRes = await fetch(
+        `/api/auth/account-status?identifier=${encodeURIComponent(identifier)}`,
+      )
+      if (statusRes.ok) {
+        const status = await statusRes.json()
+        if (status.locked && status.lockedUntil) {
+          const unlockAt  = new Date(status.lockedUntil)
+          const timeStr   = unlockAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          const minsLeft  = status.minutesUntilUnlock as number
+          setErrorType('locked')
+          setError(
+            `Account temporarily locked after ${status.failedAttempts} failed attempts. ` +
+            `Try again after ${timeStr} (${minsLeft} min) or contact your admin to unlock it.`,
+          )
+          return
+        }
+      }
+    } catch {
+      // Status check failed — continue to generic error
+    }
+
+    // ── Generic wrong-password error (+ "Having trouble?" after 3 failures) ──
+    if (newCount >= 3) {
+      setErrorType('hint')
+      setError(
+        'Invalid username / email or password. ' +
+        'Still having trouble? Contact your admin to reset your password.',
+      )
+    } else {
+      setErrorType('generic')
+      setError('Invalid username / email or password.')
     }
   }
 
   async function handleGoogle() {
     await signIn('google', { callbackUrl })
   }
+
+  // Icon + colour per error type
+  const errorIcon =
+    errorType === 'rateLimit' ? <Clock   className="w-4 h-4 shrink-0 mt-0.5" /> :
+    errorType === 'locked'    ? <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" /> :
+                                null
+
+  const errorStyle =
+    errorType === 'rateLimit'
+      ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+      : errorType === 'locked'
+      ? 'text-orange-400 bg-orange-500/10 border-orange-500/30'
+      : 'text-red-400 bg-red-500/10 border-red-500/30'
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#020817] px-4 relative overflow-hidden">
@@ -63,9 +125,9 @@ function LoginInner() {
           </div>
 
           {error && (
-            <div className="mb-5 text-sm text-red-400 bg-red-500/10 border
-                            border-red-500/30 rounded-lg px-4 py-3">
-              {error}
+            <div className={`mb-5 text-sm border rounded-lg px-4 py-3 flex items-start gap-2 ${errorStyle}`}>
+              {errorIcon}
+              <span>{error}</span>
             </div>
           )}
 

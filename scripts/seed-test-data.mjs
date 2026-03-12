@@ -33,7 +33,7 @@ try {
         (val.startsWith("'") && val.endsWith("'"))) {
       val = val.slice(1, -1)
     }
-    if (!process.env[key]) process.env[key] = val
+    process.env[key] = val   // .env.local always wins over .env placeholder
   })
   console.log('[seed] Loaded .env.local')
 } catch {
@@ -47,7 +47,7 @@ async function upsertUser({ username, email, password, role, label }) {
   const hash = await bcrypt.hash(password, 12)
   const user = await prisma.user.upsert({
     where:  { email },
-    update: { username, passwordHash: hash, role },
+    update: { username, passwordHash: hash, role, failedLoginAttempts: 0, lockedUntil: null },
     create: { username, email, passwordHash: hash, role, name: label },
   })
   console.log(`  ✓ ${label.padEnd(22)} | ${role.padEnd(8)} | ${email}`)

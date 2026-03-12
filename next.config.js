@@ -28,6 +28,12 @@ const nextConfig = {
   // Produce a self-contained build in .next/standalone/ — required for Docker
   output: 'standalone',
 
+  // ── Information disclosure hardening ──────────────────────────────────────
+  // Remove the "X-Powered-By: Next.js" header from all responses.
+  // Revealing the framework name + version helps attackers narrow their attack
+  // surface. This is a zero-cost, zero-risk change.
+  poweredByHeader: false,
+
   // Sanitise URL env-vars at build-time so a mis-typed value in the hosting
   // dashboard (e.g. "https:// https://…") never crashes static-page generation.
   env: {
@@ -48,7 +54,39 @@ const nextConfig = {
   },
   // Ensure the service worker can control the full origin (scope = '/')
   async headers() {
+    // Security headers applied to every page and API route as a third layer
+    // of defence (vercel.json → middleware.ts → next.config.js).
+    const securityHeaders = [
+      { key: 'Strict-Transport-Security',  value: 'max-age=31536000; includeSubDomains; preload' },
+      {
+        key:   'Content-Security-Policy',
+        value: [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: https: blob:",
+          "media-src 'self' https: blob:",
+          "connect-src 'self' https://*.r2.cloudflarestorage.com https://api.anthropic.com",
+          "font-src 'self' data:",
+          "frame-ancestors 'none'",
+          "form-action 'self'",
+          "base-uri 'self'",
+        ].join('; '),
+      },
+      { key: 'X-Frame-Options',           value: 'DENY' },
+      { key: 'X-Content-Type-Options',    value: 'nosniff' },
+      { key: 'X-XSS-Protection',          value: '1; mode=block' },
+      { key: 'Referrer-Policy',           value: 'strict-origin-when-cross-origin' },
+      { key: 'Permissions-Policy',        value: 'camera=(self), microphone=(self), geolocation=(), payment=(), usb=()' },
+    ]
+
     return [
+      // Apply security headers to all routes except static assets
+      {
+        source: '/((?!_next/static|_next/image|favicon\.ico).*)',
+        headers: securityHeaders,
+      },
+      // Service worker needs its own Cache-Control and scope headers in addition
       {
         source: '/sw.js',
         headers: [
