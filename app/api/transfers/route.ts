@@ -64,11 +64,12 @@ export async function POST(req: NextRequest) {
   const totalBytes = incomingFiles.reduce((s, f) => s + f.fileSize, 0)
 
   // Log checksums for audit trail (server-side integrity record)
-  console.info(`[transfer] NEW — id=${id}  sender=${session.user.id}  recipient=${recipientId}  files=${fileCount}`)
+  // Note: r2Keys are not logged here to avoid exposing internal storage paths.
+  console.info(`[transfer] NEW — id=${id}  files=${fileCount}`)
   for (const f of incomingFiles) {
     const ext  = f.originalName.split('.').pop()?.toLowerCase() ?? ''
     const mode = STORE_EXTENSIONS.has(ext) ? 'STORE' : 'DEFLATE'
-    console.info(`[transfer]   checksum=${f.checksum}  mode=${mode}  size=${f.fileSize}  key=${f.r2Key}`)
+    console.info(`[transfer]   checksum=${f.checksum}  mode=${mode}  size=${f.fileSize}`)
   }
 
   const expiresAt = new Date()

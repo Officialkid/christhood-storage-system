@@ -84,9 +84,9 @@ export async function POST(
   const totalBytes = files.reduce((s, f) => s + f.fileSize, 0)
   const r2Prefix   = `transfers/${transferId}/response/`
 
-  console.info(`[respond] transferId=${transferId}  recipient=${session.user.id}  files=${files.length}`)
+  console.info(`[respond] transferId=${transferId}  files=${files.length}`)
   for (const f of files) {
-    console.info(`[respond]   key=${f.r2Key}  size=${f.fileSize}  checksum=${f.checksum}`)
+    console.info(`[respond]   size=${f.fileSize}  checksum=${f.checksum}`)
   }
 
   // ── Atomic DB write ────────────────────────────────────────────────────────

@@ -3,6 +3,52 @@ import { NextRequest, NextResponse } from 'next/server'
 import { checkIpRateLimit } from '@/lib/rate-limit'
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CSRF Origin verification
+// For state-changing API requests (POST, PUT, PATCH, DELETE) we verify the
+// Origin header matches the app's own origin.  This blocks cross-site requests
+// even when the browser sends cookies, providing defense-in-depth on top of
+// NextAuth's SameSite=Lax cookie protection.
+//
+// Exempt paths:
+//   /api/auth/*  — NextAuth manages its own CSRF token for these
+//   /api/cron/*  — machine-to-machine, no browser Origin
+//   /api/health  — read-only probe
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CSRF_EXEMPT_RE = /^\/api\/(?:auth|cron|health)\b/
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+function checkCsrfOrigin(req: NextRequest): boolean {
+  if (!MUTATING_METHODS.has(req.method)) return true
+  if (!req.nextUrl.pathname.startsWith('/api/')) return true
+  if (CSRF_EXEMPT_RE.test(req.nextUrl.pathname)) return true
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXTAUTH_URL ?? ''
+  if (!appUrl) return true  // can't validate without known origin; fail open in dev
+
+  let expectedOrigin: string
+  try {
+    expectedOrigin = new URL(appUrl).origin
+  } catch {
+    return true
+  }
+
+  const origin  = req.headers.get('origin')
+  const referer = req.headers.get('referer')
+
+  // A present Origin header must match exactly
+  if (origin) return origin === expectedOrigin
+
+  // Fallback: check Referer for older clients that omit Origin
+  if (referer) {
+    try { return new URL(referer).origin === expectedOrigin } catch { return false }
+  }
+
+  // No Origin/Referer on a mutating API call: reject (same-site browsers always send one)
+  return false
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Approach 1 — CRLF injection protection
 // Detects raw CR/LF bytes AND their percent-encoded forms (%0d %0a %0D %0A).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,6 +134,14 @@ export async function middleware(req: NextRequest) {
     console.warn(`[security] CRLF injection attempt blocked: ${safeUrl} from IP: ${ip}`)
     // Return 400 with a generic body — do not reveal the specific detection reason.
     return NextResponse.json({ error: 'Bad Request' }, { status: 400 })
+  }
+
+  // ── CSRF Origin check — blocks cross-site state-changing requests ──────────
+  if (!checkCsrfOrigin(req)) {
+    return applySecurityHeaders(
+      NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+      pathname,
+    )
   }
 
   // ── Layer 1: IP rate-limit the credentials login endpoint ────────────────

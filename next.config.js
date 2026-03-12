@@ -42,6 +42,18 @@ const nextConfig = {
   },
 
   reactStrictMode: true,
+
+  // ── Image Optimizer hardening (GHSA-9g9p-9gw9-jx7f mitigation) ───────────
+  // Explicitly declare NO remote patterns — only same-origin images are
+  // processed by the optimizer.  Any attempt to pass an untrusted external
+  // src through next/image will be rejected with 400, preventing unbounded
+  // image-fetch loops that could cause DoS.
+  images: {
+    remotePatterns: [],         // no external domains allowed
+    minimumCacheTTL: 60,        // cache optimised images for at least 60 s
+    dangerouslyAllowSVG: false, // SVG images are served as-is, never proxied
+  },
+
   webpack: (config) => {
     // Prevent ffmpeg packages from being bundled at build time;
     // they are only needed at serverless function runtime.

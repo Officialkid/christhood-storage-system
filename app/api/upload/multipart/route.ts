@@ -50,7 +50,8 @@ export async function POST(req: NextRequest) {
       const url = await getPresignedPartUrl(r2Key, uploadId, partNumber)
       return NextResponse.json({ url })
     } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 })
+      console.error('[multipart part]', err)
+      return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
     }
   }
 
@@ -146,7 +147,7 @@ export async function POST(req: NextRequest) {
       console.error('[multipart complete]', err)
       // Attempt to abort to avoid orphaned partial uploads
       try { await abortMultipartUpload(r2Key, uploadId) } catch {}
-      return NextResponse.json({ error: err.message ?? 'Failed to complete upload' }, { status: 500 })
+      return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
     }
   }
 
@@ -160,7 +161,8 @@ export async function POST(req: NextRequest) {
       await abortMultipartUpload(r2Key, uploadId)
       return NextResponse.json({ ok: true })
     } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 })
+      console.error('[multipart abort]', err)
+      return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
     }
   }
 

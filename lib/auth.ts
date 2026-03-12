@@ -27,6 +27,59 @@ export const authOptions: NextAuthOptions = {
     newUser:  '/dashboard',
   },
 
+  // ── Hardened cookie configuration ─────────────────────────────────────────
+  // Explicitly set HttpOnly, Secure, and SameSite on all NextAuth cookies so
+  // the security posture is not dependent on implicit defaults.
+  //
+  // SameSite=Lax (not Strict) is required for OAuth redirect flows:
+  //   - Google OAuth redirects back from accounts.google.com, which is a
+  //     top-level cross-site navigation.  Lax cookies ARE sent on top-level
+  //     GET navigations, so the Google callback lands with a valid session.
+  //   - Strict would silently drop the cookie on that redirect, breaking OAuth.
+  //
+  // Secure=true in production ensures the cookie is only sent over HTTPS.
+  // In local dev (NODE_ENV !== 'production') Secure=false lets http://localhost work.
+  useSecureCookies: process.env.NODE_ENV === 'production',
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === 'production'
+        ? '__Secure-next-auth.session-token'
+        : 'next-auth.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax' as const,
+        path:     '/',
+        secure:   process.env.NODE_ENV === 'production',
+      },
+    },
+    callbackUrl: {
+      name: process.env.NODE_ENV === 'production'
+        ? '__Secure-next-auth.callback-url'
+        : 'next-auth.callback-url',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax' as const,
+        path:     '/',
+        secure:   process.env.NODE_ENV === 'production',
+      },
+    },
+    csrfToken: {
+      // The CSRF cookie itself must NOT be HttpOnly so NextAuth's client SDK
+      // can read the token half and submit it in the form POST body.
+      // NextAuth's split-token design means the server can still validate it
+      // without relying solely on the cookie.
+      name: process.env.NODE_ENV === 'production'
+        ? '__Host-next-auth.csrf-token'
+        : 'next-auth.csrf-token',
+      options: {
+        httpOnly: false,
+        sameSite: 'lax' as const,
+        path:     '/',
+        secure:   process.env.NODE_ENV === 'production',
+      },
+    },
+  },
+
   providers: [
     // ── Google OAuth ────────────────────────────────────────────
     GoogleProvider({

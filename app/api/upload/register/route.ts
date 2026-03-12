@@ -112,6 +112,6 @@ export async function POST(req: NextRequest) {
     )
   } catch (err: any) {
     console.error('[register]', err)
-    return NextResponse.json({ error: err.message ?? 'Internal error' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
   }
 }

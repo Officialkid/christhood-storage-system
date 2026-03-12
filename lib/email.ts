@@ -21,7 +21,7 @@ interface SendOptions {
 
 export async function sendEmail({ to, subject, html }: SendOptions): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
-    console.warn(`[email] RESEND_API_KEY not set — skipping: "${subject}"`)
+    console.warn('[email] RESEND_API_KEY not set — skipping email send')
     return
   }
 
@@ -35,9 +35,13 @@ export async function sendEmail({ to, subject, html }: SendOptions): Promise<voi
       html,
     })
     if (error) throw new Error((error as { message?: string }).message ?? JSON.stringify(error))
-    console.log(`[email] ✓ "${subject}" → ${Array.isArray(to) ? to.join(', ') : to}`)
+    // Log delivery confirmation without exposing recipient addresses in logs.
+    // "to" is not logged to prevent PII accumulation in server logs.
+    const recipientCount = Array.isArray(to) ? to.length : 1
+    console.log(`[email] ✓ "${subject}" → ${recipientCount} recipient(s)`)
   } catch (err) {
-    console.error(`[email] ✗ Failed to send "${subject}":`, err)
+    // Log failure without exposing the subject (may contain PII/sensitive context).
+    console.error('[email] ✗ Failed to send an email:', err)
     // Never rethrow — email failures must not break the main application flow
   }
 }
