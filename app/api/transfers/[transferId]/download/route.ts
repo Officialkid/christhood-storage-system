@@ -49,6 +49,11 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  // Block downloads for cancelled / purged transfers
+  if (transfer.status === 'EXPIRED') {
+    return NextResponse.json({ error: 'Transfer has been cancelled or has expired' }, { status: 410 })
+  }
+
   if (transfer.files.length === 0) {
     return NextResponse.json({ error: 'No files in this transfer' }, { status: 404 })
   }
