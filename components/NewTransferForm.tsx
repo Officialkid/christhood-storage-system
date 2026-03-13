@@ -326,19 +326,27 @@ export function NewTransferForm() {
             contentType: sf.file.type || 'application/octet-stream',
           }),
         })
-        if (!presignRes.ok) throw new Error(`Could not presign ${sf.file.name}`)
+        if (!presignRes.ok) {
+          const d = await presignRes.json().catch(() => ({}) as { error?: string })
+          throw new Error((d as { error?: string }).error ?? `Could not prepare upload for "${sf.file.name}" — please try again.`)
+        }
         const { presignedUrl, r2Key } = await presignRes.json()
 
         // 2. Compute SHA-256 (guarantees byte-for-byte integrity on download)
         const checksum = await computeSHA256(sf.file)
 
         // 3. PUT directly to R2 — no compression, no resampling
-        const putRes = await fetch(presignedUrl, {
-          method:  'PUT',
-          body:    sf.file,
-          headers: { 'Content-Type': sf.file.type || 'application/octet-stream' },
-        })
-        if (!putRes.ok) throw new Error(`Upload failed for ${sf.file.name}`)
+        let putRes: Response
+        try {
+          putRes = await fetch(presignedUrl, {
+            method:  'PUT',
+            body:    sf.file,
+            headers: { 'Content-Type': sf.file.type || 'application/octet-stream' },
+          })
+        } catch {
+          throw new Error(`Network error while uploading "${sf.file.name}" — please check your connection and try again.`)
+        }
+        if (!putRes.ok) throw new Error(`Upload failed for "${sf.file.name}" (HTTP ${putRes.status}) — please try again.`)
 
         uploadedFiles.push({
           originalName: sf.file.name,
@@ -370,7 +378,12 @@ export function NewTransferForm() {
       // 4. Create transfer record in DB
       await finishTransferCreate(pending)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Transfer failed. Please try again.'
+      // TypeError: Failed to fetch = browser couldn't reach the server at all (no connectivity)
+      const isNetworkErr = err instanceof TypeError &&
+        (err.message === 'Failed to fetch' || err.message === 'Load failed' || err.message.includes('NetworkError'))
+      const msg = isNetworkErr
+        ? "Couldn't connect to the server. Please check your internet connection and try again."
+        : err instanceof Error ? err.message : 'Transfer failed. Please try again.'
       setErrorMsg(msg)
       setSendStatus('error')
     }
@@ -410,7 +423,10 @@ export function NewTransferForm() {
         folderStructure: pending.folderStructure,
       }),
     })
-    if (!createRes.ok) throw new Error('Failed to save transfer record — your files are safe, please retry.')
+    if (!createRes.ok) {
+      const d = await createRes.json().catch(() => ({}) as { error?: string })
+      throw new Error((d as { error?: string }).error ?? 'Failed to save transfer record — your files are safe, please retry.')
+    }
 
     localStorage.removeItem(PENDING_KEY)
     setPendingCreate(null)

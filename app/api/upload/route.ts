@@ -33,25 +33,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'eventId is required' }, { status: 400 })
   }
 
+  // Guard: verify the event exists before creating DB records or presigning
+  const eventExists = await prisma.event.count({ where: { id: eventId } })
+  if (!eventExists) {
+    return NextResponse.json({ error: 'Event not found' }, { status: 404 })
+  }
+
   // Unique storage key: uploads/<userId>/<uuid>-<filename>
   const storedName = `${randomUUID()}-${filename}`
   const r2Key      = `uploads/${session.user.id}/${storedName}`
 
-  const [uploadUrl, mediaFile] = await Promise.all([
-    getPresignedUploadUrl(r2Key, contentType),
-    prisma.mediaFile.create({
-      data: {
-        originalName: filename,
-        storedName,
-        r2Key,
-        fileType,
-        fileSize:   BigInt(sizeBytes),
-        status:     'RAW',
-        uploaderId: session.user.id,
-        eventId,
-      }
-    })
-  ])
-
-  return NextResponse.json({ uploadUrl, r2Key, mediaId: mediaFile.id })
+  try {
+    const [uploadUrl, mediaFile] = await Promise.all([
+      getPresignedUploadUrl(r2Key, contentType),
+      prisma.mediaFile.create({
+        data: {
+          originalName: filename,
+          storedName,
+          r2Key,
+          fileType,
+          fileSize:   BigInt(sizeBytes),
+          status:     'RAW',
+          uploaderId: session.user.id,
+          eventId,
+        },
+      }),
+    ])
+    return NextResponse.json({ uploadUrl, r2Key, mediaId: mediaFile.id })
+  } catch (err: any) {
+    console.error('[upload/presign]', err)
+    return NextResponse.json(
+      { error: 'Could not prepare upload. Please try again.' },
+      { status: 500 },
+    )
+  }
 }

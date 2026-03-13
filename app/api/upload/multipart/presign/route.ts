@@ -67,6 +67,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ presignedUrls })
   } catch (err: any) {
     console.error('[multipart/presign]', err)
-    return NextResponse.json({ error: 'Failed to generate presigned URLs' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Could not generate upload URLs — please try again.' },
+      { status: 500 },
+    )
   }
 }

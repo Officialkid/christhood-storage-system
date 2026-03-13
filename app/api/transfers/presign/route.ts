@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getPresignedUploadUrl } from '@/lib/r2'
+import { prisma } from '@/lib/prisma'
 
 /**
  * POST /api/transfers/presign
@@ -22,12 +23,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
+  // Guard: transferId must be a valid UUID format to prevent path injection
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!UUID_RE.test(transferId)) {
+    return NextResponse.json({ error: 'Invalid transfer ID format' }, { status: 400 })
+  }
+
+  // Guard: filename must not contain path traversal sequences
+  if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    return NextResponse.json({ error: 'Invalid filename' }, { status: 400 })
+  }
+
   // R2 key: transfers/{transferId}/{folderPath/}{filename}
-  const pathSegment = folderPath ? `${folderPath}/` : ''
+  const pathSegment = folderPath ? `${folderPath.replace(/\.\./g, '')}/` : ''
   const r2Key = `transfers/${transferId}/${pathSegment}${filename}`
 
-  // Long expiry because large files may take time
-  const presignedUrl = await getPresignedUploadUrl(r2Key, contentType, 3600)
-
-  return NextResponse.json({ presignedUrl, r2Key })
+  try {
+    // Long expiry because large files may take time
+    const presignedUrl = await getPresignedUploadUrl(r2Key, contentType, 3600)
+    return NextResponse.json({ presignedUrl, r2Key })
+  } catch (err: any) {
+    console.error('[transfers/presign]', err)
+    return NextResponse.json(
+      { error: 'Could not generate upload URL. Please try again.' },
+      { status: 500 },
+    )
+  }
 }

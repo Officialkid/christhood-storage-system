@@ -59,6 +59,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ uploadId, key: r2Key, chunkSize: CHUNK_SIZE, totalChunks })
   } catch (err: any) {
     console.error('[multipart/create]', err)
-    return NextResponse.json({ error: 'Failed to create upload session' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Could not start upload session — please try again.' },
+      { status: 500 },
+    )
   }
 }

@@ -125,6 +125,9 @@ export async function POST(req: NextRequest) {
     })
   } catch (err: any) {
     console.error('[multipart/complete]', err)
-    return NextResponse.json({ error: 'Failed to complete upload' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Could not finalize upload — your progress is saved, please retry.' },
+      { status: 500 },
+    )
   }
 }
