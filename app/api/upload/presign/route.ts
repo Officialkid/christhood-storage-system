@@ -6,8 +6,8 @@ import { generateR2Key }             from '@/lib/uploadNaming'
 import { prisma }                    from '@/lib/prisma'
 
 // Files below this threshold use a single presigned PUT; larger files use multipart.
-const MULTIPART_THRESHOLD = 50 * 1024 * 1024  //  50 MB
-const PART_SIZE           = 8  * 1024 * 1024  //   8 MB (> R2's 5 MB minimum)
+const MULTIPART_THRESHOLD = 5  * 1024 * 1024  //   5 MB
+const PART_SIZE           = 10 * 1024 * 1024  //  10 MB (> R2's 5 MB minimum)
 
 /**
  * POST /api/upload/presign
