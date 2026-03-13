@@ -6,7 +6,7 @@ import {
 import {
   Upload, X, CheckCircle2, AlertCircle, Loader2, Film,
   Image as ImageIcon, FolderOpen, ChevronDown, RefreshCw,
-  WifiOff, Camera, Video as VideoIcon, GalleryHorizontalEnd, Clock, PauseCircle,
+  WifiOff, Wifi, Camera, Video as VideoIcon, GalleryHorizontalEnd, Clock, PauseCircle,
 } from 'lucide-react'
 import { queueUpload, getQueue, removeFromQueue, type QueuedUpload } from '@/lib/offlineQueue'
 import { runMultipartUpload, abortMultipartSession, NetworkError }   from '@/lib/upload/multipart-uploader'
@@ -249,7 +249,9 @@ export function UploadZone({ defaultDestination, events }: Props) {
   const [selEventId,  setSelEventId]    = useState('')
   const [selSubId,    setSelSubId]      = useState('')
   const [isUploading, setIsUploading]   = useState(false)
-  const [isOnline,    setIsOnline]      = useState(true)
+  const [isOnline,       setIsOnline]         = useState(true)
+  // True for 5 s after a network drop reconnects while uploads were paused
+  const [showRestoredBanner, setShowRestoredBanner] = useState(false)
   // Sessions from a previous page load that were interrupted mid-upload
   const [resumeSessions, setResumeSessions] = useState<import('@/lib/upload/upload-session-store').UploadSession[]>([])
   // Track last notification % to throttle SW messages
@@ -321,6 +323,8 @@ export function UploadZone({ defaultDestination, events }: Props) {
     // Auto-resume files that were PAUSED by a network drop (preserve R2 session)
     const paused = filesRef.current.filter(f => f.status === 'paused')
     if (paused.length > 0) {
+      setShowRestoredBanner(true)
+      setTimeout(() => setShowRestoredBanner(false), 5000)
       paused.forEach(f => {
         updateFile(f.uid, { status: 'pending', error: undefined, speed: undefined })
         void uploadFile(f.uid)
@@ -758,17 +762,45 @@ export function UploadZone({ defaultDestination, events }: Props) {
                         rounded-xl px-4 py-3">
           <WifiOff className="w-4 h-4 text-amber-400 shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-amber-300">You're offline</p>
-            <p className="text-xs text-amber-600 mt-0.5">
-              Files will be queued and uploaded automatically when your connection returns.
-            </p>
+            {pausedCount > 0 ? (
+              <>
+                <p className="text-sm font-medium text-amber-300">Connection lost — uploads paused</p>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  Your progress is saved. Uploads will resume automatically when connectivity returns.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-amber-300">You're offline</p>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  Files will be queued and uploaded automatically when your connection returns.
+                </p>
+              </>
+            )}
           </div>
-          {offlineCount > 0 && (
+          {pausedCount > 0 && (
+            <span className="shrink-0 text-xs font-semibold bg-amber-500/20 text-amber-400
+                             px-2 py-1 rounded-full">
+              {pausedCount} paused
+            </span>
+          )}
+          {offlineCount > 0 && pausedCount === 0 && (
             <span className="shrink-0 text-xs font-semibold bg-amber-500/20 text-amber-400
                              px-2 py-1 rounded-full">
               {offlineCount} queued
             </span>
           )}
+        </div>
+      )}
+
+      {/* ── Connection restored toast (auto-dismisses after 5 s) ────────────── */}
+      {showRestoredBanner && (
+        <div className="flex items-center gap-3 bg-emerald-950/60 border border-emerald-800/50
+                        rounded-xl px-4 py-3">
+          <Wifi className="w-4 h-4 text-emerald-400 shrink-0" />
+          <p className="text-sm font-medium text-emerald-300">
+            Connection restored — resuming your uploads…
+          </p>
         </div>
       )}
 
@@ -778,7 +810,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
           <div className="flex items-center gap-2">
             <PauseCircle className="w-4 h-4 text-violet-400 shrink-0" />
             <p className="text-sm font-medium text-violet-300">
-              {resumeSessions.length} incomplete upload{resumeSessions.length !== 1 ? 's' : ''} from a previous session
+              {resumeSessions.length} upload{resumeSessions.length !== 1 ? 's' : ''} in progress from a previous session
             </p>
             <button
               onClick={() => { void discardAllSessions(); setResumeSessions([]) }}
@@ -787,21 +819,47 @@ export function UploadZone({ defaultDestination, events }: Props) {
               Discard all
             </button>
           </div>
-          <ul className="space-y-0.5 pl-6">
+          <ul className="space-y-1.5 pl-2">
             {resumeSessions.map(s => {
               const pct = s.totalChunks > 0
                 ? Math.round((s.completedParts.length / s.totalChunks) * 100)
                 : 0
               return (
-                <li key={s.sessionId} className="text-xs text-slate-400">
-                  {s.fileName}
-                  <span className="text-slate-600 ml-1">— {pct}% uploaded</span>
+                <li key={s.sessionId} className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-300 truncate">{s.fileName}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex-1 h-1 bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-violet-500 rounded-full transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-slate-500 shrink-0">{pct}%</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => inputRef.current?.click()}
+                    className="shrink-0 text-xs font-medium text-violet-400 hover:text-violet-300
+                               bg-violet-900/40 hover:bg-violet-900/60 px-2.5 py-1 rounded-lg transition"
+                  >
+                    Resume
+                  </button>
+                  <button
+                    onClick={() => {
+                      void deleteSession(s.sessionId)
+                      setResumeSessions(prev => prev.filter(x => x.sessionId !== s.sessionId))
+                    }}
+                    className="shrink-0 text-xs text-slate-600 hover:text-slate-400 transition"
+                  >
+                    Discard
+                  </button>
                 </li>
               )
             })}
           </ul>
-          <p className="text-xs text-slate-500">
-            Add the same files again to automatically resume from where you left off.
+          <p className="text-xs text-slate-500 pt-0.5">
+            Click <span className="text-slate-400">Resume</span> then select the same file — upload will continue from {resumeSessions.length !== 1 ? 'where each left' : 'where it left'} off.
           </p>
         </div>
       )}
