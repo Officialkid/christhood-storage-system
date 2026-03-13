@@ -1,15 +1,16 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import Link from 'next/link'
-import { useSession } from 'next-auth/react'
-import { Film, Image as ImageIcon, Play } from 'lucide-react'
+import { useState, useRef }  from 'react'
+import Link                  from 'next/link'
+import { useSession }        from 'next-auth/react'
+import { Film, Image as ImageIcon, Play, Trash2, Check } from 'lucide-react'
 import type { MediaFile, AppRole, TagItem } from '@/types'
-import { DownloadButton } from '@/components/DownloadButton'
-import { StatusBadge } from '@/components/StatusBadge'
+import { DownloadButton }       from '@/components/DownloadButton'
+import { StatusBadge }          from '@/components/StatusBadge'
 import { StatusChangeDropdown } from '@/components/StatusChangeDropdown'
-import { ArchiveButton } from '@/components/ArchiveButton'
-import { TagPill } from '@/components/TagPill'
+import { ArchiveButton }        from '@/components/ArchiveButton'
+import { TagPill }              from '@/components/TagPill'
+import { DeleteFileDialog }     from '@/components/DeleteFileDialog'
 
 interface Props {
   media: MediaFile & {
@@ -21,39 +22,76 @@ interface Props {
   onPreview?: (fileId: string) => void
   /** Called after a successful archive/un-archive so parent can refresh. */
   onStatusChanged?: (newStatus: string) => void
+  /** Called after this card's file is deleted, so parent can remove it. */
+  onDeleted?: (fileId: string) => void
+  /** Whether the grid is in multi-select mode. */
+  selectMode?: boolean
+  /** Whether this card is currently selected. */
+  selected?: boolean
+  /** Callback to toggle this card's selection. */
+  onToggleSelect?: (id: string) => void
 }
 
-export function MediaCard({ media, onPreview, onStatusChanged }: Props) {
+export function MediaCard({
+  media, onPreview, onStatusChanged, onDeleted,
+  selectMode = false, selected = false, onToggleSelect,
+}: Props) {
   const [hovered,       setHovered]       = useState(false)
   const [status,        setStatus]        = useState<string>(media.status)
   const [videoThumbErr, setVideoThumbErr] = useState(false)
+  const [showDeleteDlg, setShowDeleteDlg] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const { data: session }       = useSession()
-  const role                    = (session?.user?.role ?? 'UPLOADER') as AppRole
+
+  const { data: session } = useSession()
+  const role   = (session?.user?.role ?? 'UPLOADER') as AppRole
+  const userId = session?.user?.id ?? ''
+
+  // Compute UI-layer delete permission (mirrors server logic)
+  const canDelete = (() => {
+    if (role === 'UPLOADER') return false
+    if (status === 'DELETED' || status === 'PURGED') return false
+    if (role === 'ADMIN') return true
+    if (status === 'PUBLISHED') return false
+    if (media.uploaderId === userId) return true
+    return status === 'RAW'
+  })()
 
   const isVideo = media.fileType === 'VIDEO'
   const kb      = Math.round(Number(media.fileSize) / 1024)
   const size    = kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`
 
-  // Capture first frame of video as "thumbnail" once metadata loads
   function handleVideoMeta() {
     const vid = videoRef.current
-    if (vid) vid.currentTime = 0.001   // seek to near-start to expose first frame
+    if (vid) vid.currentTime = 0.001
+  }
+
+  // Body click: toggle selection in select mode, otherwise preview
+  function handleBodyClick() {
+    if (selectMode) {
+      onToggleSelect?.(media.id)
+    } else {
+      onPreview?.(media.id)
+    }
   }
 
   return (
-    <div
-      className="relative rounded-xl overflow-hidden bg-slate-800 border border-slate-700
-                 aspect-square group cursor-pointer"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {/* ── Thumbnail area ─────────────────────────────────────────────────── */}
+    <>
       <div
-        className="w-full h-full flex items-center justify-center bg-slate-700"
-        onClick={() => onPreview?.(media.id)}
-        title="Click to preview"
+        className={`relative rounded-xl overflow-hidden bg-slate-800 border aspect-square group cursor-pointer
+                    transition-all duration-150
+                    ${selected
+                      ? 'border-indigo-500 ring-2 ring-indigo-500/40'
+                      : 'border-slate-700'
+                    }`}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
+        {/* ── Thumbnail area ───────────────────────────────────────────────────── */}
+        <div
+          className="w-full h-full flex items-center justify-center bg-slate-700"
+          onClick={handleBodyClick}
+          title={selectMode ? (selected ? 'Deselect' : 'Select') : 'Click to preview'}
+        >
         {media.thumbnailUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -96,11 +134,28 @@ export function MediaCard({ media, onPreview, onStatusChanged }: Props) {
         )}
       </div>
 
-      {/* ── Hover overlay ──────────────────────────────────────────────────── */}
-      <div
-        className={`absolute inset-0 bg-slate-900/80 flex flex-col justify-end p-3
-                    transition-opacity duration-200 ${hovered ? 'opacity-100' : 'opacity-0'}`}
-      >
+        {/* ── Selection checkbox — top-left (shown in select mode) ───────────────── */}
+        {selectMode && (
+          <div
+            className="absolute top-2 left-2 z-10 cursor-pointer drop-shadow-md"
+            onClick={(e) => { e.stopPropagation(); onToggleSelect?.(media.id) }}
+          >
+            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all
+                             ${selected
+                               ? 'border-indigo-500 bg-indigo-600'
+                               : 'border-white/70 bg-black/40'
+                             }`}>
+              {selected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+            </div>
+          </div>
+        )}
+
+        {/* ── Hover overlay — hidden in select mode ─────────────────────────── */}
+        {!selectMode && (
+          <div
+            className={`absolute inset-0 bg-slate-900/80 flex flex-col justify-end p-3
+                        transition-opacity duration-200 ${hovered ? 'opacity-100' : 'opacity-0'}`}
+          >
         <p className="text-xs text-white font-medium truncate">{media.originalName}</p>
         {media.event && (
           <p className="text-xs text-indigo-400 truncate mt-0.5">{media.event.name}</p>
@@ -158,31 +213,68 @@ export function MediaCard({ media, onPreview, onStatusChanged }: Props) {
           onChanged={(s) => setStatus(s)}
         />
 
-        {/* Archive toggle — ADMIN only */}
-        {role === 'ADMIN' && (
-          <ArchiveButton
-            fileId={media.id}
-            currentStatus={status}
-            compact={false}
-            className="mt-1 w-full"
-            onDone={(s) => {
-              setStatus(s)
-              onStatusChanged?.(s)
-            }}
-          />
+            {/* Archive toggle — ADMIN only */}
+            {role === 'ADMIN' && (
+              <ArchiveButton
+                fileId={media.id}
+                currentStatus={status}
+                compact={false}
+                className="mt-1 w-full"
+                onDone={(s) => {
+                  setStatus(s)
+                  onStatusChanged?.(s)
+                }}
+              />
+            )}
+
+            {/* Delete — EDITOR and ADMIN with permission */}
+            {canDelete && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowDeleteDlg(true) }}
+                className="mt-1 w-full flex items-center justify-center gap-1.5 rounded-md
+                           bg-red-600/70 px-2 py-1.5 text-xs font-medium text-white
+                           hover:bg-red-500/80 transition-colors"
+              >
+                <Trash2 className="w-3 h-3" />
+                Move to Trash
+              </button>
+            )}
+          </div>
         )}
+
+        {/* File-type badge — top-left (hidden in select mode) */}
+        {!selectMode && (
+          <span className="absolute top-2 left-2 rounded-md bg-slate-900/70 px-1.5 py-0.5
+                           text-xs font-medium text-slate-300 pointer-events-none">
+            {media.fileType}
+          </span>
+        )}
+
+        {/* Status badge — top-right */}
+        <div className="absolute top-2 right-2 pointer-events-none">
+          <StatusBadge status={status} />
+        </div>
       </div>
 
-      {/* File-type badge — top left */}
-      <span className="absolute top-2 left-2 rounded-md bg-slate-900/70 px-1.5 py-0.5
-                       text-xs font-medium text-slate-300 pointer-events-none">
-        {media.fileType}
-      </span>
-
-      {/* Status badge — top right */}
-      <div className="absolute top-2 right-2 pointer-events-none">
-        <StatusBadge status={status} />
-      </div>
-    </div>
+      {/* Delete confirmation dialog */}
+      {showDeleteDlg && (
+        <DeleteFileDialog
+          files={[{
+            id:           media.id,
+            originalName: media.originalName,
+            status,
+            uploaderId:   media.uploaderId,
+            thumbnailUrl: media.thumbnailUrl,
+          }]}
+          userRole={role}
+          currentUserId={userId}
+          onClose={() => setShowDeleteDlg(false)}
+          onDeleted={(ids) => {
+            setShowDeleteDlg(false)
+            onDeleted?.(ids[0])
+          }}
+        />
+      )}
+    </>
   )
 }

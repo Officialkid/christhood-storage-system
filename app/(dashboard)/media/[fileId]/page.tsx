@@ -11,6 +11,7 @@ import { TagPill } from '@/components/TagPill'
 import type { AppRole } from '@/types'
 import Link from 'next/link'
 import ShareButton from '@/components/ShareButton'
+import { DeleteFileButton } from '@/components/DeleteFileButton'
 
 /**
  * /media/[fileId] — File detail page
@@ -44,6 +45,17 @@ export default async function FileDetailPage({
 
   const role    = session.user.role as AppRole
   const isVideo = file.fileType === 'VIDEO'
+
+  // Permission: can this user delete this file?
+  const fileStatus    = file.status as string
+  const canDeleteThis =
+    fileStatus !== 'DELETED' && fileStatus !== 'PURGED' &&
+    (role === 'ADMIN' ||
+      (role === 'EDITOR' &&
+        fileStatus !== 'PUBLISHED' &&
+        (file.uploaderId === session.user.id || fileStatus === 'RAW')
+      )
+    )
   const kb      = Number(file.fileSize) / 1024
   const size    = kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb.toFixed(0)} KB`
 
@@ -164,6 +176,30 @@ export default async function FileDetailPage({
                   userRole={role}
                 />
               </div>
+            </div>
+          )}
+
+          {/* ── Danger zone ── */}
+          {canDeleteThis && (
+            <div className="rounded-xl bg-red-950/20 border border-red-800/30 p-4">
+              <p className="text-xs text-red-400/80 uppercase tracking-wider font-semibold mb-1">
+                Danger Zone
+              </p>
+              <p className="text-xs text-slate-500 mb-3">
+                {role === 'ADMIN' && fileStatus === 'PUBLISHED'
+                  ? 'This file has been published. Moving to trash may affect anyone relying on it externally.'
+                  : 'Moving this file to trash gives you 30\u00a0days to restore it before permanent deletion.'
+                }
+              </p>
+              <DeleteFileButton
+                fileId={file.id}
+                fileName={file.originalName}
+                fileStatus={fileStatus}
+                uploaderId={file.uploaderId}
+                thumbnailUrl={null}
+                userRole={role}
+                currentUserId={session.user.id}
+              />
             </div>
           )}
         </div>
