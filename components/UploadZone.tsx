@@ -6,15 +6,25 @@ import {
 import {
   Upload, X, CheckCircle2, AlertCircle, Loader2, Film,
   Image as ImageIcon, FolderOpen, ChevronDown, RefreshCw,
-  WifiOff, Camera, Video as VideoIcon, GalleryHorizontalEnd, Clock,
+  WifiOff, Camera, Video as VideoIcon, GalleryHorizontalEnd, Clock, PauseCircle,
 } from 'lucide-react'
 import { queueUpload, getQueue, removeFromQueue, type QueuedUpload } from '@/lib/offlineQueue'
-import { runMultipartUpload, abortMultipartSession }                  from '@/lib/upload/multipart-uploader'
+import { runMultipartUpload, abortMultipartSession, NetworkError }   from '@/lib/upload/multipart-uploader'
+import {
+  getSession, saveSession, updateSession, deleteSession,
+  getActiveSessions, discardAllSessions, sessionIdFor,
+  type UploadSession,
+} from '@/lib/upload/upload-session-store'
+import {
+  requestNotificationPermission, notifyUploadProgress,
+  notifyUploadComplete, notifyUploadFailed, dismissUploadNotification,
+} from '@/lib/upload/upload-notifications'
 
 // ──────────────────────────── Constants ──────────────────────────────────────
 const MULTIPART_THRESHOLD = 5  * 1024 * 1024  //  5 MB – files above this use multipart
 const MAX_CONCURRENT      = 5                  // file-level concurrency; chunk concurrency = 4 (inside runMultipartUpload)
-const RESUME_PFX          = 'cmms_resume_'
+// Throttle PWA notification updates: post to SW every NOTIF_THROTTLE_PCT % change
+const NOTIF_THROTTLE_PCT  = 5
 
 // ──────────────────────────── Types ──────────────────────────────────────────
 export interface DestinationInfo {
@@ -35,7 +45,7 @@ export interface EventOption {
   subfolders:  { id: string; label: string }[]
 }
 
-type UploadStatus = 'pending' | 'starting' | 'uploading' | 'completing' | 'done' | 'error' | 'queued-offline'
+type UploadStatus = 'pending' | 'starting' | 'uploading' | 'completing' | 'done' | 'error' | 'queued-offline' | 'paused'
 
 interface UploadFile {
   uid:          string          // local-only ID
@@ -47,42 +57,9 @@ interface UploadFile {
   mode?:        'simple' | 'multipart'
   totalParts?:  number
   doneParts?:   number
-  resumeKey?:   string
-  speed?:       number   // bytes/sec (rolling)
-  bytesLoaded?: number   // bytes uploaded so far
-}
-
-interface ResumeState {
-  r2Key:          string
-  uploadId:       string
-  originalName:   string
-  fileSize:       number
-  contentType:    string
-  eventId:        string
-  subfolderId?:   string
-  partSize:       number
-  totalParts:     number
-  completedParts: { PartNumber: number; ETag: string }[]
-}
-
-// ──────────────────────────── Helpers ────────────────────────────────────────
-function resumeKey(file: File) {
-  return `${RESUME_PFX}${encodeURIComponent(file.name)}_${file.size}_${file.lastModified}`
-}
-
-function loadResume(file: File): ResumeState | null {
-  try {
-    const raw = localStorage.getItem(resumeKey(file))
-    return raw ? (JSON.parse(raw) as ResumeState) : null
-  } catch { return null }
-}
-
-function saveResume(file: File, state: ResumeState) {
-  try { localStorage.setItem(resumeKey(file), JSON.stringify(state)) } catch {}
-}
-
-function clearResume(file: File) {
-  try { localStorage.removeItem(resumeKey(file)) } catch {}
+  sessionId?:   string          // stable IDB key = sessionIdFor(file)
+  speed?:       number          // bytes/sec (rolling)
+  bytesLoaded?: number          // bytes uploaded so far
 }
 
 /** XHR-based PUT that reports upload progress. */
@@ -188,6 +165,9 @@ function FileRow({
         {uf.status === 'error' && (
           <p className="text-xs text-red-400 mt-0.5 truncate">{uf.error}</p>
         )}
+        {uf.status === 'paused' && (
+          <p className="text-xs text-amber-400 mt-0.5">Paused — will resume when online ({uf.progress}% saved)</p>
+        )}
         {uf.status === 'queued-offline' && (
           <p className="text-xs text-amber-500 mt-0.5">Saved — will upload when online</p>
         )}
@@ -213,6 +193,9 @@ function FileRow({
         {uf.status === 'error' && (
           <AlertCircle className="w-4 h-4 text-red-400 ml-auto" />
         )}
+        {uf.status === 'paused' && (
+          <PauseCircle className="w-4 h-4 text-amber-400 ml-auto" />
+        )}
         {uf.status === 'queued-offline' && (
           <Clock className="w-4 h-4 text-amber-400 ml-auto" />
         )}
@@ -231,8 +214,9 @@ function FileRow({
         </button>
       )}
 
-      {/* Remove button (only when not uploading/queued) */}
-      {uf.status !== 'uploading' && uf.status !== 'starting' && uf.status !== 'completing' && uf.status !== 'queued-offline' && (
+      {/* Remove button — not shown while actively uploading or offline-queued */}
+      {uf.status !== 'uploading' && uf.status !== 'starting' && uf.status !== 'completing'
+        && uf.status !== 'queued-offline' && uf.status !== 'paused' && (
         <button
           onClick={onRemove}
           className="shrink-0 p-1 rounded text-slate-600 hover:text-slate-300 hover:bg-slate-700
@@ -266,6 +250,10 @@ export function UploadZone({ defaultDestination, events }: Props) {
   const [selSubId,    setSelSubId]      = useState('')
   const [isUploading, setIsUploading]   = useState(false)
   const [isOnline,    setIsOnline]      = useState(true)
+  // Sessions from a previous page load that were interrupted mid-upload
+  const [resumeSessions, setResumeSessions] = useState<import('@/lib/upload/upload-session-store').UploadSession[]>([])
+  // Track last notification % to throttle SW messages
+  const lastNotifPctRef = useRef(-NOTIF_THROTTLE_PCT)
 
   // Keep destination state in sync with the prop (for SSR-hydrated page)
   useEffect(() => {
@@ -298,7 +286,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
       // Standard way to show native browser "leave site?" dialog
       e.preventDefault()
       // Older browsers also need returnValue set (any non-empty string)
-      e.returnValue = 'You have uploads in progress. If you leave, they will be lost. Are you sure?'
+      e.returnValue = 'You have uploads in progress. Your progress is saved and will resume when you return. Leave now?'
       return e.returnValue
     }
 
@@ -306,11 +294,19 @@ export function UploadZone({ defaultDestination, events }: Props) {
     return () => window.removeEventListener('beforeunload', handler)
   }, [filesState])
 
-  // ── SW message: drain offline queue when connectivity is restored ───────────
+  // ── SW message: drain offline queue / resume uploads ──────────────────────
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OFFLINE_QUEUE_DRAIN') {
         drainOfflineQueue()
+      }
+      if (event.data?.type === 'RESUME_UPLOADS') {
+        // Service worker signalled that we should resume any paused sessions
+        const paused = filesRef.current.filter(f => f.status === 'paused')
+        paused.forEach(f => {
+          updateFile(f.uid, { status: 'pending', error: undefined })
+          void uploadFile(f.uid)
+        })
       }
     }
     navigator.serviceWorker?.addEventListener('message', handleMessage)
@@ -318,24 +314,44 @@ export function UploadZone({ defaultDestination, events }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destination])
 
-  // ── Register background sync when coming back online ───────────────────────
+  // ── Register background sync + resume paused uploads when coming back online
   useEffect(() => {
     if (!isOnline) return
+
+    // Auto-resume files that were PAUSED by a network drop (preserve R2 session)
+    const paused = filesRef.current.filter(f => f.status === 'paused')
+    if (paused.length > 0) {
+      paused.forEach(f => {
+        updateFile(f.uid, { status: 'pending', error: undefined, speed: undefined })
+        void uploadFile(f.uid)
+      })
+    }
 
     // Auto-retry files that errored during a mid-upload connection drop
     if (filesRef.current.some(f => f.status === 'error')) uploadAll()
 
-    // Try Background Sync (Chrome/Android) — gracefully ignores on iOS/Firefox
+    // Register Background Sync (Chrome/Android) — gracefully ignores on iOS/Firefox
     navigator.serviceWorker?.ready.then(reg => {
       ;(reg as any).sync?.register('cmms-upload-sync').catch(() => {
-        // Background Sync not supported — drain directly
         drainOfflineQueue()
       })
+      ;(reg as any).sync?.register('resume-upload').catch(() => {/* not supported */})
     }).catch(() => {
       drainOfflineQueue()
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline])
+
+  // ── On mount: scan IDB for incomplete sessions from previous page loads ─────
+  useEffect(() => {
+    getActiveSessions().then(sessions => {
+      if (sessions.length > 0) setResumeSessions(sessions)
+    }).catch(() => {})
+
+    // Dismiss any lingering upload notifications when the upload page is opened
+    dismissUploadNotification()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── File state helpers ──────────────────────────────────────────────────────
   function syncState() { setFilesState([...filesRef.current]) }
@@ -353,10 +369,15 @@ export function UploadZone({ defaultDestination, events }: Props) {
       file,
       status:    'pending',
       progress:  0,
-      resumeKey: resumeKey(file),
+      sessionId: sessionIdFor(file),
     }))
     filesRef.current = [...filesRef.current, ...news]
     syncState()
+    // Remove any resume-banner entries that match files the user just added
+    // (they'll auto-resume in uploadFile via IDB lookup)
+    setResumeSessions(prev => prev.filter(
+      s => !news.some(n => n.sessionId === s.sessionId),
+    ))
   }
 
   function removeFile(uid: string) {
@@ -487,27 +508,31 @@ export function UploadZone({ defaultDestination, events }: Props) {
         updateFile(uid, { status: 'done', progress: 100, storedName: regMf?.storedName })
 
       } else {
-        // ── PARALLEL MULTIPART PATH ────────────────────────────────────────────
-        // All chunk presigned-URLs are fetched in ONE server round-trip, then
-        // PARALLEL_LIMIT (4) chunks upload simultaneously via XHR.
-        // Result: a 500 MB video goes from ~15-20 min → ~2-3 min on 50 Mbps WiFi.
-        const storedResume = loadResume(file)
-        const hasResume    = !!(storedResume && storedResume.eventId === destination.eventId)
+        // ── PARALLEL MULTIPART PATH ──────────────────────────────────────────
+        // 1. Batch-presign ALL part URLs in one round-trip.
+        // 2. Upload with PARALLEL_LIMIT concurrent XHR requests.
+        // 3. Persist progress to IDB after each chunk (survives page reload).
+        // 4. NetworkError → pause (don't abort R2 session); reconnect auto-resumes.
+
+        const sId = sessionIdFor(file)
+        // Check IDB for an incomplete session from a previous page load / network drop
+        const storedSession = await getSession(sId)
+        const hasResume     = !!(storedSession && storedSession.eventId === destination.eventId)
 
         updateFile(uid, {
           status:     'uploading',
           mode:       'multipart',
-          totalParts: hasResume ? storedResume!.totalParts            : undefined,
-          doneParts:  hasResume ? storedResume!.completedParts.length : 0,
-          progress:   hasResume
-            ? Math.round((storedResume!.completedParts.length / storedResume!.totalParts) * 100)
+          sessionId:  sId,
+          totalParts: hasResume ? storedSession!.totalChunks              : undefined,
+          doneParts:  hasResume ? storedSession!.completedParts.length    : 0,
+          progress:   hasResume && storedSession!.totalChunks > 0
+            ? Math.round((storedSession!.completedParts.length / storedSession!.totalChunks) * 100)
             : 0,
         })
 
-        // Capture session IDs set in onCreate so we can abort on failure and
-        // persist incremental resume state in onPartDone.
         let mpSession: { uploadId: string; key: string } | null = null
         const mpStartedAt = Date.now()
+        const CHUNK_SIZE  = 10 * 1024 * 1024
 
         try {
           const result = await runMultipartUpload({
@@ -517,49 +542,38 @@ export function UploadZone({ defaultDestination, events }: Props) {
 
             resume: hasResume
               ? {
-                  uploadId:       storedResume!.uploadId,
-                  key:            storedResume!.r2Key,
-                  completedParts: storedResume!.completedParts,
+                  uploadId:       storedSession!.uploadId,
+                  key:            storedSession!.key,
+                  completedParts: storedSession!.completedParts,
                 }
               : undefined,
 
-            // Called once after a fresh session is created (not called on resume).
+            // Fired once on fresh session creation — persist to IDB immediately.
             onCreate: ({ uploadId, key, totalParts }) => {
               mpSession = { uploadId, key }
-              saveResume(file, {
-                r2Key:          key,
+              void saveSession({
+                sessionId:      sId,
                 uploadId,
-                originalName:   file.name,
+                key,
+                fileName:       file.name,
                 fileSize:       file.size,
-                contentType,
+                mimeType:       contentType,
                 eventId:        destination.eventId,
-                subfolderId:    destination.subfolderId ?? undefined,
-                partSize:       10 * 1024 * 1024,
-                totalParts,
+                subfolderId:    destination.subfolderId ?? null,
+                totalChunks:    totalParts,
+                chunkSize:      CHUNK_SIZE,
                 completedParts: [],
+                failedChunks:   [],
+                status:         'active',
+                startedAt:      new Date().toISOString(),
+                lastProgressAt: new Date().toISOString(),
               })
               updateFile(uid, { totalParts })
             },
 
-            // Called after every chunk — persist partial state for crash recovery.
+            // Fired after each chunk — update IDB so a crash/reload can resume.
             onPartDone: (completed, done, total) => {
-              const s = mpSession ?? (
-                hasResume ? { uploadId: storedResume!.uploadId, key: storedResume!.r2Key } : null
-              )
-              if (s) {
-                saveResume(file, {
-                  r2Key:          s.key,
-                  uploadId:       s.uploadId,
-                  originalName:   file.name,
-                  fileSize:       file.size,
-                  contentType,
-                  eventId:        destination.eventId,
-                  subfolderId:    destination.subfolderId ?? undefined,
-                  partSize:       10 * 1024 * 1024,
-                  totalParts:     total,
-                  completedParts: completed,
-                })
-              }
+              void updateSession(sId, { completedParts: completed, status: 'active' })
               updateFile(uid, { doneParts: done })
             },
 
@@ -572,19 +586,41 @@ export function UploadZone({ defaultDestination, events }: Props) {
             },
           })
 
-          clearResume(file)
+          // Success — clean up the IDB session (R2 object is now committed)
+          void deleteSession(sId)
           updateFile(uid, { status: 'done', progress: 100, storedName: result.mediaFile.storedName })
+
         } catch (err: any) {
-          // Abort the R2 session to free orphaned chunk data and avoid storage charges.
+          const isNetworkDrop = (err instanceof NetworkError) || !navigator.onLine
+
+          if (isNetworkDrop) {
+            // Chunks already uploaded are safe in R2. Pause without aborting.
+            // Mark session as paused in IDB so the resume banner shows on next visit.
+            void updateSession(sId, { status: 'paused' })
+            throw new NetworkError('Connection lost — upload paused. Will resume when online.')
+          }
+
+          // Genuine failure — abort the R2 session to free orphaned chunk storage.
           const s = mpSession ?? (
-            hasResume ? { uploadId: storedResume!.uploadId, key: storedResume!.r2Key } : null
+            hasResume ? { uploadId: storedSession!.uploadId, key: storedSession!.key } : null
           )
           if (s) void abortMultipartSession(s.uploadId, s.key)
-          throw err  // re-throw so the outer catch sets the error UI state
+          void deleteSession(sId)    // session is no longer valid
+          throw err
         }
       }
     } catch (err: any) {
-      updateFile(uid, { status: 'error', error: err.message ?? 'Upload failed' })
+      const isNetworkDrop = (err instanceof NetworkError) || !navigator.onLine
+      if (isNetworkDrop) {
+        // Paused, not errored — don't show a red X
+        updateFile(uid, {
+          status: 'paused',
+          error:  undefined,
+          speed:  undefined,
+        })
+      } else {
+        updateFile(uid, { status: 'error', error: err.message ?? 'Upload failed' })
+      }
     }
   }, [destination])
 
@@ -623,14 +659,31 @@ export function UploadZone({ defaultDestination, events }: Props) {
       Array.from({ length: Math.min(MAX_CONCURRENT, queue.length) }, () => worker()),
     )
     setIsUploading(false)
+    lastNotifPctRef.current = -NOTIF_THROTTLE_PCT
+
+    // Send final PWA notification
+    const errored = filesRef.current.filter(f => f.status === 'error').length
+    if (errored > 0) {
+      notifyUploadFailed(errored)
+    } else {
+      const completed = filesRef.current.filter(f => f.status === 'done').length
+      if (completed > 0) notifyUploadComplete(completed)
+    }
   }
 
   // ── Per-file retry (re-queues a single failed file without touching others) ──
   async function retryFile(uid: string) {
     if (!destination) return
+    const uf = filesRef.current.find(f => f.uid === uid)
+    if (!uf) return
+    // Paused files remember their progress so the multipart path can resume
+    const keepProgress = uf.status === 'paused'
     updateFile(uid, {
-      status: 'pending', progress: 0, error: undefined,
-      speed: undefined, bytesLoaded: undefined,
+      status:      'pending',
+      progress:    keepProgress ? uf.progress    : 0,
+      bytesLoaded: keepProgress ? uf.bytesLoaded : undefined,
+      error:       undefined,
+      speed:       undefined,
     })
     await new Promise(r => setTimeout(r, 0))
     await uploadFile(uid)
@@ -650,9 +703,11 @@ export function UploadZone({ defaultDestination, events }: Props) {
   const errorCount    = filesState.filter(f => f.status === 'error').length
   const doneCount     = filesState.filter(f => f.status === 'done').length
   const offlineCount  = filesState.filter(f => f.status === 'queued-offline').length
+  const pausedCount   = filesState.filter(f => f.status === 'paused').length
   const activeCount   = filesState.filter(f =>
     f.status === 'uploading' || f.status === 'starting' || f.status === 'completing',
   ).length
+  // Paused files are excluded from uploadableCount — they auto-resume when online
   const uploadableCount = pendingCount + errorCount + (isOnline ? offlineCount : 0)
 
   // Byte-weighted overall progress (accurate for mixed small/large files)
@@ -673,6 +728,17 @@ export function UploadZone({ defaultDestination, events }: Props) {
   const remainingBytes = filesState
     .filter(f => ['pending', 'starting', 'uploading', 'completing'].includes(f.status))
     .reduce((s, f) => s + f.file.size - (f.bytesLoaded ?? 0), 0)
+
+  // ── Throttled PWA progress notification (fires during active upload) ───────
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!isUploading) return
+    if (overallPct - lastNotifPctRef.current >= NOTIF_THROTTLE_PCT) {
+      lastNotifPctRef.current = overallPct
+      const speed = avgUploadSpeed > 0 ? formatSpeed(avgUploadSpeed) : undefined
+      notifyUploadProgress(activeCount, filesState.length, overallPct, speed)
+    }
+  })
 
   // ── Grouped event options ──────────────────────────────────────────────────
   const yearMap = new Map<number, EventOption[]>()
@@ -703,6 +769,40 @@ export function UploadZone({ defaultDestination, events }: Props) {
               {offlineCount} queued
             </span>
           )}
+        </div>
+      )}
+
+      {/* ── Incomplete uploads from a previous session ───────────────────── */}
+      {resumeSessions.length > 0 && (
+        <div className="bg-violet-950/60 border border-violet-800/50 rounded-xl px-4 py-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <PauseCircle className="w-4 h-4 text-violet-400 shrink-0" />
+            <p className="text-sm font-medium text-violet-300">
+              {resumeSessions.length} incomplete upload{resumeSessions.length !== 1 ? 's' : ''} from a previous session
+            </p>
+            <button
+              onClick={() => { void discardAllSessions(); setResumeSessions([]) }}
+              className="ml-auto text-xs text-slate-500 hover:text-slate-300 transition"
+            >
+              Discard all
+            </button>
+          </div>
+          <ul className="space-y-0.5 pl-6">
+            {resumeSessions.map(s => {
+              const pct = s.totalChunks > 0
+                ? Math.round((s.completedParts.length / s.totalChunks) * 100)
+                : 0
+              return (
+                <li key={s.sessionId} className="text-xs text-slate-400">
+                  {s.fileName}
+                  <span className="text-slate-600 ml-1">— {pct}% uploaded</span>
+                </li>
+              )
+            })}
+          </ul>
+          <p className="text-xs text-slate-500">
+            Add the same files again to automatically resume from where you left off.
+          </p>
         </div>
       )}
 

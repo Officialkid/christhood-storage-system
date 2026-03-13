@@ -132,6 +132,10 @@ self.addEventListener('sync', (event) => {
     // Tell all open windows to drain the IndexedDB upload queue
     event.waitUntil(notifyClientsToSync())
   }
+  if (event.tag === 'resume-upload') {
+    // Tell all open windows to resume paused multipart uploads
+    event.waitUntil(notifyClientsToResumeUploads())
+  }
 })
 
 async function notifyClientsToSync() {
@@ -140,6 +144,63 @@ async function notifyClientsToSync() {
     client.postMessage({ type: 'OFFLINE_QUEUE_DRAIN' })
   }
 }
+
+async function notifyClientsToResumeUploads() {
+  const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true })
+  for (const client of allClients) {
+    client.postMessage({ type: 'RESUME_UPLOADS' })
+  }
+}
+
+// ── Upload progress notifications (from main thread via postMessage) ─────────
+self.addEventListener('message', (event) => {
+  const data = event.data
+  if (!data) return
+
+  if (data.type === 'UPLOAD_PROGRESS') {
+    const { active, total, pct, speed, tag } = data
+    const body = speed
+      ? `${active} of ${total} files · ${pct}% · ${speed}`
+      : `${active} of ${total} files · ${pct}%`
+    self.registration.showNotification('CMMS Upload in progress', {
+      body,
+      icon:   '/icons/icon-192.svg',
+      badge:  '/icons/icon-192.svg',
+      tag:    tag ?? 'cmms-upload-progress',
+      silent: true,
+      data:   { url: '/upload' },
+    }).catch(() => {})
+  }
+
+  if (data.type === 'UPLOAD_COMPLETE') {
+    const { total, tag } = data
+    self.registration.showNotification('Upload complete ✅', {
+      body:  `${total} file${total !== 1 ? 's' : ''} uploaded successfully`,
+      icon:  '/icons/icon-192.svg',
+      badge: '/icons/icon-192.svg',
+      tag:   tag ?? 'cmms-upload-progress',
+      data:  { url: '/media' },
+    }).catch(() => {})
+  }
+
+  if (data.type === 'UPLOAD_FAILED') {
+    const { failedCount, tag } = data
+    self.registration.showNotification('Upload failed ❌', {
+      body:  `${failedCount} file${failedCount !== 1 ? 's' : ''} failed — tap to retry`,
+      icon:  '/icons/icon-192.svg',
+      badge: '/icons/icon-192.svg',
+      tag:   tag ?? 'cmms-upload-progress',
+      data:  { url: '/upload' },
+    }).catch(() => {})
+  }
+
+  if (data.type === 'UPLOAD_DISMISS') {
+    const { tag } = data
+    self.registration.getNotifications({ tag: tag ?? 'cmms-upload-progress' })
+      .then(notifs => notifs.forEach(n => n.close()))
+      .catch(() => {})
+  }
+})
 
 // ── Push event ────────────────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {

@@ -23,6 +23,20 @@
 export const CHUNK_SIZE     = 10 * 1024 * 1024  // 10 MB (R2 minimum part size is 5 MB)
 export const PARALLEL_LIMIT = 4                  // simultaneous chunk uploads
 
+/**
+ * Thrown when a chunk upload fails due to a network connectivity problem
+ * (as opposed to an auth error, server error, or intentional abort).
+ *
+ * UploadZone catches this to pause the upload without aborting the R2 session —
+ * already-uploaded chunks are preserved and the upload can resume later.
+ */
+export class NetworkError extends Error {
+  override name = 'NetworkError'
+  constructor(message: string) {
+    super(message)
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────── Types ───
 
 export interface MultipartResumeInfo {
@@ -120,7 +134,7 @@ function uploadChunk(
       }
     })
 
-    xhr.addEventListener('error', () => reject(new Error('Network error during chunk upload')))
+    xhr.addEventListener('error', () => reject(new NetworkError('Network error during chunk upload')))
     xhr.addEventListener('abort', () => reject(new DOMException('Chunk upload aborted', 'AbortError')))
 
     signal?.addEventListener('abort', () => xhr.abort(), { once: true })
