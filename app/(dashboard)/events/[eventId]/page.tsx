@@ -10,6 +10,7 @@ import { ArchiveSection }      from '@/components/ArchiveSection'
 import { getPresignedDownloadUrl } from '@/lib/r2'
 import { canBatchDownload }    from '@/lib/downloadAuth'
 import { CalendarDays, FolderOpen, Image, Upload } from 'lucide-react'
+import ShareButton             from '@/components/ShareButton'
 
 interface Props {
   params:      { eventId: string }
@@ -142,6 +143,14 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
               subfolderId={subfolderId ?? null}
               subfolderLabel={activeSubfolder?.label ?? null}
               fileCount={enriched.length}
+            />
+          )}
+          {session?.user?.role !== 'UPLOADER' && (
+            <ShareButton
+              linkType="EVENT"
+              eventId={eventId}
+              subfolderId={subfolderId ?? undefined}
+              defaultTitle={activeSubfolder ? `${event.name} — ${activeSubfolder.label}` : event.name}
             />
           )}
           <Link

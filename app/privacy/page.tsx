@@ -163,7 +163,7 @@ export default function PrivacyPage() {
                       <td className="px-4 py-3">Transactional email delivery (password resets)</td>
                     </tr>
                     <tr className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3 text-slate-300 font-medium">Anthropic</td>
+                      <td className="px-4 py-3 text-slate-300 font-medium">Google Gemini</td>
                       <td className="px-4 py-3">AI model powering the Help Assistant (see Section 5)</td>
                     </tr>
                   </tbody>
@@ -175,9 +175,9 @@ export default function PrivacyPage() {
             <section>
               <h2 className="text-lg font-semibold text-white mb-3">5. Help Assistant (AI Chatbot)</h2>
               <p>
-                The platform includes a built-in Help Assistant powered by Anthropic&rsquo;s AI API. When
+                The platform includes a built-in Help Assistant powered by Google&rsquo;s Gemini AI API. When
                 you send a message to the assistant, your message text and the current page context are
-                transmitted to Anthropic&rsquo;s servers to generate a response. Chat messages are not
+                transmitted to Google&rsquo;s servers to generate a response. Chat messages are not
                 stored in our database beyond the active session. Please do not submit sensitive personal
                 information through the Help Assistant.
               </p>

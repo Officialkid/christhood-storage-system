@@ -6,6 +6,7 @@ import { prisma }                 from '@/lib/prisma'
 import { SentTransferDetail }     from '@/components/SentTransferDetail'
 import Link                       from 'next/link'
 import { ChevronLeft }            from 'lucide-react'
+import ShareButton                from '@/components/ShareButton'
 
 export const metadata: Metadata = { title: 'Transfer Detail — Christhood CMMS' }
 
@@ -89,6 +90,15 @@ export default async function SentTransferDetailPage({ params }: Props) {
         <ChevronLeft className="w-4 h-4" />
         Back to Sent Transfers
       </Link>
+
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div />
+        <ShareButton
+          linkType="TRANSFER"
+          transferId={transfer.id}
+          defaultTitle={transfer.subject}
+        />
+      </div>
 
       <SentTransferDetail transfer={serialised} />
     </div>

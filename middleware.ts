@@ -15,7 +15,7 @@ import { checkIpRateLimit } from '@/lib/rate-limit'
 //   /api/health  — read-only probe
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CSRF_EXEMPT_RE = /^\/api\/(?:auth|cron|health)\b/
+const CSRF_EXEMPT_RE = /^\/api\/(?:auth|cron|health|share\/[^/]+(?:\/download)?)\b/
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 function checkCsrfOrigin(req: NextRequest): boolean {
@@ -113,9 +113,10 @@ function extractIp(req: NextRequest): string {
 
 // Paths that bypass session/RBAC enforcement.
 // Auth routes are managed by NextAuth itself; health/cron are secured separately.
+// /share/* and /api/share/[token]/GET are public (external sharing).
 // All of these still go through the CRLF guard above.
 const AUTH_PASSTHROUGH_RE =
-  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|api\/auth|api\/health|api\/assistant\/health|api\/cron)\b/
+  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|share(?:\/|$)|api\/auth|api\/health|api\/assistant\/health|api\/cron)\b/
 
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl

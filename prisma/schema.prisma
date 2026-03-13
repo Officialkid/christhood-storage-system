@@ -104,6 +104,9 @@ model User {
 
   // Privacy: when true, no conversation logs are stored for this user
   zaraLoggingOptOut Boolean @default(false)
+
+  // External share links created by this user
+  shareLinks ShareLink[]
 }
 
 // ─────────────────────────────────────────────
@@ -640,4 +643,63 @@ model ZaraConversationLog {
   @@index([intentCategory])
   @@index([createdAt])
   @@index([retentionExpiresAt])
+}
+
+// ─────────────────────────────────────────────
+// External Share Links
+// ─────────────────────────────────────────────
+//
+// Allows Admin/Editor to generate a time-limited URL that gives
+// an external person (no CMMS account needed) view/download access
+// to a specific file, event folder, or transfer file set.
+//
+// Security properties:
+//   - Token is a cuid() — random, unguessable
+//   - Optional PIN is always stored as bcrypt hash — never plaintext
+//   - Links expire automatically; Admin can force-revoke at any time
+//   - Every access attempt is logged with IP + User-Agent
+
+/// "FILE"    — shares a single MediaFile
+/// "EVENT"   — shares all files in an Event (optionally filtered by subfolder)
+/// "TRANSFER" — shares the files from a sent Transfer
+model ShareLink {
+  id           String   @id @default(cuid())
+  token        String   @unique @default(cuid())
+  createdById  String   /// FK → User
+  linkType     String   /// "FILE" | "EVENT" | "TRANSFER"
+  fileId       String?  /// FK → MediaFile  (linkType = FILE)
+  eventId      String?  /// FK → Event      (linkType = EVENT)
+  subfolderId  String?  /// FK → EventSubfolder (optional sub-scope for EVENT links)
+  transferId   String?  /// FK → Transfer   (linkType = TRANSFER)
+  title        String
+  message      String?
+  pinHash      String?  /// bcrypt hash of 4-digit PIN; null = no PIN required
+  maxDownloads Int?     /// null = unlimited
+  downloadCount Int     @default(0)
+  expiresAt    DateTime
+  isRevoked    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  createdBy User            @relation(fields: [createdById], references: [id])
+  accesses  ShareLinkAccess[]
+
+  @@index([token])
+  @@index([createdById])
+  @@index([expiresAt])
+  @@index([isRevoked])
+}
+
+/// One row per access attempt (page view or file download) on a ShareLink.
+model ShareLinkAccess {
+  id          String   @id @default(cuid())
+  shareLinkId String
+  accessedAt  DateTime @default(now())
+  ipAddress   String
+  userAgent   String
+  downloaded  Boolean  @default(false)
+
+  shareLink ShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+
+  @@index([shareLinkId])
+  @@index([accessedAt])
 }

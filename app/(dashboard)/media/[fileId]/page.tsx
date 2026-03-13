@@ -10,6 +10,7 @@ import { TagInput } from '@/components/TagInput'
 import { TagPill } from '@/components/TagPill'
 import type { AppRole } from '@/types'
 import Link from 'next/link'
+import ShareButton from '@/components/ShareButton'
 
 /**
  * /media/[fileId] — File detail page
@@ -75,6 +76,13 @@ export default async function FileDetailPage({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <StatusBadge status={file.status as string} size="md" />
+          {role !== 'UPLOADER' && (
+            <ShareButton
+              linkType="FILE"
+              fileId={file.id}
+              defaultTitle={file.originalName}
+            />
+          )}
         </div>
       </div>
 

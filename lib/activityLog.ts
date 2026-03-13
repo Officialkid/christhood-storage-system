@@ -48,6 +48,9 @@ export type LogAction =
   | 'TRANSFER_INTEGRITY_FAILURE'
   // Internal messaging
   | 'MESSAGE_SENT'
+  // External share links
+  | 'SHARE_LINK_CREATED'
+  | 'SHARE_LINK_REVOKED'
   // Legacy aliases (kept for backward compat)
   | 'MEDIA_UPLOADED'
   | 'MEDIA_DOWNLOADED'
