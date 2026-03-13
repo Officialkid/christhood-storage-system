@@ -5,19 +5,22 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import {
   Shield, UserPlus, Pencil, Trash2, X, Loader2,
-  Check, Search, ChevronDown,
+  Check, Search, ChevronDown, UserX, UserCheck,
 } from 'lucide-react'
+import UserDeleteDialog from '@/components/UserDeleteDialog'
 
 type Role = 'ADMIN' | 'UPLOADER' | 'EDITOR'
 
 interface User {
-  id:        string
-  username:  string | null
-  name:      string | null
-  email:     string
-  phone:     string | null
-  role:      Role
-  createdAt: string
+  id:            string
+  username:      string | null
+  name:          string | null
+  email:         string
+  phone:         string | null
+  role:          Role
+  createdAt:     string
+  isActive:      boolean
+  deactivatedAt: string | null
 }
 
 const ROLE_COLORS: Record<Role, string> = {
@@ -182,14 +185,14 @@ export default function AdminUsersPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
 
-  const [users,    setUsers]    = useState<User[]>([])
-  const [filtered, setFiltered] = useState<User[]>([])
-  const [search,   setSearch]   = useState('')
-  const [loading,  setLoading]  = useState(true)
-  const [modal,    setModal]    = useState<'create' | 'edit' | null>(null)
-  const [editUser, setEditUser] = useState<User | null>(null)
-  // In-app delete confirmation (replaces browser confirm() which is blocked on mobile PWA)
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [users,      setUsers]      = useState<User[]>([])
+  const [filtered,   setFiltered]   = useState<User[]>([])
+  const [search,     setSearch]     = useState('')
+  const [loading,    setLoading]    = useState(true)
+  const [modal,      setModal]      = useState<'create' | 'edit' | null>(null)
+  const [editUser,   setEditUser]   = useState<User | null>(null)
+  const [deleteUser, setDeleteUser] = useState<User | null>(null)
+  const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
@@ -220,9 +223,15 @@ export default function AdminUsersPage() {
     )
   }, [search, users])
 
-  async function handleDelete(id: string) {
-    await fetch(`/api/admin/users/${id}`, { method: 'DELETE' })
-    setDeleteConfirmId(null)
+  async function handleDeactivate(user: User) {
+    setDeactivatingId(user.id)
+    const action = user.isActive ? 'deactivate' : 'reactivate'
+    await fetch(`/api/admin/users/${user.id}/deactivate`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action }),
+    })
+    setDeactivatingId(null)
     fetchUsers()
   }
 
@@ -244,37 +253,14 @@ export default function AdminUsersPage() {
         />
       )}
 
-      {/* In-app delete confirmation modal */}
-      {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm space-y-4 shadow-2xl">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-500/15 flex items-center justify-center shrink-0">
-                <Trash2 className="w-5 h-5 text-red-400" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-white">Delete user?</p>
-                <p className="text-xs text-slate-400 mt-0.5">This action cannot be undone.</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteConfirmId(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-medium text-slate-400
-                           border border-slate-700 hover:bg-slate-800 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDelete(deleteConfirmId)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white
-                           bg-red-600 hover:bg-red-500 transition"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* 3-step account deletion dialog */}
+      {deleteUser && (
+        <UserDeleteDialog
+          user={deleteUser}
+          adminUsers={users.filter(u => u.role === 'ADMIN' && u.id !== deleteUser.id)}
+          onClose={() => setDeleteUser(null)}
+          onDeleted={() => { setDeleteUser(null); fetchUsers() }}
+        />
       )}
 
       <div className="p-8 max-w-6xl mx-auto">
@@ -330,6 +316,7 @@ export default function AdminUsersPage() {
               {filtered.map((u, i) => (
                 <tr key={u.id}
                     className={`${i < filtered.length - 1 ? 'border-b border-slate-800/40' : ''}
+                                ${!u.isActive ? 'opacity-60' : ''}
                                 hover:bg-slate-800/30 transition`}>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
@@ -337,9 +324,17 @@ export default function AdminUsersPage() {
                                       justify-center text-xs font-semibold text-indigo-300 uppercase">
                         {(u.username ?? u.email)[0]}
                       </div>
-                      <span className="text-sm font-medium text-white">
-                        {u.username ?? <span className="text-slate-500 italic">no username</span>}
-                      </span>
+                      <div>
+                        <span className="text-sm font-medium text-white">
+                          {u.username ?? <span className="text-slate-500 italic">no username</span>}
+                        </span>
+                        {!u.isActive && (
+                          <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium
+                                           bg-slate-700/60 text-slate-400 border border-slate-600/40">
+                            Deactivated
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="px-5 py-4 text-sm text-slate-400 hidden md:table-cell">{u.email}</td>
@@ -348,7 +343,7 @@ export default function AdminUsersPage() {
                     {new Date(u.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-5 py-4">
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-1.5">
                       <button
                         onClick={() => { setEditUser(u); setModal('edit') }}
                         title="Edit role"
@@ -358,14 +353,32 @@ export default function AdminUsersPage() {
                         <Pencil className="w-4 h-4" />
                       </button>
                       {u.id !== session?.user?.id && (
-                        <button
-                          onClick={() => setDeleteConfirmId(u.id)}
-                          title="Delete user"
-                          className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10
-                                     rounded-lg transition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <>
+                          <button
+                            onClick={() => handleDeactivate(u)}
+                            disabled={deactivatingId === u.id}
+                            title={u.isActive ? 'Deactivate user' : 'Reactivate user'}
+                            className={`p-1.5 rounded-lg transition
+                              ${u.isActive
+                                ? 'text-slate-500 hover:text-amber-400 hover:bg-amber-500/10'
+                                : 'text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
+                          >
+                            {deactivatingId === u.id
+                              ? <Loader2 className="w-4 h-4 animate-spin" />
+                              : u.isActive
+                                ? <UserX className="w-4 h-4" />
+                                : <UserCheck className="w-4 h-4" />
+                            }
+                          </button>
+                          <button
+                            onClick={() => setDeleteUser(u)}
+                            title="Delete account"
+                            className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10
+                                       rounded-lg transition"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -391,16 +404,26 @@ export default function AdminUsersPage() {
             </p>
           )}
           {filtered.map(u => (
-            <div key={u.id} className="bg-slate-900/60 border border-slate-800/60 rounded-2xl p-4">
+            <div key={u.id}
+                 className={`bg-slate-900/60 border border-slate-800/60 rounded-2xl p-4
+                             ${!u.isActive ? 'opacity-60' : ''}`}>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center
                                 justify-center text-sm font-semibold text-indigo-300 uppercase shrink-0">
                   {(u.username ?? u.email)[0]}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-white truncate">
-                    {u.username ?? <span className="text-slate-500 italic">no username</span>}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-white truncate">
+                      {u.username ?? <span className="text-slate-500 italic">no username</span>}
+                    </p>
+                    {!u.isActive && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0
+                                       bg-slate-700/60 text-slate-400 border border-slate-600/40">
+                        Deactivated
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-400 truncate">{u.email}</p>
                 </div>
                 <RoleBadge role={u.role} />
@@ -419,14 +442,31 @@ export default function AdminUsersPage() {
                     Edit role
                   </button>
                   {u.id !== session?.user?.id && (
-                    <button
-                      onClick={() => setDeleteConfirmId(u.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-                                 text-red-400 bg-red-500/10 hover:bg-red-500/20 transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete
-                    </button>
+                    <>
+                      <button
+                        onClick={() => handleDeactivate(u)}
+                        disabled={deactivatingId === u.id}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition
+                          ${u.isActive
+                            ? 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20'
+                            : 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20'}`}
+                      >
+                        {deactivatingId === u.id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : u.isActive
+                            ? <><UserX className="w-3.5 h-3.5" />Deactivate</>
+                            : <><UserCheck className="w-3.5 h-3.5" />Reactivate</>
+                        }
+                      </button>
+                      <button
+                        onClick={() => setDeleteUser(u)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                                   text-red-400 bg-red-500/10 hover:bg-red-500/20 transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

@@ -619,7 +619,7 @@ async function getRecentActivity(
     totalEntries: logs.length,
     entries: logs.map(l => ({
       action:      l.action,
-      userName:    l.user.username ?? l.user.name ?? 'Unknown',
+      userName:    l.user?.username ?? l.user?.name ?? 'Unknown',
       description: (l.metadata as { description?: string } | null)?.description ?? l.action,
       timestamp:   l.createdAt.toISOString(),
       fileId:      l.mediaFile?.id ?? null,

@@ -37,6 +37,9 @@ export type LogAction =
   | 'USER_LOGIN_FAILED'
   | 'USER_UNLOCKED'
   | 'ROLE_CHANGED'
+  | 'USER_DEACTIVATED'
+  | 'USER_REACTIVATED'
+  | 'USER_DELETED'
   // File Transfer system
   | 'TRANSFER_SENT'
   | 'TRANSFER_DOWNLOADED'

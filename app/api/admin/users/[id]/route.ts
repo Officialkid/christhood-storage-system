@@ -42,29 +42,6 @@ export async function PATCH(
   }
 }
 
-// ── DELETE /api/admin/users/[id] ── remove user ────────────────
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const session = await getServerSession(authOptions)
-  if (session?.user?.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
-
-  // Prevent admin from deleting themselves
-  if (params.id === session.user.id) {
-    return NextResponse.json(
-      { error: 'You cannot delete your own account.' },
-      { status: 400 }
-    )
-  }
-
-  try {
-    await prisma.user.delete({ where: { id: params.id } })
-    return NextResponse.json({ ok: true })
-  } catch (err) {
-    console.error('[admin/users DELETE]', err)
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
-  }
-}
+// NOTE: User deletion is handled by POST /api/admin/users/[id]/delete
+// which performs a safe 3-step flow (file reassignment → anonymisation → delete).
+// The old bare prisma.user.delete() was removed because it fails with FK constraints.

@@ -110,6 +110,13 @@ model User {
 
   // Custom event categories created by this user (via "Other" in create event form)
   createdCategories EventCategory[] @relation("CategoryCreator")
+
+  // Account deactivation
+  isActive        Boolean   @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  deactivatedBy   User?     @relation("DeactivatedBy", fields: [deactivatedById], references: [id], onDelete: SetNull)
+  deactivatedUsers User[]   @relation("DeactivatedBy")
 }
 
 // ─────────────────────────────────────────────
@@ -268,12 +275,12 @@ model FileVersion {
 model ActivityLog {
   id          String   @id @default(cuid())
   action      String
-  userId      String
+  userId      String?  /// null when the acting user's account has been deleted
   mediaFileId String?
   metadata    Json?
   createdAt   DateTime @default(now())
 
-  user      User       @relation(fields: [userId], references: [id])
+  user      User?      @relation(fields: [userId], references: [id])
   mediaFile MediaFile? @relation(fields: [mediaFileId], references: [id], onDelete: SetNull)
   event     Event?     @relation(fields: [eventId], references: [id], onDelete: SetNull)
   eventId   String?

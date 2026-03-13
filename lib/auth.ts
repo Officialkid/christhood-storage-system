@@ -117,6 +117,10 @@ export const authOptions: NextAuthOptions = {
           return null  // UI queries /api/auth/account-status for lockout details
         }
 
+        // ── Deactivated account check ──────────────────────────────────────
+        // Return null silently (same as unknown user) so as not to reveal account exists
+        if (user?.isActive === false) return null
+
         // Unknown user or OAuth-only account — return null without revealing existence
         if (!user?.passwordHash) return null
 
