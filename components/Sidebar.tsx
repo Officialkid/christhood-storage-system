@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
-  MessagesSquare, X, Bot, Share2,
+  MessagesSquare, X, Bot, Share2, Tags,
 } from 'lucide-react'
 import { useSidebar }       from './DashboardShell'
 import { useUnreadCount }   from '@/hooks/useUnreadCount'
@@ -28,8 +28,9 @@ const navItems: NavItem[] = [
 
 const adminItems = [
   { label: 'User Management', href: '/admin/users',        icon: Shield    },
-  { label: 'Hierarchy',       href: '/admin/hierarchy',    icon: Network   },
-  { label: 'Activity Log',    href: '/admin/logs',         icon: ScrollText },
+  { label: 'Hierarchy',       href: '/admin/hierarchy',       icon: Network    },
+  { label: 'Event Categories', href: '/admin/event-categories', icon: Tags       },
+  { label: 'Activity Log',    href: '/admin/logs',            icon: ScrollText },
   { label: 'Trash',           href: '/admin/trash',        icon: Trash2    },
   { label: 'Share Links',     href: '/admin/share-links',  icon: Share2    },
   { label: 'Analytics',       href: '/admin/analytics',    icon: BarChart2 },

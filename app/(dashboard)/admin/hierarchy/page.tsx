@@ -6,7 +6,7 @@ import {
   ChevronRight, ChevronDown, Calendar, Loader2,
   X, Check, AlertTriangle,
 } from 'lucide-react'
-import { CATEGORY_NAMES, CategoryName } from '@/lib/hierarchyConstants'
+import { OFFICIAL_CATEGORY_NAMES, OTHER_CATEGORY_SENTINEL } from '@/lib/hierarchyConstants'
 import type { HierarchyYear, HierarchyEvent, HierarchySubfolder } from '@/types'
 
 // ─────────────────────────── Types ────────────────────────────
@@ -39,35 +39,48 @@ function Toast({ msg, ok }: { msg: string; ok: boolean }) {
 
 // ──────────────────────── Create-event modal ──────────────────
 function CreateEventModal({
+  years,
   onClose,
   onCreated,
 }: {
+  years:     HierarchyYear[]
   onClose:   () => void
   onCreated: () => void
 }) {
   const currentYear = new Date().getFullYear()
-  const [name, setName]               = useState('')
-  const [date, setDate]               = useState('')
-  const [category, setCategory]       = useState<CategoryName>(CATEGORY_NAMES[0])
-  const [year, setYear]               = useState(String(currentYear))
-  const [saving, setSaving]           = useState(false)
-  const [error, setError]             = useState('')
+  const [name, setName]                     = useState('')
+  const [date, setDate]                     = useState('')
+  const [categoryValue, setCategoryValue]   = useState<string>(OFFICIAL_CATEGORY_NAMES[0])
+  const [customCategoryName, setCustomCat]  = useState('')
+  const [year, setYear]                     = useState(String(currentYear))
+  const [saving, setSaving]                 = useState(false)
+  const [error, setError]                   = useState('')
+
+  const isOther      = categoryValue === OTHER_CATEGORY_SENTINEL
+  const yearNum      = Number(year)
+  const yearData     = years.find(y => y.year === yearNum)
+  const customCats   = yearData?.categories
+    .filter(c => !c.isDefault && !c.isArchived)
+    .map(c => c.name) ?? []
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim() || !date || !year) return
+    if (isOther && !customCategoryName.trim()) return
     setSaving(true)
     setError('')
     try {
+      const body: Record<string, unknown> = {
+        name:         name.trim(),
+        date,
+        categoryName: categoryValue,
+        yearNumber:   yearNum,
+      }
+      if (isOther) body.customCategoryName = customCategoryName.trim()
       const res = await fetch('/api/hierarchy/events', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name:         name.trim(),
-          date,
-          categoryName: category,
-          yearNumber:   Number(year),
-        }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         const j = await res.json()
@@ -129,17 +142,47 @@ function CreateEventModal({
               Category
             </label>
             <select
-              value={category}
-              onChange={e => setCategory(e.target.value as CategoryName)}
+              value={categoryValue}
+              onChange={e => { setCategoryValue(e.target.value); setCustomCat('') }}
               className="mt-1.5 w-full bg-slate-800 border border-slate-700 rounded-xl
                          px-3.5 py-2.5 text-sm text-white
                          focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              {CATEGORY_NAMES.map(cn => (
-                <option key={cn} value={cn}>{cn}</option>
-              ))}
+              <optgroup label="Official Categories">
+                {OFFICIAL_CATEGORY_NAMES.map(cn => (
+                  <option key={cn} value={cn}>{cn}</option>
+                ))}
+              </optgroup>
+              {customCats.length > 0 && (
+                <optgroup label="Custom Categories">
+                  {customCats.map(cn => (
+                    <option key={cn} value={cn}>{cn}</option>
+                  ))}
+                </optgroup>
+              )}
+              <option value={OTHER_CATEGORY_SENTINEL}>Other / Create new type…</option>
             </select>
           </div>
+
+          {/* Custom category name (shown when Other selected) */}
+          {isOther && (
+            <div>
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                New Category Name
+              </label>
+              <input
+                autoFocus
+                value={customCategoryName}
+                onChange={e => setCustomCat(e.target.value)}
+                maxLength={80}
+                placeholder="e.g. Leadership Retreat"
+                className="mt-1.5 w-full bg-slate-800 border border-indigo-600/60 rounded-xl
+                           px-3.5 py-2.5 text-sm text-white placeholder:text-slate-600
+                           focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <p className="mt-1 text-xs text-slate-500">This will become a new category for future events.</p>
+            </div>
+          )}
 
           {/* Year */}
           <div>
@@ -173,7 +216,8 @@ function CreateEventModal({
               Cancel
             </button>
             <button
-              type="submit" disabled={saving || !name.trim() || !date}
+              type="submit"
+              disabled={saving || !name.trim() || !date || (isOther && !customCategoryName.trim())}
               className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white
                          bg-gradient-to-r from-indigo-600 to-violet-600
                          hover:from-indigo-500 hover:to-violet-500
@@ -479,6 +523,7 @@ export default function AdminHierarchyPage() {
       {/* Modals */}
       {creating?.type === 'event' && (
         <CreateEventModal
+          years={years}
           onClose={() => setCreating(null)}
           onCreated={async () => {
             setCreating(null)

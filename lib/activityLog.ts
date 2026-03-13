@@ -48,6 +48,8 @@ export type LogAction =
   | 'TRANSFER_INTEGRITY_FAILURE'
   // Internal messaging
   | 'MESSAGE_SENT'
+  // Category management
+  | 'CATEGORY_UPDATED'
   // External share links
   | 'SHARE_LINK_CREATED'
   | 'SHARE_LINK_REVOKED'

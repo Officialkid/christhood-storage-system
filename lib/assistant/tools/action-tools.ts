@@ -25,7 +25,7 @@ import {
   notifyDirectMessage,
   notifyFileRestored,
 }                                             from '@/lib/notifications'
-import { CATEGORY_NAMES }                     from '@/lib/hierarchyConstants'
+import { OFFICIAL_CATEGORY_NAMES }                     from '@/lib/hierarchyConstants'
 import { recordActionExecuted, recordActionCancelled } from '@/lib/assistant/tool-telemetry'
 import {
   createAndSnapshotLog,
@@ -650,8 +650,8 @@ const createEventDecl: FunctionDeclaration = {
       },
       categoryName: {
         type: SchemaType.STRING,
-        enum: [...CATEGORY_NAMES],
-        description: 'The event category. Must be one of the established categories.',
+        enum: [...OFFICIAL_CATEGORY_NAMES],
+        description: 'The event category. Must be one of the official Christhood Media Team categories.',
       },
       eventDate: {
         type: SchemaType.STRING,
@@ -685,13 +685,6 @@ async function proposeCreateEvent(
     return {
       requiresConfirmation: false,
       error: 'Only admins can create events. Please ask your admin to set it up.',
-    }
-  }
-
-  if (!(CATEGORY_NAMES as readonly string[]).includes(args.categoryName)) {
-    return {
-      requiresConfirmation: false,
-      error: `"${args.categoryName}" is not a valid category. Valid categories: ${CATEGORY_NAMES.join(', ')}.`,
     }
   }
 
@@ -774,7 +767,11 @@ async function executeCreateEvent(
   })
   if (!category) {
     category = await prisma.eventCategory.create({
-      data: { name: categoryName, yearId: year.id },
+      data: {
+        name:      categoryName,
+        yearId:    year.id,
+        isDefault: (OFFICIAL_CATEGORY_NAMES as readonly string[]).includes(categoryName),
+      },
     })
     await log('CATEGORY_CREATED', caller.userId, {
       metadata: { name: categoryName, year: eventYear, actor: 'ZARA_AI' },

@@ -107,6 +107,9 @@ model User {
 
   // External share links created by this user
   shareLinks ShareLink[]
+
+  // Custom event categories created by this user (via "Other" in create event form)
+  createdCategories EventCategory[] @relation("CategoryCreator")
 }
 
 // ─────────────────────────────────────────────
@@ -161,14 +164,21 @@ model Year {
   categories EventCategory[]
 }
 
-/// e.g. Saturday Fellowships, Missions, Conferences, Special Events, Outreach Programs
+/// e.g. Saturday Fellowships, Missions, Branch Excandidates Programme, Teen Life, etc.
 model EventCategory {
-  id     String @id @default(cuid())
-  name   String
-  yearId String
+  id              String   @id @default(cuid())
+  name            String
+  yearId          String
+  isDefault       Boolean  @default(false)   /// true for the 7 official Christhood categories
+  isArchived      Boolean  @default(false)   /// archived categories hide from new event creation
+  createdByUserId String?                    /// null for official categories, set for custom ones
 
-  year   Year    @relation(fields: [yearId], references: [id], onDelete: Cascade)
-  events Event[]
+  year          Year    @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  createdByUser User?   @relation("CategoryCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  events        Event[]
+
+  @@index([yearId])
+  @@index([isArchived])
 }
 
 model Event {

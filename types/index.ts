@@ -119,10 +119,12 @@ export interface HierarchyEvent {
 }
 
 export interface HierarchyCategory {
-  id:     string
-  name:   string
-  yearId: string
-  events: HierarchyEvent[]
+  id:         string
+  name:       string
+  yearId:     string
+  isDefault:  boolean
+  isArchived: boolean
+  events:     HierarchyEvent[]
 }
 
 export interface HierarchyYear {
