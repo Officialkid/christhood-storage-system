@@ -35,7 +35,9 @@ export async function POST(req: NextRequest) {
   }
 
   // R2 key: transfers/{transferId}/{folderPath/}{filename}
-  const pathSegment = folderPath ? `${folderPath.replace(/\.\./g, '')}/` : ''
+  // Strip leading/trailing slashes then remove any '..' segments (matches respond/presign behaviour)
+  const cleanPath = folderPath ? folderPath.replace(/^\/+|\/+$/g, '').replace(/\.\./g, '') : ''
+  const pathSegment = cleanPath ? `${cleanPath}/` : ''
   const r2Key = `transfers/${transferId}/${pathSegment}${filename}`
 
   try {

@@ -110,8 +110,13 @@ async function collectFromEntry(
         }, reject)
       readBatch()
     })
-    const nested = await Promise.all(allEntries.map(e => collectFromEntry(e, subPath)))
-    return nested.flat()
+    // Process sub-entries sequentially — concurrent FileSystemDirectoryReader instances
+    // can silently drop results on Chromium (especially mobile). Sequential reads are safe.
+    const results: { file: File; folderPath: string | null }[][] = []
+    for (const e of allEntries) {
+      results.push(await collectFromEntry(e, subPath))
+    }
+    return results.flat()
   }
   return []
 }
@@ -254,13 +259,13 @@ export function NewTransferForm() {
     setIsDragging(false)
     const items = Array.from(e.dataTransfer.items)
     const collected: { file: File; folderPath: string | null }[] = []
-    await Promise.all(items.map(async item => {
-      if (item.kind !== 'file') return
+    for (const item of items) {
+      if (item.kind !== 'file') continue
       const entry = item.webkitGetAsEntry()
-      if (!entry) return
+      if (!entry) continue
       const files = await collectFromEntry(entry, '')
       collected.push(...files)
-    }))
+    }
     ingest(collected)
   // ingest is stable (only calls setStaged)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
