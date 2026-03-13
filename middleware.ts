@@ -78,7 +78,7 @@ const SECURITY_HEADERS: Record<string, string> = {
     "style-src 'self' 'unsafe-inline'; " +
     "img-src 'self' data: https: blob:; " +
     "media-src 'self' https: blob:; " +
-    "connect-src 'self' https://*.r2.cloudflarestorage.com https://api.anthropic.com; " +
+    "connect-src 'self' https://*.r2.cloudflarestorage.com https://generativelanguage.googleapis.com; " +
     "font-src 'self' data:; " +
     "frame-ancestors 'none'; " +
     "form-action 'self'; " +
@@ -115,7 +115,7 @@ function extractIp(req: NextRequest): string {
 // Auth routes are managed by NextAuth itself; health/cron are secured separately.
 // All of these still go through the CRLF guard above.
 const AUTH_PASSTHROUGH_RE =
-  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|api\/auth|api\/health|api\/cron)\b/
+  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|api\/auth|api\/health|api\/assistant\/health|api\/cron)\b/
 
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl

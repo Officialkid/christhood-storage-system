@@ -1,8 +1,8 @@
 'use client'
 
-import { useState }        from 'react'
+import { useState, useEffect } from 'react'
 import { useSession }      from 'next-auth/react'
-import { User, RefreshCw, CheckCircle, Loader2, Pencil, X, Check } from 'lucide-react'
+import { User, RefreshCw, CheckCircle, Loader2, Pencil, X, Check, ShieldCheck } from 'lucide-react'
 
 // ─── Inline editable field ───────────────────────────────────────────────────
 function EditableField({
@@ -86,6 +86,37 @@ export default function ProfilePage() {
 
   const [name,  setName]  = useState<string>(session?.user?.name  ?? '')
   const [phone, setPhone] = useState<string>((session?.user as any)?.phone ?? '')
+
+  // ── Privacy / Zara logging opt-out ─────────────────────────────────────────
+  const [zaraOptOut,     setZaraOptOut]     = useState(false)
+  const [optOutLoading,  setOptOutLoading]  = useState(false)
+  const [optOutFetched,  setOptOutFetched]  = useState(false)
+  const [optOutError,    setOptOutError]    = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/user/zara-logging-opt-out')
+      .then(r => r.json())
+      .then(d => { if (typeof d.optOut === 'boolean') setZaraOptOut(d.optOut) })
+      .catch(() => {})
+      .finally(() => setOptOutFetched(true))
+  }, [])
+
+  async function toggleZaraOptOut(newValue: boolean) {
+    setOptOutLoading(true); setOptOutError(null)
+    try {
+      const res = await fetch('/api/user/zara-logging-opt-out', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ optOut: newValue }),
+      })
+      if (!res.ok) throw new Error('Failed to update preference')
+      setZaraOptOut(newValue)
+    } catch (e: any) {
+      setOptOutError(e.message ?? 'Something went wrong')
+    } finally {
+      setOptOutLoading(false)
+    }
+  }
 
   // Sync if session loads after mount
   if (session?.user?.name  && !name)  setName(session.user.name)
@@ -185,6 +216,43 @@ export default function ProfilePage() {
                         <RefreshCw  className="w-4 h-4 text-indigo-400" />}
           {restarted ? 'Tour restarted!' : 'Restart Onboarding Tour'}
         </button>
+      </div>
+
+      {/* ── Privacy & AI Logging ─────────────────────────────────────────── */}
+      <div className="bg-slate-900 border border-slate-800/60 rounded-2xl p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <ShieldCheck className="w-4 h-4 text-slate-400" />
+          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Privacy &amp; AI Logging</h2>
+        </div>
+        <p className="text-sm text-slate-400 mb-4">
+          Zara may save anonymised conversation summaries — with your name, email, and other personal
+          details removed — to help improve the assistant over time. Opting out stops new logs from
+          being created and immediately deletes any previously-stored logs for your account.
+        </p>
+        {optOutError && <p className="text-sm text-red-400 mb-3">{optOutError}</p>}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-white font-medium">Opt out of conversation logging</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {zaraOptOut ? 'Logging is currently disabled for your account.' : 'Anonymised logs are currently being saved.'}
+            </p>
+          </div>
+          <button
+            onClick={() => toggleZaraOptOut(!zaraOptOut)}
+            disabled={optOutLoading || !optOutFetched}
+            aria-pressed={zaraOptOut}
+            className={[
+              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+              'focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:opacity-50',
+              zaraOptOut ? 'bg-indigo-600' : 'bg-slate-700',
+            ].join(' ')}
+          >
+            <span className={[
+              'inline-block h-4 w-4 rounded-full bg-white shadow transition-transform',
+              zaraOptOut ? 'translate-x-6' : 'translate-x-1',
+            ].join(' ')} />
+          </button>
+        </div>
       </div>
 
     </div>

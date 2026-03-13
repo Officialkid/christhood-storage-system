@@ -9,8 +9,9 @@ import {
 } from 'recharts'
 import {
   BarChart2, RefreshCw, HardDrive, Trash2, Camera, Video,
-  Upload, Download, Users, FolderOpen, Calendar, AlertCircle, Loader2,
+  Upload, Download, Users, FolderOpen, Calendar, AlertCircle, Loader2, Bot,
 } from 'lucide-react'
+import ZaraAnalyticsTab from '@/components/ZaraAnalyticsTab'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtBytes(bytes: number, decimals = 2) {
@@ -128,6 +129,7 @@ export default function AnalyticsPage() {
   const [loading,   setLoading  ] = useState(true)
   const [error,     setError    ] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [activeTab,  setActiveTab ] = useState<'storage' | 'zara'>('storage')
 
   const fetchData = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true)
@@ -203,28 +205,60 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      {/* ── Page header ──────────────────────────────────────────────────── */}
+      {/* ── Page header ───────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <BarChart2 className="w-6 h-6 text-indigo-400" />
-            Storage Analytics
+            Analytics
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Last updated {new Date(data.generatedAt).toLocaleTimeString()}
-          </p>
+          {activeTab === 'storage' && (
+            <p className="text-xs text-slate-500 mt-1">
+              Last updated {new Date(data.generatedAt).toLocaleTimeString()}
+            </p>
+          )}
         </div>
-        <button
-          onClick={() => fetchData(true)}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700
-                     disabled:opacity-50 text-sm text-slate-300 font-medium transition"
-        >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Tab switcher */}
+          <div className="flex gap-0.5 bg-slate-800/60 rounded-xl p-1">
+            <button
+              onClick={() => setActiveTab('storage')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition
+                ${activeTab === 'storage'
+                  ? 'bg-slate-700 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-300'}`}
+            >
+              <HardDrive className="w-3.5 h-3.5" /> Storage
+            </button>
+            <button
+              onClick={() => setActiveTab('zara')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition
+                ${activeTab === 'zara'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-300'}`}
+            >
+              <Bot className="w-3.5 h-3.5" /> AI Assistant
+            </button>
+          </div>
+          {/* Refresh button (storage tab only) */}
+          {activeTab === 'storage' && (
+            <button
+              onClick={() => fetchData(true)}
+              disabled={refreshing}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700
+                         disabled:opacity-50 text-sm text-slate-300 font-medium transition"
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          )}
+        </div>
       </div>
 
+      {activeTab === 'zara' ? (
+        <ZaraAnalyticsTab />
+      ) : (
+        <>
       {/* ── Stat cards ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
@@ -588,6 +622,8 @@ export default function AnalyticsPage() {
           </p>
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }

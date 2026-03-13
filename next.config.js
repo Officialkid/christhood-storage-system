@@ -78,7 +78,7 @@ const nextConfig = {
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: https: blob:",
           "media-src 'self' https: blob:",
-          "connect-src 'self' https://*.r2.cloudflarestorage.com https://api.anthropic.com",
+          "connect-src 'self' https://*.r2.cloudflarestorage.com https://generativelanguage.googleapis.com",
           "font-src 'self' data:",
           "frame-ancestors 'none'",
           "form-action 'self'",

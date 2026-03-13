@@ -33,21 +33,21 @@ enum FileStatus {
   EDITED
   PUBLISHED
   ARCHIVED
-  DELETED   /// soft-deleted — file is in Trash, R2 object still exists
-  PURGED    /// permanently removed from R2 after 30-day window expired
+  DELETED /// soft-deleted — file is in Trash, R2 object still exists
+  PURGED /// permanently removed from R2 after 30-day window expired
 }
 
 enum TransferStatus {
-  PENDING    /// sent — recipient has not downloaded yet
+  PENDING /// sent — recipient has not downloaded yet
   DOWNLOADED /// recipient has downloaded the files
-  RESPONDED  /// recipient has uploaded edited files back
-  COMPLETED  /// admin has downloaded the response and marked complete
-  EXPIRED    /// auto-purged after expiry date
+  RESPONDED /// recipient has uploaded edited files back
+  COMPLETED /// admin has downloaded the response and marked complete
+  EXPIRED /// auto-purged after expiry date
 }
 
 enum MessagePriority {
-  NORMAL  /// standard notification — blue badge
-  URGENT  /// red badge + immediate email regardless of user preferences
+  NORMAL /// standard notification — blue badge
+  URGENT /// red badge + immediate email regardless of user preferences
 }
 
 // ─────────────────────────────────────────────
@@ -55,15 +55,15 @@ enum MessagePriority {
 // ─────────────────────────────────────────────
 
 model User {
-  id            String    @id @default(cuid())
-  username      String?   @unique          /// nullable for OAuth-created accounts
-  email         String    @unique
-  passwordHash  String?                    /// null for OAuth-only accounts
-  phone         String?
-  role                    Role      @default(UPLOADER)
-  hasCompletedOnboarding  Boolean   @default(false)
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  id                     String   @id @default(cuid())
+  username               String?  @unique /// nullable for OAuth-created accounts
+  email                  String   @unique
+  passwordHash           String? /// null for OAuth-only accounts
+  phone                  String?
+  role                   Role     @default(UPLOADER)
+  hasCompletedOnboarding Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   // Optional fields required by @next-auth/prisma-adapter
   name          String?
@@ -71,30 +71,39 @@ model User {
   image         String?
 
   // Relations
-  accounts               Account[]
-  sessions               Session[]
-  uploads                MediaFile[]              @relation("uploader")
-  fileVersions           FileVersion[]
-  activityLogs           ActivityLog[]
-  trashedItems           TrashItem[]
-  resetTokens            PasswordResetToken[]
-  notifications          Notification[]
-  pushSubscriptions      PushSubscription[]
-  notificationPrefs      NotificationPreference[]
-  folderFollows          FolderFollow[]
+  accounts          Account[]
+  sessions          Session[]
+  uploads           MediaFile[]              @relation("uploader")
+  fileVersions      FileVersion[]
+  activityLogs      ActivityLog[]
+  trashedItems      TrashItem[]
+  resetTokens       PasswordResetToken[]
+  notifications     Notification[]
+  pushSubscriptions PushSubscription[]
+  notificationPrefs NotificationPreference[]
+  folderFollows     FolderFollow[]
 
   // File Transfer relations
-  sentTransfers          Transfer[]          @relation("sender")
-  receivedTransfers      Transfer[]          @relation("recipient")
-  transferResponses      TransferResponse[]  @relation("responseUploader")
+  sentTransfers     Transfer[]         @relation("sender")
+  receivedTransfers Transfer[]         @relation("recipient")
+  transferResponses TransferResponse[] @relation("responseUploader")
 
   // Internal messaging relations
-  sentMessages           Message[]           @relation("messageSender")
-  messageRecipients      MessageRecipient[]  @relation("messageRecipient")
+  sentMessages      Message[]          @relation("messageSender")
+  messageRecipients MessageRecipient[] @relation("messageRecipient")
 
   // Brute-force protection (Layer 3 — account lockout)
-  failedLoginAttempts  Int       @default(0)
-  lockedUntil          DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  // Zara AI assistant action log — all confirmed actions performed on behalf of this user
+  zaraActionLogs ZaraActionLog[]
+
+  // Zara AI assistant usage analytics — one record per chat session
+  zaraUsageLogs ZaraUsageLog[]
+
+  // Privacy: when true, no conversation logs are stored for this user
+  zaraLoggingOptOut Boolean @default(false)
 }
 
 // ─────────────────────────────────────────────
@@ -142,35 +151,35 @@ model VerificationToken {
 // ─────────────────────────────────────────────
 
 model Year {
-  id         String          @id @default(cuid())
-  year       Int             @unique
-  createdAt  DateTime        @default(now())
+  id        String   @id @default(cuid())
+  year      Int      @unique
+  createdAt DateTime @default(now())
 
   categories EventCategory[]
 }
 
 /// e.g. Saturday Fellowships, Missions, Conferences, Special Events, Outreach Programs
 model EventCategory {
-  id      String  @id @default(cuid())
-  name    String
-  yearId  String
+  id     String @id @default(cuid())
+  name   String
+  yearId String
 
-  year    Year    @relation(fields: [yearId], references: [id], onDelete: Cascade)
-  events  Event[]
+  year   Year    @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  events Event[]
 }
 
 model Event {
-  id          String         @id @default(cuid())
-  name        String
-  date        DateTime
-  categoryId  String
-  createdAt   DateTime       @default(now())
+  id         String   @id @default(cuid())
+  name       String
+  date       DateTime
+  categoryId String
+  createdAt  DateTime @default(now())
 
-  category     EventCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category     EventCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   subfolders   EventSubfolder[]
   mediaFiles   MediaFile[]
   activityLogs ActivityLog[]
-  tags         Tag[]          @relation("EventTags")
+  tags         Tag[]            @relation("EventTags")
   followers    FolderFollow[]
 }
 
@@ -189,32 +198,32 @@ model EventSubfolder {
 // ─────────────────────────────────────────────
 
 model MediaFile {
-  id            String     @id @default(cuid())
-  originalName  String
-  storedName    String
-  r2Key         String     @unique
-  fileType      FileType
-  fileSize      BigInt
-  status        FileStatus @default(RAW)
-  uploaderId    String
-  eventId       String
-  subfolderId   String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id           String     @id @default(cuid())
+  originalName String
+  storedName   String
+  r2Key        String     @unique
+  fileType     FileType
+  fileSize     BigInt
+  status       FileStatus @default(RAW)
+  uploaderId   String
+  eventId      String
+  subfolderId  String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  uploader   User            @relation("uploader", fields: [uploaderId], references: [id])
-  event      Event           @relation(fields: [eventId], references: [id])
-  subfolder  EventSubfolder? @relation(fields: [subfolderId], references: [id])
+  uploader  User            @relation("uploader", fields: [uploaderId], references: [id])
+  event     Event           @relation(fields: [eventId], references: [id])
+  subfolder EventSubfolder? @relation(fields: [subfolderId], references: [id])
 
-  thumbnailKey      String?     /// R2 key of the generated JPEG thumbnail (null until processed)
-  purgedAt          DateTime?   /// set by the purge cron once the R2 object is deleted
-  archivedAt        DateTime?   /// set when the file is moved to ARCHIVED status
-  preArchiveStatus  FileStatus? /// status before archiving — restored on un-archive
+  thumbnailKey     String? /// R2 key of the generated JPEG thumbnail (null until processed)
+  purgedAt         DateTime? /// set by the purge cron once the R2 object is deleted
+  archivedAt       DateTime? /// set when the file is moved to ARCHIVED status
+  preArchiveStatus FileStatus? /// status before archiving — restored on un-archive
 
   versions     FileVersion[]
   activityLogs ActivityLog[]
   trashItem    TrashItem?
-  tags         Tag[]          @relation("MediaFileTags")
+  tags         Tag[]         @relation("MediaFileTags")
 
   @@index([uploaderId])
   @@index([eventId])
@@ -244,12 +253,12 @@ model FileVersion {
 // ─────────────────────────────────────────────
 
 model ActivityLog {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   action      String
   userId      String
   mediaFileId String?
   metadata    Json?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime @default(now())
 
   user      User       @relation(fields: [userId], references: [id])
   mediaFile MediaFile? @relation(fields: [mediaFileId], references: [id], onDelete: SetNull)
@@ -258,14 +267,14 @@ model ActivityLog {
 }
 
 model TrashItem {
-  id                String     @id @default(cuid())
-  mediaFileId       String     @unique
-  deletedById       String
-  deletedAt         DateTime   @default(now())
+  id               String     @id @default(cuid())
+  mediaFileId      String     @unique
+  deletedById      String
+  deletedAt        DateTime   @default(now())
   /// Set to deletedAt + 30 days on creation
-  scheduledPurgeAt  DateTime
+  scheduledPurgeAt DateTime
   /// Status the file had before deletion — used to restore it correctly
-  preDeleteStatus   FileStatus
+  preDeleteStatus  FileStatus
 
   mediaFile MediaFile @relation(fields: [mediaFileId], references: [id], onDelete: Cascade)
   deletedBy User      @relation(fields: [deletedById], references: [id])
@@ -384,22 +393,22 @@ model Transfer {
   id              String         @id @default(cuid())
   senderId        String
   recipientId     String
-  subject         String         /// brief description, e.g. "Saturday Fellowship Photos for Editing"
-  message         String?        /// optional admin note to the recipient
+  subject         String /// brief description, e.g. "Saturday Fellowship Photos for Editing"
+  message         String? /// optional admin note to the recipient
   status          TransferStatus @default(PENDING)
-  folderStructure Json?          /// original folder structure if files were in subfolders
-  r2Prefix        String         /// R2 path prefix, e.g. "transfers/[transferId]/"
+  folderStructure Json? /// original folder structure if files were in subfolders
+  r2Prefix        String /// R2 path prefix, e.g. "transfers/[transferId]/"
   totalFiles      Int
-  totalSize       BigInt         /// total bytes of all files combined
-  expiresAt       DateTime       /// 30 days after COMPLETED, or 60 days after createdAt if never completed
+  totalSize       BigInt /// total bytes of all files combined
+  expiresAt       DateTime /// 30 days after COMPLETED, or 60 days after createdAt if never completed
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  sender    User               @relation("sender",    fields: [senderId],    references: [id])
-  recipient User               @relation("recipient", fields: [recipientId], references: [id])
-  files     TransferFile[]
-  response  TransferResponse?
-  linkedMessages  Message[]
+  sender         User              @relation("sender", fields: [senderId], references: [id])
+  recipient      User              @relation("recipient", fields: [recipientId], references: [id])
+  files          TransferFile[]
+  response       TransferResponse?
+  linkedMessages Message[]
 
   @@index([senderId])
   @@index([recipientId])
@@ -411,12 +420,12 @@ model Transfer {
 model TransferFile {
   id           String   @id @default(cuid())
   transferId   String
-  originalName String   /// exact filename as uploaded by admin — never altered
+  originalName String /// exact filename as uploaded by admin — never altered
   r2Key        String   @unique
   fileSize     BigInt
   mimeType     String
-  folderPath   String?  /// relative path if inside a subfolder, e.g. "Saturday/raw/"
-  checksum     String   /// MD5 or SHA-256 hash — verified on download to guarantee integrity
+  folderPath   String? /// relative path if inside a subfolder, e.g. "Saturday/raw/"
+  checksum     String /// MD5 or SHA-256 hash — verified on download to guarantee integrity
   createdAt    DateTime @default(now())
 
   transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
@@ -427,16 +436,16 @@ model TransferFile {
 /// The recipient's reply: edited files uploaded back to the admin.
 model TransferResponse {
   id                String   @id @default(cuid())
-  transferId        String   @unique  /// one response set per transfer
+  transferId        String   @unique /// one response set per transfer
   uploadedById      String
-  message           String?  /// optional note from recipient back to admin
-  r2Prefix          String   /// R2 path for response files, e.g. "transfers/[transferId]/response/"
+  message           String? /// optional note from recipient back to admin
+  r2Prefix          String /// R2 path for response files, e.g. "transfers/[transferId]/response/"
   totalFiles        Int
   totalSize         BigInt
   downloadedByAdmin Boolean  @default(false)
   createdAt         DateTime @default(now())
 
-  transfer   Transfer               @relation(fields: [transferId],   references: [id], onDelete: Cascade)
+  transfer   Transfer               @relation(fields: [transferId], references: [id], onDelete: Cascade)
   uploadedBy User                   @relation("responseUploader", fields: [uploadedById], references: [id])
   files      TransferResponseFile[]
 
@@ -452,7 +461,7 @@ model TransferResponseFile {
   fileSize     BigInt
   mimeType     String
   folderPath   String?
-  checksum     String   /// verified on admin download to ensure no corruption in transit
+  checksum     String /// verified on admin download to ensure no corruption in transit
   createdAt    DateTime @default(now())
 
   response TransferResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
@@ -468,11 +477,11 @@ model TransferResponseFile {
 model Message {
   id                   String          @id @default(cuid())
   senderId             String
-  subject              String          /// max 150 chars
-  body                 String          /// max 2000 chars
+  subject              String /// max 150 chars
+  body                 String /// max 2000 chars
   priority             MessagePriority @default(NORMAL)
-  broadcastRole        String?         /// "UPLOADER" | "EDITOR" | "ALL" — if set, message was sent to the whole role group
-  attachmentTransferId String?         /// optionally link an existing Transfer to this message
+  broadcastRole        String? /// "UPLOADER" | "EDITOR" | "ALL" — if set, message was sent to the whole role group
+  attachmentTransferId String? /// optionally link an existing Transfer to this message
   createdAt            DateTime        @default(now())
 
   sender             User               @relation("messageSender", fields: [senderId], references: [id])
@@ -493,10 +502,142 @@ model MessageRecipient {
   readAt      DateTime? /// timestamp when the user first opened the message
   createdAt   DateTime  @default(now())
 
-  message   Message @relation(fields: [messageId],   references: [id], onDelete: Cascade)
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
   recipient User    @relation("messageRecipient", fields: [recipientId], references: [id])
 
   @@unique([messageId, recipientId])
   @@index([recipientId, read])
   @@index([messageId])
+}
+
+// ─────────────────────────────────────────────
+// Zara AI Assistant — Action Audit Log
+// ─────────────────────────────────────────────
+//
+// Every action that Zara confirms and executes on behalf of a user is persisted here:
+//  - PENDING   — confirmation card shown, waiting for user
+//  - EXECUTED  — user confirmed, action ran successfully
+//  - FAILED    — user confirmed but action threw an error
+//  - ROLLED_BACK — admin reversed the action via the admin panel rollback tool
+//
+// Pre-action snapshots capture affected record state before mutation so rollbacks
+// can restore the previous state accurately.
+
+model ZaraActionLog {
+  id                     String    @id @default(cuid())
+  /// Tool name, e.g. "changeFileStatus", "unlockUserAccount"
+  actionType             String
+  /// ActionRiskLevel string: SAFE | MODERATE | SENSITIVE | HIGH | CRITICAL
+  riskLevel              String
+  requestedByUserId      String
+  requestedByName        String
+  /// When the user clicked "Confirm" on the confirmation card
+  confirmedAt            DateTime
+  /// When executePendingAction started running
+  executedAt             DateTime?
+  /// When the action fully completed (or failed)
+  completedAt            DateTime?
+  /// PENDING | EXECUTED | FAILED | ROLLED_BACK
+  status                 String    @default("PENDING")
+  /// Raw tool arguments passed to the action
+  inputArgs              Json
+  /// DB state before the action ran (for rollback). null = not captured or N/A
+  preActionSnapshot      Json?
+  /// Tool result object returned after execution
+  postActionResult       Json?
+  /// Structured data needed to reverse the action. null = action cannot be rolled back
+  rollbackData           Json?
+  /// If set, admin can trigger a rollback until this timestamp expires
+  rollbackAvailableUntil DateTime?
+  notes                  String?
+  createdAt              DateTime  @default(now())
+
+  requestedBy User @relation(fields: [requestedByUserId], references: [id])
+
+  @@index([requestedByUserId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([actionType])
+}
+
+// ─────────────────────────────────────────────
+// Zara AI Assistant — Session Usage Analytics
+// ─────────────────────────────────────────────
+//
+// One record per chat session (from opening the widget to closing it).
+// Written when the session ends or is flushed after inactivity.
+// Powers the AI Assistant analytics tab in /admin/analytics.
+
+model ZaraUsageLog {
+  id               String    @id @default(cuid())
+  userId           String
+  sessionId        String /// groups messages from one chat session
+  messageCount     Int /// how many user→Zara messages in this session
+  toolsUsed        String[] /// list of tool names called during the session
+  actionsProposed  Int /// how many action confirmation cards were shown
+  actionsConfirmed Int /// how many were confirmed by the user
+  actionsCancelled Int /// how many were cancelled by the user
+  responseTimeMs   Int /// average Gemini response time (ms) for this session
+  errorCount       Int /// errors during this session (API errors, tool failures)
+  startedAt        DateTime
+  endedAt          DateTime?
+  pageContext      String /// which page/route the user was on when they opened the chat
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([startedAt])
+  @@index([sessionId])
+}
+
+// ─────────────────────────────────────────────
+// Zara AI Assistant — Conversation Training Logs
+// ─────────────────────────────────────────────
+//
+// GDPR/Privacy compliance for ZaraConversationLog:
+// ✓ PII removed before storage (names, emails, phone numbers)
+// ✓ User IDs hashed — cannot reverse-identify individuals
+// ✓ Users informed via first-use privacy notice
+// ✓ Opt-out available at any time in Profile settings
+// ✓ Opt-out triggers immediate retroactive deletion
+// ✓ 90-day automatic retention limit
+// ✓ Data stays in your own database — never sent to Google/Gemini
+// ✓ Export available on user request
+// ✓ Logs are metadata and sanitized content only — not raw conversations
+//
+// One record per message turn (USER or ASSISTANT).
+// Two records per exchange: one USER turn, one ASSISTANT turn.
+
+model ZaraConversationLog {
+  id               String @id @default(cuid())
+  sessionId        String /// same session ID as ZaraUsageLog — links for context
+  anonymousUserId  String /// SHA256(userId) — NOT the real userId; can't trace back to person
+  userRoleCategory String /// "UPLOADER" | "EDITOR" | "ADMIN" — role kept (useful); NOT username
+  pageContext      String /// which page the user was on ("/upload", "/dashboard", etc.)
+  messageIndex     Int /// position in conversation (1st message, 2nd, etc.)
+  messageType      String /// "USER" | "ASSISTANT"
+
+  /// USER message fields (populated when messageType = "USER"):
+  userMessageCleaned String? /// sanitized user message with PII removed
+  toolsTriggered     String[] /// which tools Zara called in response to this message
+  intentCategory     String? /// auto-classified intent (HOW_TO, FIND_FILE, ERROR_REPORT, etc.)
+
+  /// ASSISTANT message fields (populated when messageType = "ASSISTANT"):
+  responseSummary String? /// first 200 chars of Zara's response
+  responseTimeMs  Int? /// how long Gemini took (ms)
+  usedToolData    Boolean? /// did this response include live database results?
+  actionProposed  String? /// if an action was proposed, which tool name
+  actionOutcome   String? /// CONFIRMED | CANCELLED | EXPIRED | null
+
+  qualitySignals     Json? /// { wasAnswered, usedLiveData, actionWasProposed, actionWasConfirmed,
+  ///   followUpMessageCount, sessionEndedAbruptly }
+  createdAt          DateTime @default(now())
+  retentionExpiresAt DateTime /// auto-delete after 90 days via daily cron
+
+  @@index([sessionId])
+  @@index([anonymousUserId])
+  @@index([intentCategory])
+  @@index([createdAt])
+  @@index([retentionExpiresAt])
 }

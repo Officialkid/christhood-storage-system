@@ -109,11 +109,26 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── Purge expired ZaraConversationLog records (90-day retention) ─────────
+  let expiredLogsCount = 0
+  try {
+    const expiredLogs = await prisma.zaraConversationLog.deleteMany({
+      where: { retentionExpiresAt: { lt: now } },
+    })
+    expiredLogsCount = expiredLogs.count
+    if (expiredLogsCount > 0) {
+      console.log(`[purge] deleted ${expiredLogsCount} expired ZaraConversationLog record(s)`)
+    }
+  } catch (err) {
+    console.error('[purge] ZaraConversationLog retention purge failed:', err)
+  }
+
   return NextResponse.json({
-    message:       `Purged ${results.purged.length} file(s)`,
-    purged:        results.purged.length,
-    failed:        results.failed.length,
-    failedDetails: results.failed,
-    ranAt:         now.toISOString(),
+    message:              `Purged ${results.purged.length} file(s)`,
+    purged:               results.purged.length,
+    failed:               results.failed.length,
+    failedDetails:        results.failed,
+    expiredLogsDeleted:   expiredLogsCount,
+    ranAt:                now.toISOString(),
   })
 }
