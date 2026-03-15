@@ -15,9 +15,9 @@ us-central1-docker.pkg.dev/PROJECT_ID/christhood-repo/app
         ▼
 Google Cloud Run  (christhood-cmms)
 https://christhood-cmms-HASH-uc.a.run.app
-        │ (later)
+        │
         ▼
-Custom Domain — cmms.christhood.org
+Custom Domain — cmmschristhood.org
 ```
 
 ---
@@ -105,8 +105,8 @@ store() {
 store DATABASE_URL              "postgresql://..."
 store DIRECT_URL                "postgresql://..."
 store NEXTAUTH_SECRET           "your-nextauth-secret"
-store NEXTAUTH_URL              "https://christhood-cmms-HASH-uc.a.run.app"
-store NEXT_PUBLIC_APP_URL       "https://christhood-cmms-HASH-uc.a.run.app"
+store NEXTAUTH_URL              "https://cmmschristhood.org"
+store NEXT_PUBLIC_APP_URL       "https://cmmschristhood.org"
 store GOOGLE_CLIENT_ID          "your-google-client-id"
 store GOOGLE_CLIENT_SECRET      "your-google-client-secret"
 store CLOUDFLARE_R2_ACCOUNT_ID  "your-r2-account-id"
@@ -122,12 +122,11 @@ store CRON_SECRET               "your-cron-secret"
 store GEMINI_API_KEY            "your-gemini-api-key"
 ```
 
-> **Tip:** After you know your Cloud Run URL, update `NEXTAUTH_URL` and
-> `NEXT_PUBLIC_APP_URL`:
+> **Tip:** To update the secrets to your production domain:
 > ```bash
-> echo -n "https://YOUR-URL.a.run.app" | \
+> echo -n "https://cmmschristhood.org" | \
 >   gcloud secrets versions add NEXTAUTH_URL --data-file=-
-> echo -n "https://YOUR-URL.a.run.app" | \
+> echo -n "https://cmmschristhood.org" | \
 >   gcloud secrets versions add NEXT_PUBLIC_APP_URL --data-file=-
 > ```
 
@@ -171,7 +170,7 @@ gcloud run deploy christhood-cmms \
   --memory=1Gi \
   --cpu=1 \
   --cpu-throttling \
-  --min-instances=0 \
+  --min-instances=1 \
   --max-instances=10 \
   --concurrency=80 \
   --timeout=300 \
@@ -280,7 +279,7 @@ Or click **Actions → Build & Deploy to Cloud Run → Run workflow** in GitHub.
 # Verify domain ownership first in Google Search Console, then:
 gcloud beta run domain-mappings create \
   --service=christhood-cmms \
-  --domain=cmms.christhood.org \
+  --domain=cmmschristhood.org \
   --region=us-central1
 ```
 
@@ -295,9 +294,8 @@ After deployment, add the production URL to your Google OAuth 2.0 client:
 
 1. Go to [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials)
 2. Edit your OAuth 2.0 Client ID
-3. Add to **Authorised JavaScript origins**: `https://christhood-cmms-HASH-uc.a.run.app`
-4. Add to **Authorised redirect URIs**: `https://christhood-cmms-HASH-uc.a.run.app/api/auth/callback/google`
-5. Repeat for your custom domain once mapped
+3. Add to **Authorised JavaScript origins**: `https://cmmschristhood.org`
+4. Add to **Authorised redirect URIs**: `https://cmmschristhood.org/api/auth/callback/google`
 
 ---
 

@@ -142,6 +142,26 @@ export async function deleteSession(sessionId: string): Promise<void> {
 }
 
 /**
+ * Fuzzy-find an active/paused session by fileName + fileSize only — no lastModified.
+ *
+ * On Android Chrome the File object's lastModified value is sometimes set to
+ * "now" rather than the file's actual mtime, so sessionIdFor(file) can return a
+ * different key each time the same file is picked. Use this as a fallback when
+ * getSession(sessionIdFor(file)) returns nothing.
+ */
+export async function getSessionByFileName(
+  fileName: string,
+  fileSize:  number,
+): Promise<UploadSession | undefined> {
+  const all = await idbOp<UploadSession[]>(s => s.getAll())
+  return all.find(
+    s => s.fileName === fileName &&
+         s.fileSize  === fileSize &&
+         (s.status === 'active' || s.status === 'paused'),
+  )
+}
+
+/**
  * Return all sessions that have not yet completed.
  * Called on page load to detect interrupted uploads from previous sessions.
  */

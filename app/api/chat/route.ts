@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
 
       try {
         const model = genAI.getGenerativeModel({
-          model: 'gemini-2.0-flash',
+          model: 'gemini-2.0-flash-lite',
           systemInstruction: systemPrompt,
           generationConfig: { maxOutputTokens: 600 },
         })

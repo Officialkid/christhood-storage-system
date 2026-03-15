@@ -12,12 +12,19 @@ export const dynamic = 'force-dynamic'
 //   upcoming events, storage breakdown (admin), onboarding checklist status.
 export async function GET(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
-  if (!token?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!token?.id) {
+    console.warn('DASHBOARD_AUTH_FAIL: getToken returned null — check NEXTAUTH_SECRET env var.')
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const userId   = token.id as string
   const role     = (token.role as string) ?? 'UPLOADER'
   const isAdmin  = role === 'ADMIN'
   const isEditor = role === 'EDITOR'
+
+  // Diagnostic — confirm the request is reaching this route with the right identity.
+  // Visible in Cloud Console → Cloud Run → Logs; search "DASHBOARD_REQUEST".
+  console.log('DASHBOARD_REQUEST:', { userId, role, isAdmin, isEditor })
 
   const now          = new Date()
   const weekAgo      = new Date(now.getTime() - 7  * 24 * 60 * 60 * 1000)
@@ -25,6 +32,7 @@ export async function GET(req: NextRequest) {
   const todayStart   = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const in30Days     = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
 
+  try {
   // ── Fan-out queries ─────────────────────────────────────────────────────────
   const [
     statsRaw,
@@ -136,6 +144,20 @@ export async function GET(req: NextRequest) {
   // ── Storage summary ────────────────────────────────────────────────────────
   const storage = isAdmin ? buildStorageSummary(storageGroupsRaw) : null
 
+  // Diagnostic — confirm what the queries returned.
+  // Search "DASHBOARD_STATS" in Cloud Console → Cloud Run → Logs.
+  // If totalFiles / myTotal is 0 here, the DB query is the problem.
+  // If it's > 0 here but the UI shows 0, the component rendering is the problem.
+  const statsForLog = statsRaw as Record<string, unknown>
+  console.log('DASHBOARD_STATS:', {
+    userId,
+    role,
+    stats:               statsForLog,
+    recentUploadsCount:  recentUploads.length,
+    activityCount:       activityRaw.length,
+    upcomingEventsCount: upcomingEventsRaw.length,
+  })
+
   return NextResponse.json({
     role,
     stats:          statsRaw,
@@ -146,6 +168,22 @@ export async function GET(req: NextRequest) {
     onboarding:     onboardingRaw,
     generatedAt:    now.toISOString(),
   })
+
+  } catch (error: unknown) {
+    const err = error as { message?: string; code?: string; stack?: string }
+    // Visible in Cloud Console → Cloud Run → Logs; search "DASHBOARD_ERROR".
+    console.error('DASHBOARD_ERROR:', {
+      userId,
+      role,
+      message: err?.message,
+      code:    err?.code,
+      stack:   err?.stack?.split('\n').slice(0, 4).join(' | '),
+    })
+    return NextResponse.json(
+      { error: 'Failed to load dashboard data', detail: err?.message ?? 'Unknown error' },
+      { status: 500 },
+    )
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -187,6 +225,14 @@ async function fetchStats(
       ? Math.round(((thisMonthUploads - lastMonthUploads) / lastMonthUploads) * 100)
       : null
 
+    // Verbose diagnostic — each value on its own line for easy grep.
+    // Search "DASHBOARD_STATS_ADMIN" in Cloud Run logs.
+    console.log('DASHBOARD_STATS_ADMIN:', {
+      totalFiles, weekUploads, pendingEdit,
+      activeToday: activeGroups.length,
+      thisMonthUploads, lastMonthUploads, monthChangePct,
+    })
+
     return {
       totalFiles,
       weekUploads,
@@ -208,6 +254,7 @@ async function fetchStats(
         },
       }),
     ])
+    console.log('DASHBOARD_STATS_EDITOR:', { filesToEdit, transfersWaiting, editedThisMonth: editActionsThisMonth })
     return { filesToEdit, transfersWaiting, editedThisMonth: editActionsThisMonth }
   }
 
@@ -221,6 +268,7 @@ async function fetchStats(
     }),
     prisma.event.count({ where: { mediaFiles: { some: { uploaderId: userId } } } }),
   ])
+  console.log('DASHBOARD_STATS_UPLOADER:', { userId, myTotal, myWeek, myEvents })
   return { myTotal, myWeek, myEvents }
 }
 

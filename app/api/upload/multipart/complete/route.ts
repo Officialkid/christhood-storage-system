@@ -38,9 +38,10 @@ export async function POST(req: NextRequest) {
     eventId?:      string
     subfolderId?:  string
     force?:        boolean
+    versionOf?:    string   // existing MediaFile ID — create a FileVersion
   }
 
-  const { uploadId, key, parts, originalName, fileType, fileSize, eventId, subfolderId, force } = body
+  const { uploadId, key, parts, originalName, fileType, fileSize, eventId, subfolderId, force, versionOf } = body
 
   if (!uploadId || !key || !Array.isArray(parts) || !parts.length
       || !originalName || !fileSize || !eventId) {
@@ -57,6 +58,48 @@ export async function POST(req: NextRequest) {
 
     // ── 2. Create (or replace) DB record ─────────────────────────────────────
     const storedName = sanitizeFilename(originalName)
+
+    // ── Version upload path ────────────────────────────────────────────────
+    if (versionOf) {
+      const result = await prisma.$transaction(async tx => {
+        const maxVer = await tx.fileVersion.findFirst({
+          where:   { mediaFileId: versionOf },
+          orderBy: { versionNumber: 'desc' },
+          select:  { versionNumber: true },
+        })
+        const nextVer = (maxVer?.versionNumber ?? 1) + 1
+        const ver = await tx.fileVersion.create({
+          data: {
+            mediaFileId:   versionOf,
+            versionNumber: nextVer,
+            r2Key:         key,
+            uploadedById:  session.user.id,
+          },
+        })
+        await tx.activityLog.create({
+          data: {
+            action:      'FILE_VERSION_UPLOADED',
+            userId:      session.user.id,
+            mediaFileId: versionOf,
+            eventId,
+            metadata: {
+              originalName,
+              versionNumber: nextVer,
+              r2Key: key,
+              mode: 'multipart-parallel',
+            },
+          },
+        })
+        return { versionNumber: nextVer, mediaFileId: versionOf, versionId: ver.id }
+      })
+      return NextResponse.json({
+        success:       true,
+        versionNumber: result.versionNumber,
+        mediaFileId:   result.mediaFileId,
+        finalKey:      key,
+        fileSize,
+      })
+    }
 
     const mediaFile = await prisma.$transaction(async tx => {
       // When force:true, update the existing record instead of creating a duplicate.

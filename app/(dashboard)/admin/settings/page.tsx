@@ -8,7 +8,7 @@ import {
   HardDrive, Users, Bell, Bot, ArrowLeftRight, Wrench,
   Globe, Upload as UploadIcon, ShieldCheck, Mail, Zap,
   RefreshCw, Database, Trash2, Download, AlertOctagon,
-  CheckCircle2, XCircle, Clock, Play, FileJson,
+  CheckCircle2, XCircle, Clock, Play, FileJson, Copy,
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -196,6 +196,14 @@ export default function AdminSettingsPage() {
   const [logoUploading,  setLogoUploading]  = useState(false)
   const logoRef = useRef<HTMLInputElement>(null)
 
+  // Duplicate scan state
+  interface DupFile  { id: string; storedName: string; fileSize: string; uploadedAt: string; uploaderName: string }
+  interface DupGroup { originalName: string; eventId: string; eventName: string; count: number; files: DupFile[] }
+  const [dupGroups,    setDupGroups]    = useState<DupGroup[] | null>(null)
+  const [dupScanning,  setDupScanning]  = useState(false)
+  const [dupCleaning,  setDupCleaning]  = useState<string | null>(null)   // 'group-key|keepId'
+  const [dupCleanMsg,  setDupCleanMsg]  = useState<string | null>(null)
+
   // ── Auth guard ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (authStatus === 'loading') return
@@ -320,6 +328,66 @@ export default function AdminSettingsPage() {
       }
     } catch (err: any) { setError(err.message) }
     finally { setJobRunning(null) }
+  }
+
+  // ── Duplicate scan helpers ────────────────────────────────────────────────
+  async function scanDuplicates() {
+    setDupScanning(true); setDupCleanMsg(null)
+    try {
+      const res  = await fetch('/api/admin/find-duplicates')
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Scan failed')
+      setDupGroups(data.groups)
+    } catch (err: any) { setError(err.message) }
+    finally { setDupScanning(false) }
+  }
+
+  async function cleanDupGroup(
+    originalName: string, eventId: string,
+    keepId: string, reason: string,
+  ) {
+    const gkey = `${eventId}|${originalName}`
+    setDupCleaning(`${gkey}|${keepId}`); setDupCleanMsg(null)
+    try {
+      const res  = await fetch('/api/admin/find-duplicates', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ originalName, eventId, keepId, reason }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed')
+      setDupCleanMsg(`✓ Trashed ${data.trashed} duplicate(s) in "${originalName}"`)
+      // Remove resolved group from list
+      setDupGroups(prev => (prev ?? []).filter(g => !(g.eventId === eventId && g.originalName === originalName)))
+    } catch (err: any) { setError(err.message) }
+    finally { setDupCleaning(null) }
+  }
+
+  async function cleanAllDuplicates(strategy: 'newest' | 'oldest') {
+    if (!dupGroups || dupGroups.length === 0) return
+    setDupCleaning('all'); setDupCleanMsg(null)
+    let totalTrashed = 0
+    try {
+      for (const group of dupGroups) {
+        const sorted = [...group.files].sort((a, b) =>
+          new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime()
+        )
+        const keepId = strategy === 'newest' ? sorted[sorted.length - 1].id : sorted[0].id
+        const res = await fetch('/api/admin/find-duplicates', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            originalName: group.originalName, eventId: group.eventId,
+            keepId, reason: `keep-${strategy}`,
+          }),
+        })
+        const data = await res.json()
+        if (res.ok) totalTrashed += data.trashed ?? 0
+      }
+      setDupCleanMsg(`✓ Cleaned all duplicates — ${totalTrashed} file(s) moved to trash.`)
+      setDupGroups([])
+    } catch (err: any) { setError(err.message) }
+    finally { setDupCleaning(null) }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -741,7 +809,7 @@ export default function AdminSettingsPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-slate-800/50 border border-slate-700/40">
                     <div>
                       <p className="text-xs text-slate-400 mb-0.5">Model</p>
-                      <p className="text-sm text-white font-medium">gemini-2.0-flash</p>
+                      <p className="text-sm text-white font-medium">gemini-2.0-flash-lite</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-400 mb-0.5">Gemini API Key</p>
@@ -950,6 +1018,122 @@ export default function AdminSettingsPage() {
                           <p className="text-xs text-slate-400 mt-0.5">{label}</p>
                         </div>
                       ))}
+                    </div>
+                  </SectionCard>
+
+                  {/* ── Duplicate Files ─────────────────────────────────── */}
+                  <SectionCard icon={<Copy className="w-4 h-4 text-amber-400" />} title="Duplicate Files" desc="Find and clean up files that share the same name within the same event">
+                    <div className="space-y-3">
+                      {/* Scan / bulk-clean buttons */}
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          disabled={dupScanning || dupCleaning !== null}
+                          onClick={scanDuplicates}
+                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600/15 border border-amber-500/35 text-amber-300 text-sm hover:bg-amber-600/25 transition disabled:opacity-50"
+                        >
+                          {dupScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                          {dupScanning ? 'Scanning…' : 'Scan for Duplicates'}
+                        </button>
+                        {dupGroups !== null && dupGroups.length > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={dupCleaning !== null}
+                              onClick={() => cleanAllDuplicates('newest')}
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600/15 border border-indigo-500/35 text-indigo-300 text-sm hover:bg-indigo-600/25 transition disabled:opacity-50"
+                            >
+                              {dupCleaning === 'all' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                              Clean All — Keep Newest
+                            </button>
+                            <button
+                              type="button"
+                              disabled={dupCleaning !== null}
+                              onClick={() => cleanAllDuplicates('oldest')}
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700/40 border border-slate-600/40 text-slate-400 text-sm hover:bg-slate-700/60 transition disabled:opacity-50"
+                            >
+                              {dupCleaning === 'all' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                              Clean All — Keep Oldest
+                            </button>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Result message */}
+                      {dupCleanMsg && (
+                        <p className={`text-xs px-3 py-2 rounded-lg ${dupCleanMsg.startsWith('✓') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                          {dupCleanMsg}
+                        </p>
+                      )}
+
+                      {/* No duplicates */}
+                      {dupGroups !== null && dupGroups.length === 0 && (
+                        <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          No duplicate files found.
+                        </div>
+                      )}
+
+                      {/* Duplicate groups list */}
+                      {dupGroups !== null && dupGroups.length > 0 && (
+                        <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                          {dupGroups.map(group => {
+                            const sorted  = [...group.files].sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime())
+                            const newestId = sorted[sorted.length - 1].id
+                            const oldestId = sorted[0].id
+                            const gkey     = `${group.eventId}|${group.originalName}`
+                            const isBusy   = dupCleaning !== null && dupCleaning.startsWith(gkey)
+                            return (
+                              <div key={gkey} className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 space-y-3">
+                                {/* Group header */}
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-sm text-white font-medium truncate">{group.originalName}</p>
+                                    <p className="text-xs text-slate-400 mt-0.5">
+                                      {group.eventName} · <span className="text-amber-400">{group.count} copies</span>
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                      type="button"
+                                      disabled={isBusy}
+                                      onClick={() => cleanDupGroup(group.originalName, group.eventId, newestId, 'keep-newest')}
+                                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-indigo-600/15 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/25 transition disabled:opacity-50"
+                                    >
+                                      {isBusy && dupCleaning?.endsWith(newestId) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                      Keep newest
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={isBusy}
+                                      onClick={() => cleanDupGroup(group.originalName, group.eventId, oldestId, 'keep-oldest')}
+                                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-slate-700/40 border border-slate-600/40 text-slate-400 hover:bg-slate-700/60 transition disabled:opacity-50"
+                                    >
+                                      {isBusy && dupCleaning?.endsWith(oldestId) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                      Keep oldest
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* File list */}
+                                <div className="space-y-1.5">
+                                  {sorted.map((file, idx) => (
+                                    <div key={file.id} className="flex items-center gap-2 text-xs text-slate-500">
+                                      <span className={`px-1.5 py-0.5 rounded font-medium ${idx === sorted.length - 1 ? 'bg-indigo-500/15 text-indigo-400' : 'bg-slate-700 text-slate-500'}`}>
+                                        {idx === 0 ? 'oldest' : idx === sorted.length - 1 ? 'newest' : `#${idx + 1}`}
+                                      </span>
+                                      <span className="truncate text-slate-400">{file.storedName}</span>
+                                      <span className="shrink-0">{file.uploaderName}</span>
+                                      <span className="shrink-0 text-slate-600">·</span>
+                                      <span className="shrink-0">{new Date(file.uploadedAt).toLocaleDateString()}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   </SectionCard>
 

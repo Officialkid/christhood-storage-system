@@ -461,7 +461,15 @@ export async function POST(req: NextRequest) {
             sendError("The assistant isn't configured correctly. Please contact your admin.", 'AUTH_ERROR')
 
           } else if (status === 429) {
-            sendError("I'm a bit busy right now — please try again in a minute! 😊", 'RATE_LIMIT')
+            // Distinguish between Gemini's daily quota and Gemini's per-minute RPM limit.
+            // Quota errors come back with RESOURCE_EXHAUSTED in the message body.
+            const isQuota = err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('quota')
+            sendError(
+              isQuota
+                ? "Zara's daily free-tier quota has been reached. She'll be available again tomorrow, or ask your admin to upgrade the Gemini plan at aistudio.google.com. 📅"
+                : "I'm a bit busy right now — please try again in a minute! 😊",
+              'RATE_LIMIT',
+            )
 
           } else if (status === 400) {
             // 400 from Gemini means the API key was rejected

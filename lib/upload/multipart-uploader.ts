@@ -85,13 +85,21 @@ export interface MultipartUploadOptions {
   onCompleting?: () => void
   /** Overall progress 0–99 during upload, 100 after /complete returns. */
   onProgress?:   (pct: number) => void
+  /** Override the default chunk size (10 MB). Must be ≥ 5 MB (R2 minimum per-part size). */
+  chunkSize?:    number
+  /**
+   * When set, the completed upload will be stored as a new version of the given
+   * MediaFile ID rather than creating a brand-new MediaFile record.
+   */
+  versionOf?:    string
   signal?:       AbortSignal
 }
 
 export interface MultipartUploadResult {
-  mediaFile: { id: string; storedName: string; r2Key: string }
-  uploadId:  string
-  key:       string
+  mediaFile:     { id: string; storedName: string; r2Key: string }
+  uploadId:      string
+  key:           string
+  versionNumber?: number
 }
 
 // ─────────────────────────────────────────────────────────────── Internals ───
@@ -232,8 +240,10 @@ function runConcurrent<T>(
 export async function runMultipartUpload(opts: MultipartUploadOptions): Promise<MultipartUploadResult> {
   const {
     file, eventId, subfolderId, resume, filenameOverride, force,
-    onCreate, onPartDone, onCompleting, onProgress, signal,
+    onCreate, onPartDone, onCompleting, onProgress, signal, versionOf,
   } = opts
+  // Enforce R2's 5 MB minimum part size; cap at CHUNK_SIZE default if not supplied.
+  const effectiveChunkSize = Math.max(5 * 1024 * 1024, opts.chunkSize ?? CHUNK_SIZE)
 
   // Effective filename: caller may override it for duplicate 'Keep both' flow.
   const effectiveFilename = filenameOverride ?? file.name
@@ -241,7 +251,7 @@ export async function runMultipartUpload(opts: MultipartUploadOptions): Promise<
   // ── 1. Create or resume the R2 multipart session ────────────────────────────
   let uploadId: string
   let key:      string
-  const totalParts     = Math.ceil(file.size / CHUNK_SIZE)
+  const totalParts     = Math.ceil(file.size / effectiveChunkSize)
   const completedParts: { PartNumber: number; ETag: string }[] = resume
     ? [...resume.completedParts]
     : []
@@ -280,8 +290,8 @@ export async function runMultipartUpload(opts: MultipartUploadOptions): Promise<
     const bytesLoaded = new Array<number>(totalParts).fill(0)
     // Pre-fill already-completed chunks so resumed uploads show correct start %.
     for (const p of completedParts) {
-      const start = (p.PartNumber - 1) * CHUNK_SIZE
-      bytesLoaded[p.PartNumber - 1] = Math.min(CHUNK_SIZE, file.size - start)
+      const start = (p.PartNumber - 1) * effectiveChunkSize
+      bytesLoaded[p.PartNumber - 1] = Math.min(effectiveChunkSize, file.size - start)
     }
 
     const emitProgress = () => {
@@ -290,9 +300,10 @@ export async function runMultipartUpload(opts: MultipartUploadOptions): Promise<
     }
     emitProgress()  // show resume start % immediately
 
-    await runConcurrent(presignedUrls, PARALLEL_LIMIT, async ({ partNumber, url }) => {
-      const start = (partNumber - 1) * CHUNK_SIZE
-      const end   = Math.min(start + CHUNK_SIZE, file.size)
+    // Inner function used for both the initial run and the 403-retry pass.
+    const uploadOneChunk = async (partNumber: number, url: string) => {
+      const start = (partNumber - 1) * effectiveChunkSize
+      const end   = Math.min(start + effectiveChunkSize, file.size)
       const chunk = file.slice(start, end)
 
       const etag = await uploadChunk(url, chunk, loaded => {
@@ -300,14 +311,43 @@ export async function runMultipartUpload(opts: MultipartUploadOptions): Promise<
         emitProgress()
       }, signal)
 
-      // Mark chunk as fully loaded in the progress tracker
       bytesLoaded[partNumber - 1] = end - start
       emitProgress()
 
-      // JS is single-threaded — push is atomic in the microtask sense
       completedParts.push({ PartNumber: partNumber, ETag: etag })
       onPartDone?.([...completedParts], completedParts.length, totalParts)
-    }, signal)
+    }
+
+    try {
+      await runConcurrent(
+        presignedUrls, PARALLEL_LIMIT,
+        ({ partNumber, url }) => uploadOneChunk(partNumber, url),
+        signal,
+      )
+    } catch (err: unknown) {
+      // If any chunk failed with HTTP 403 the presigned URL expired (URLs are
+      // valid for 1 hour). Fetch fresh URLs for all outstanding parts and
+      // retry once before propagating the error.
+      const msg = (err instanceof Error) ? err.message : ''
+      if (msg.includes('HTTP 403') && !signal?.aborted) {
+        const doneNow    = new Set(completedParts.map(p => p.PartNumber))
+        const retryParts = presignedUrls.map(u => u.partNumber).filter(n => !doneNow.has(n))
+        if (retryParts.length > 0) {
+          const { presignedUrls: freshUrls } = await apiPost(
+            '/api/upload/multipart/refresh-urls',
+            { uploadId, key, partNumbers: retryParts },
+            signal,
+          ) as { presignedUrls: { partNumber: number; url: string }[] }
+          await runConcurrent(
+            freshUrls, PARALLEL_LIMIT,
+            ({ partNumber, url }) => uploadOneChunk(partNumber, url),
+            signal,
+          )
+        }
+      } else {
+        throw err
+      }
+    }
   }
 
   // ── 4. Tell R2 to assemble all parts into the final object ──────────────────
@@ -326,10 +366,11 @@ export async function runMultipartUpload(opts: MultipartUploadOptions): Promise<
     eventId,
     subfolderId,
     force:        force ?? false,
-  }, signal) as { mediaFile: { id: string; storedName: string; r2Key: string } }
+    versionOf:    versionOf ?? null,
+  }, signal) as { mediaFile: { id: string; storedName: string; r2Key: string }; versionNumber?: number }
 
   onProgress?.(100)
-  return { mediaFile: completed.mediaFile, uploadId, key }
+  return { mediaFile: completed.mediaFile, uploadId, key, versionNumber: completed.versionNumber }
 }
 
 /**

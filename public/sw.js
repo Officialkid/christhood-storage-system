@@ -163,30 +163,90 @@ async function staleWhileRevalidate(request) {
   return cached ?? (await fetchPromise) ?? new Response('Offline', { status: 503 })
 }
 
-// ── Background Sync — offline upload queue ─────────────────────────────────
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'cmms-upload-sync') {
-    // Tell all open windows to drain the IndexedDB upload queue
-    event.waitUntil(notifyClientsToSync())
-  }
-  if (event.tag === 'resume-upload') {
-    // Tell all open windows to resume paused multipart uploads
-    event.waitUntil(notifyClientsToResumeUploads())
-  }
-})
+// ── IDB helpers (SW-side — mirrors upload-session-store.ts schema) ───────────
+const SW_DB_NAME  = 'cmms_upload_sessions'
+const SW_DB_STORE = 'sessions'
 
-async function notifyClientsToSync() {
-  const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true })
-  for (const client of allClients) {
-    client.postMessage({ type: 'OFFLINE_QUEUE_DRAIN' })
+function swOpenDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(SW_DB_NAME, 1)
+    req.onsuccess = e => resolve(e.target.result)
+    req.onerror   = () => reject(req.error)
+  })
+}
+
+async function getPausedSessions() {
+  try {
+    const db = await swOpenDB()
+    return await new Promise((resolve, reject) => {
+      const req = db.transaction(SW_DB_STORE, 'readonly').objectStore(SW_DB_STORE).getAll()
+      req.onsuccess = () => resolve(
+        req.result.filter(s => s.status === 'active' || s.status === 'paused')
+      )
+      req.onerror = () => reject(req.error)
+    })
+  } catch {
+    return []
   }
 }
 
-async function notifyClientsToResumeUploads() {
-  const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true })
-  for (const client of allClients) {
-    client.postMessage({ type: 'RESUME_UPLOADS' })
+// ── Background Sync — offline upload queue ─────────────────────────────────
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'cmms-upload-sync') {
+    // Tell all open windows to drain the IndexedDB upload queue;
+    // if no window is open, show a "tap to continue" notification.
+    event.waitUntil(notifyClientsToSync())
   }
+  // Handle both the generic tag and per-upload tags (resume-upload-<sessionId>)
+  if (event.tag === 'resume-upload' || event.tag.startsWith('resume-upload-')) {
+    event.waitUntil(handleResumeSync())
+  }
+})
+
+/**
+ * If the app is open: message every window to resume paused uploads.
+ * If no window is open: show a notification so the user can tap back in.
+ */
+async function handleResumeSync() {
+  const openClients = await clients.matchAll({ type: 'window', includeUncontrolled: true })
+  if (openClients.length > 0) {
+    for (const client of openClients) {
+      client.postMessage({ type: 'RESUME_UPLOADS' })
+    }
+    return
+  }
+  // No window — read IDB to show a meaningful "come back" notification
+  const sessions = await getPausedSessions()
+  if (sessions.length === 0) return
+  const count = sessions.length
+  await self.registration.showNotification('Uploads paused ⏸', {
+    body:  `${count} file${count !== 1 ? 's' : ''} waiting — tap to resume`,
+    icon:  '/icons/icon-192.svg',
+    badge: '/icons/icon-192.svg',
+    tag:   'cmms-upload-resume',
+    data:  { url: '/upload' },
+  }).catch(() => {})
+}
+
+async function notifyClientsToSync() {
+  const openClients = await clients.matchAll({ type: 'window', includeUncontrolled: true })
+  if (openClients.length > 0) {
+    for (const client of openClients) {
+      client.postMessage({ type: 'OFFLINE_QUEUE_DRAIN' })
+    }
+    return
+  }
+  // No window open — let the user know uploads are waiting
+  const sessions = await getPausedSessions()
+  if (sessions.length === 0) return
+  const count = sessions.length
+  await self.registration.showNotification('Upload queue ready ☁️', {
+    body:  `${count} file${count !== 1 ? 's' : ''} ready to upload — tap to continue`,
+    icon:  '/icons/icon-192.svg',
+    badge: '/icons/icon-192.svg',
+    tag:   'cmms-upload-resume',
+    data:  { url: '/upload' },
+  }).catch(() => {})
 }
 
 // ── Upload progress notifications (from main thread via postMessage) ─────────

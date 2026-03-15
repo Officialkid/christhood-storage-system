@@ -532,19 +532,31 @@ function StorageOverview({ storage }: { storage: Storage }) {
 
 // ── Zara quick access ─────────────────────────────────────────────────────────
 function ZaraCard() {
-  const [zaraStatus, setZaraStatus] = useState<'checking' | 'online' | 'offline'>('checking')
+  const [zaraStatus, setZaraStatus] = useState<'checking' | 'online' | 'quota' | 'offline'>('checking')
+  const [zaraDetail, setZaraDetail] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/assistant/health')
       .then(res => res.json())
-      .then((data: { status?: string }) => setZaraStatus(data.status === 'ok' ? 'online' : 'offline'))
+      .then((data: { status?: string; message?: string; detail?: string }) => {
+        if (data.status === 'ok') {
+          setZaraStatus('online')
+        } else if (data.message?.toLowerCase().includes('quota')) {
+          setZaraStatus('quota')
+          setZaraDetail(data.detail ?? null)
+        } else {
+          setZaraStatus('offline')
+          setZaraDetail(data.detail ?? data.message ?? null)
+        }
+      })
       .catch(() => setZaraStatus('offline'))
   }, [])
 
   const statusInfo = {
-    checking: { dot: 'bg-slate-500',             label: 'Checking…',      sub: null },
-    online:   { dot: 'bg-green-400 animate-pulse', label: 'Zara is online', sub: null },
-    offline:  { dot: 'bg-red-500',                label: 'Zara is offline', sub: 'Contact admin to restore' },
+    checking: { dot: 'bg-slate-500',              label: 'Checking…',               sub: null },
+    online:   { dot: 'bg-green-400 animate-pulse', label: 'Zara is online',          sub: null },
+    quota:    { dot: 'bg-amber-400',               label: 'Quota limit reached',      sub: 'Resets tomorrow — or upgrade at aistudio.google.com' },
+    offline:  { dot: 'bg-red-500',                 label: 'Zara is offline',          sub: zaraDetail ?? 'Contact admin to restore' },
   }[zaraStatus]
 
   return (
@@ -579,53 +591,56 @@ function ZaraCard() {
 // Stats sections (role-specific)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function AdminStatsSection({ stats }: { stats: AdminStats }) {
+function AdminStatsSection({ stats, isLoading }: { stats: AdminStats; isLoading: boolean }) {
+  const v = (n: number) => isLoading ? '—' : n
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <StatCard icon={<FileText className="w-5 h-5" />} label="Total Files"
-        value={stats.totalFiles}
+        value={v(stats.totalFiles)}
         sub={stats.monthChangePct != null ? `${stats.monthChangePct >= 0 ? '+' : ''}${stats.monthChangePct}% this month` : undefined}
         href="/media" accentClass="text-indigo-400" />
       <StatCard icon={<UploadCloud className="w-5 h-5" />} label="This Week"
-        value={`+${stats.weekUploads}`} sub="new uploads"
+        value={isLoading ? '—' : `+${stats.weekUploads}`} sub="new uploads"
         href="/media" accentClass="text-sky-400" />
       <StatCard icon={<Clock className="w-5 h-5" />} label="Pending Edit"
-        value={stats.pendingEdit} sub="RAW files awaiting edit"
+        value={v(stats.pendingEdit)} sub="RAW files awaiting edit"
         href="/media?status=RAW" accentClass="text-amber-400" />
       <StatCard icon={<Users className="w-5 h-5" />} label="Active Today"
-        value={stats.activeToday} sub="unique users"
+        value={v(stats.activeToday)} sub="unique users"
         href="/admin/users" accentClass="text-green-400" />
     </div>
   )
 }
 
-function EditorStatsSection({ stats }: { stats: EditorStats }) {
+function EditorStatsSection({ stats, isLoading }: { stats: EditorStats; isLoading: boolean }) {
+  const v = (n: number) => isLoading ? '—' : n
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
       <StatCard icon={<Clock className="w-5 h-5" />} label="Files to Edit"
-        value={stats.filesToEdit} sub="RAW files waiting"
+        value={v(stats.filesToEdit)} sub="RAW files waiting"
         href="/media?status=RAW" accentClass="text-amber-400" />
       <StatCard icon={<CheckCircle2 className="w-5 h-5" />} label="Edited This Month"
-        value={stats.editedThisMonth} sub="status changes by you"
+        value={v(stats.editedThisMonth)} sub="status changes by you"
         accentClass="text-green-400" />
       <StatCard icon={<TrendingUp className="w-5 h-5" />} label="Transfers Waiting"
-        value={stats.transfersWaiting} sub="pending response"
+        value={v(stats.transfersWaiting)} sub="pending response"
         href="/transfers" accentClass="text-sky-400" />
     </div>
   )
 }
 
-function UploaderStatsSection({ stats }: { stats: UploaderStats }) {
+function UploaderStatsSection({ stats, isLoading }: { stats: UploaderStats; isLoading: boolean }) {
+  const v = (n: number) => isLoading ? '—' : n
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
       <StatCard icon={<FileText className="w-5 h-5" />} label="My Uploads"
-        value={stats.myTotal} sub="total files uploaded"
+        value={v(stats.myTotal)} sub="total files uploaded"
         href="/media" accentClass="text-indigo-400" />
       <StatCard icon={<UploadCloud className="w-5 h-5" />} label="This Week"
-        value={`+${stats.myWeek}`} sub="files this week"
+        value={isLoading ? '—' : `+${stats.myWeek}`} sub="files this week"
         href="/media" accentClass="text-sky-400" />
       <StatCard icon={<Folder className="w-5 h-5" />} label="My Events"
-        value={stats.myEvents} sub="events with my uploads"
+        value={v(stats.myEvents)} sub="events with my uploads"
         href="/events" accentClass="text-amber-400" />
     </div>
   )
@@ -641,6 +656,9 @@ export default function DashboardClient({ initialData }: { initialData: Dashboar
   const [lastUpdated,   setLastUpdated]   = useState(new Date())
   const [isRefreshing,  setIsRefreshing]  = useState(false)
   const [secsSince,     setSecsSince]     = useState(0)
+  // False until the first successful client-side fetch completes.
+  // Prevents the SSR-fallback zeros from flashing as real data.
+  const [hasRealData,   setHasRealData]   = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const refresh = useCallback(async (silent = true) => {
@@ -653,6 +671,7 @@ export default function DashboardClient({ initialData }: { initialData: Dashboar
         setData(fresh)
         setLastUpdated(new Date())
         setSecsSince(0)
+        setHasRealData(true)
       }
     } catch { /* ignore network errors */ }
     finally { if (!silent) setIsRefreshing(false) }
@@ -743,9 +762,9 @@ export default function DashboardClient({ initialData }: { initialData: Dashboar
       )}
 
       {/* ── Section 2: Stats cards ──────────────────────────────────────────── */}
-      {isAdmin  && <AdminStatsSection    stats={stats as AdminStats} />}
-      {isEditor && <EditorStatsSection   stats={stats as EditorStats} />}
-      {!isAdmin && !isEditor && <UploaderStatsSection stats={stats as UploaderStats} />}
+      {isAdmin  && <AdminStatsSection    stats={stats as AdminStats}    isLoading={!hasRealData} />}
+      {isEditor && <EditorStatsSection   stats={stats as EditorStats}   isLoading={!hasRealData} />}
+      {!isAdmin && !isEditor && <UploaderStatsSection stats={stats as UploaderStats} isLoading={!hasRealData} />}
 
       {/* ── Sections 3 + 5: Activity feed + Upcoming events ─────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
