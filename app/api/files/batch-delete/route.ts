@@ -99,7 +99,8 @@ export async function POST(req: NextRequest) {
       }).catch(() => {})
 
       deleted.push({ id: file.id, purgesAt: scheduledPurge.toISOString() })
-    } catch {
+    } catch (err) {
+      console.error(`[POST /api/files/batch-delete] failed for file ${file.id}:`, err)
       failed.push({ id: file.id, reason: 'Server error — please try again' })
     }
   }

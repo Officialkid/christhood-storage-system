@@ -67,22 +67,31 @@ export async function DELETE(
   const scheduledPurge = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) // +30 days
 
   // ── Atomic: create TrashItem + update MediaFile ───────────────────────────
-  const trashItemId = await prisma.$transaction(async (tx) => {
-    const item = await tx.trashItem.create({
-      data: {
-        mediaFileId:      fileId,
-        deletedById:      userId,
-        deletedAt:        now,
-        scheduledPurgeAt: scheduledPurge,
-        preDeleteStatus:  file.status,
-      } as any,
+  let trashItemId: string
+  try {
+    trashItemId = await prisma.$transaction(async (tx) => {
+      const item = await tx.trashItem.create({
+        data: {
+          mediaFileId:      fileId,
+          deletedById:      userId,
+          deletedAt:        now,
+          scheduledPurgeAt: scheduledPurge,
+          preDeleteStatus:  file.status,
+        } as any,
+      })
+      await tx.mediaFile.update({
+        where: { id: fileId },
+        data:  { status: 'DELETED' as any },
+      })
+      return item.id
     })
-    await tx.mediaFile.update({
-      where: { id: fileId },
-      data:  { status: 'DELETED' as any },
-    })
-    return item.id
-  })
+  } catch (err) {
+    console.error('[DELETE /api/files/[fileId]] transaction failed:', err)
+    return NextResponse.json(
+      { error: 'Failed to move file to Trash. Please try again.' },
+      { status: 500 },
+    )
+  }
 
   await log('FILE_DELETED', userId, {
     mediaFileId: fileId,

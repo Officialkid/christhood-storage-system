@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   Trash2, RotateCcw, Clock, AlertTriangle, Loader2,
-  RefreshCw, ShieldAlert, FileImage, FileVideo, Info,
+  RefreshCw, ShieldAlert, FileImage, FileVideo, Info, XCircle,
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,17 +88,27 @@ function formatSize(bytes: number): string {
 export default function AdminTrashPage() {
   const [data,         setData]         = useState<PageData | null>(null)
   const [loading,      setLoading]      = useState(true)
+  const [fetchError,   setFetchError]   = useState('')
   const [restoring,    setRestoring]    = useState<string>('')   // trashItemId being restored
+  const [purging,      setPurging]      = useState<string>('')   // trashItemId being purged
   const [page,         setPage]         = useState(1)
   const LIMIT = 50
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchTrash = useCallback(async (pg = page) => {
     setLoading(true)
+    setFetchError('')
     try {
       const res = await fetch(`/api/admin/trash?page=${pg}&limit=${LIMIT}`)
-      const d   = await res.json() as PageData
-      setData(d)
+      const body = await res.json()
+      if (!res.ok) {
+        setFetchError(body?.error ?? `Server error ${res.status}`)
+        return
+      }
+      setData(body as PageData)
+    } catch (err) {
+      setFetchError('Network error — could not load trash. Please refresh.')
+      console.error('[AdminTrashPage] fetchTrash error:', err)
     } finally {
       setLoading(false)
     }
@@ -133,6 +143,37 @@ export default function AdminTrashPage() {
       alert('Network error — please try again.')
     } finally {
       setRestoring('')
+    }
+  }
+
+  // ── Permanent purge ───────────────────────────────────────────────────────
+  async function handlePurge(trashItemId: string, fileName: string) {
+    if (!confirm(
+      `Permanently delete "${fileName}"?\n\nThis will immediately remove the file from storage. This cannot be undone.`
+    )) return
+
+    setPurging(trashItemId)
+    try {
+      const res  = await fetch(`/api/admin/trash/${trashItemId}`, { method: 'DELETE' })
+      const body = await res.json()
+
+      if (!res.ok) {
+        alert(`Purge failed: ${body.error ?? 'Unknown error'}`)
+        return
+      }
+
+      setData(prev => prev
+        ? {
+            ...prev,
+            items: prev.items.filter(i => i.id !== trashItemId),
+            total: prev.total - 1,
+          }
+        : prev
+      )
+    } catch {
+      alert('Network error — please try again.')
+    } finally {
+      setPurging('')
     }
   }
 
@@ -186,6 +227,19 @@ export default function AdminTrashPage() {
           <Loader2 className="w-5 h-5 animate-spin mr-2" />
           Loading trash…
         </div>
+      ) : fetchError ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
+          <XCircle className="w-10 h-10 text-red-500/60" />
+          <p className="text-base font-medium text-red-400">Failed to load trash</p>
+          <p className="text-sm text-slate-500 max-w-sm">{fetchError}</p>
+          <button
+            onClick={() => fetchTrash(page)}
+            className="mt-2 px-4 py-2 rounded-xl text-sm font-medium bg-slate-800
+                       border border-slate-700 text-slate-300 hover:bg-slate-700 transition"
+          >
+            Try again
+          </button>
+        </div>
       ) : !data || data.items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-slate-600">
           <Trash2 className="w-12 h-12 mb-4 opacity-20" />
@@ -195,10 +249,12 @@ export default function AdminTrashPage() {
       ) : (
         <div className="space-y-3">
           {data.items.map(entry => {
-            const file      = entry.mediaFile
-            const days      = daysRemaining(entry.scheduledPurgeAt)
-            const isUrgent  = days <= 3
+            const file        = entry.mediaFile
+            const days        = daysRemaining(entry.scheduledPurgeAt)
+            const isUrgent    = days <= 3
             const isRestoring = restoring === entry.id
+            const isPurging   = purging   === entry.id
+            const isBusy      = isRestoring || isPurging
 
             return (
               <div
@@ -242,7 +298,7 @@ export default function AdminTrashPage() {
                     </div>
                   </div>
 
-                  {/* ── Right: badges + restore ──────────────────────────────── */}
+                  {/* ── Right: badges + actions ──────────────────────────────── */}
                   <div className="flex items-center gap-2 flex-wrap shrink-0">
                     {/* Purge countdown badge */}
                     <span className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl
@@ -257,7 +313,7 @@ export default function AdminTrashPage() {
                     {/* Restore button */}
                     <button
                       onClick={() => handleRestore(entry.id, file.originalName)}
-                      disabled={isRestoring}
+                      disabled={isBusy}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
                                  font-medium bg-emerald-600/20 text-emerald-300 border
                                  border-emerald-600/30 hover:bg-emerald-600/40 transition
@@ -268,6 +324,22 @@ export default function AdminTrashPage() {
                         : <RotateCcw  className="w-3.5 h-3.5" />
                       }
                       {isRestoring ? 'Restoring…' : 'Restore'}
+                    </button>
+
+                    {/* Delete Permanently button */}
+                    <button
+                      onClick={() => handlePurge(entry.id, file.originalName)}
+                      disabled={isBusy}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
+                                 font-medium bg-red-600/20 text-red-400 border
+                                 border-red-600/30 hover:bg-red-600/40 transition
+                                 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isPurging
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Trash2  className="w-3.5 h-3.5" />
+                      }
+                      {isPurging ? 'Deleting…' : 'Delete Permanently'}
                     </button>
                   </div>
                 </div>
@@ -280,9 +352,7 @@ export default function AdminTrashPage() {
                     <span className="text-slate-400">
                       {entry.deletedBy.username ?? entry.deletedBy.email}
                     </span>
-                  </span>
-                  <span>
-                    Deleted{' '}
+                    {' '}on{' '}
                     <span className="text-slate-500">{formatDate(entry.deletedAt)}</span>
                   </span>
                   <span className={isUrgent ? 'text-red-500' : ''}>

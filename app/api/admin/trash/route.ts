@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { log } from '@/lib/activityLog'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/admin/trash
 // ADMIN only — paginated list of all files currently in Trash
 export async function GET(req: NextRequest) {
@@ -16,29 +18,37 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10)))
   const skip  = (page - 1) * limit
 
-  const [items, total] = await Promise.all([
-    prisma.trashItem.findMany({
-      skip,
-      take:    limit,
-      orderBy: { scheduledPurgeAt: 'asc' }, // soonest to expire first
-      include: {
-        deletedBy: { select: { id: true, username: true, email: true } },
-        mediaFile: {
-          include: {
-            event:     { select: { id: true, name: true } },
-            subfolder: { select: { id: true, label: true } },
+  try {
+    const [items, total] = await Promise.all([
+      prisma.trashItem.findMany({
+        skip,
+        take:    limit,
+        orderBy: { scheduledPurgeAt: 'asc' }, // soonest to expire first
+        include: {
+          deletedBy: { select: { id: true, username: true, email: true } },
+          mediaFile: {
+            include: {
+              event:     { select: { id: true, name: true } },
+              subfolder: { select: { id: true, label: true } },
+            },
           },
         },
-      },
-    }),
-    prisma.trashItem.count(),
-  ])
+      }),
+      prisma.trashItem.count(),
+    ])
 
-  return NextResponse.json({
-    items,
-    total,
-    page,
-    limit,
-    pages: Math.max(1, Math.ceil(total / limit)),
-  })
+    return NextResponse.json({
+      items,
+      total,
+      page,
+      limit,
+      pages: Math.max(1, Math.ceil(total / limit)),
+    })
+  } catch (err) {
+    console.error('[GET /api/admin/trash] query failed:', err)
+    return NextResponse.json(
+      { error: 'Failed to load trash. Please try again.' },
+      { status: 500 },
+    )
+  }
 }
