@@ -20,6 +20,7 @@ interface HealthData {
   status:     'ok' | 'error' | 'unknown'
   model?:     string
   message?:   string
+  detail?:    string
   timestamp?: string
 }
 
@@ -466,6 +467,9 @@ export default function AdminAssistantPage() {
               )}
               {health?.message && (
                 <p className="text-xs text-red-400">{health.message}</p>
+              )}
+              {health?.detail && health.status === 'error' && (
+                <p className="text-xs text-amber-400 mt-1">{health.detail}</p>
               )}
             </div>
           </div>

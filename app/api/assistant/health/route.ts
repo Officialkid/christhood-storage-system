@@ -23,22 +23,23 @@ interface CacheEntry {
 let cache: CacheEntry | null = null
 
 const CACHE_TTL_MS  = 60_000   // 60 seconds
-const TIMEOUT_MS    =  5_000   //  5 seconds
+const TIMEOUT_MS    =  8_000   //  8 seconds
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 function ok200(model: string): CacheEntry {
   return {
-    body:      JSON.stringify({ status: 'ok', model, timestamp: new Date().toISOString() }),
+    body:      JSON.stringify({ status: 'ok', model, message: 'Connected', timestamp: new Date().toISOString() }),
     status:    200,
     expiresAt: Date.now() + CACHE_TTL_MS,
   }
 }
 
-function err503(message: string): CacheEntry {
+/** detail is the human-readable action the admin should take; shown in the debug panel. */
+function err503(message: string, detail?: string): CacheEntry {
   return {
-    body:      JSON.stringify({ status: 'error', message }),
+    body:      JSON.stringify({ status: 'error', message, detail: detail ?? message }),
     status:    503,
     expiresAt: Date.now() + CACHE_TTL_MS,
   }
@@ -63,7 +64,19 @@ export async function GET() {
   // ── 2. Verify API key is configured ───────────────────────────────────────
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
-    cache = err503('API key not configured')
+    cache = err503(
+      'API key not configured',
+      'Set GEMINI_API_KEY in Cloud Run: Edit & Deploy New Revision → Variables & Secrets tab → deploy.',
+    )
+    return respond(cache)
+  }
+
+  // ── 2b. Basic format check — Gemini keys always start with "AIza" ─────────
+  if (!apiKey.startsWith('AIza')) {
+    cache = err503(
+      'API key format invalid',
+      'Gemini API keys must start with "AIza". Get a new key at https://aistudio.google.com/app/apikey',
+    )
     return respond(cache)
   }
 
@@ -90,26 +103,70 @@ export async function GET() {
     return respond(cache)
 
   } catch (err) {
-    // ── Auth error: invalid or disabled API key ──────────────────────────────
-    if (
-      err instanceof GoogleGenerativeAIFetchError &&
-      (err.status === 401 || err.status === 403)
-    ) {
-      console.error('[/api/assistant/health] GEMINI_AUTH_ERROR:', err.message)
-      cache = err503('Invalid API key — contact admin')
+    const isFetchErr = err instanceof GoogleGenerativeAIFetchError
+    const httpStatus = isFetchErr ? (err.status ?? 0) : 0
+
+    // Structured log — visible in Cloud Console → Cloud Run → Logs
+    console.error('[/api/assistant/health] GEMINI_HEALTH_CHECK_FAILED:', {
+      errorType: (err as Error).constructor?.name ?? typeof err,
+      message:   (err as Error).message,
+      status:    isFetchErr ? err.status : undefined,
+      stack:     (err as Error).stack?.split('\n')[0],
+    })
+
+    // ── 401 / 403 — key rejected by Google ───────────────────────────────────
+    if (isFetchErr && (httpStatus === 401 || httpStatus === 403)) {
+      cache = err503(
+        'API key does not have permission',
+        'The key was rejected by Google. Verify the Generative Language API is enabled and the key has no restrictions. Get a new key at https://aistudio.google.com/app/apikey',
+      )
+      return respond(cache)
+    }
+
+    // ── 400 — key is correctly formatted but invalid / revoked ───────────────
+    if (isFetchErr && httpStatus === 400) {
+      cache = err503(
+        'API key invalid or revoked (HTTP 400)',
+        'The key was recognised but rejected. It may have been deleted or regenerated. Get a current key at https://aistudio.google.com/app/apikey then update GEMINI_API_KEY in Cloud Run: Edit & Deploy New Revision → Variables & Secrets.',
+      )
+      return respond(cache)
+    }
+
+    // ── 429 — free-tier quota exhausted (key IS valid) ───────────────────────
+    if (isFetchErr && httpStatus === 429) {
+      cache = err503(
+        'Gemini free-tier quota exceeded',
+        'Daily request limit reached. Zara will be available again tomorrow, or upgrade to a paid Gemini plan at https://aistudio.google.com',
+      )
       return respond(cache)
     }
 
     // ── Explicit timeout ─────────────────────────────────────────────────────
     if (err instanceof Error && err.message === 'TIMEOUT') {
-      console.error('[/api/assistant/health] GEMINI_TIMEOUT: no response within 5 s')
-      cache = err503('AI service response timeout')
+      cache = err503(
+        'Gemini API timed out (8 s)',
+        'No response from generativelanguage.googleapis.com within 8 seconds. Cloud Run has unrestricted outbound access — the Gemini API itself may be temporarily unavailable. Try again in a moment.',
+      )
       return respond(cache)
     }
 
-    // ── Network / DNS / any other reachability error ─────────────────────────
-    console.error('[/api/assistant/health] GEMINI_UNREACHABLE:', err)
-    cache = err503('AI service temporarily unavailable')
+    // ── Network / DNS / fetch failed (status 0) ──────────────────────────────
+    if (
+      (isFetchErr && httpStatus === 0) ||
+      (err instanceof TypeError && err.message.toLowerCase().includes('fetch'))
+    ) {
+      cache = err503(
+        `Cannot reach Gemini API — ${(err as Error).message ?? 'fetch failed'}`,
+        'Network error reaching generativelanguage.googleapis.com from Cloud Run. Verify the service account has internet access: Cloud Console → Cloud Run → your service → Security tab.',
+      )
+      return respond(cache)
+    }
+
+    // ── Fallback ─────────────────────────────────────────────────────────────
+    cache = err503(
+      `Gemini error: ${(err as Error).message ?? 'unknown'}`,
+      'Check logs: Cloud Console → Cloud Run → your service → Logs tab → search GEMINI_HEALTH_CHECK_FAILED.',
+    )
     return respond(cache)
   }
 }
