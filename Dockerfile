@@ -27,6 +27,11 @@ COPY prisma ./prisma
 # producing the typed Prisma client in node_modules/@prisma/client.
 RUN npm ci
 
+# npm ci uses the lock file generated on Windows which does not include the
+# linux-musl-x64 optional binary for sharp.  Install it explicitly so that
+# Alpine (musl libc) containers can load the native sharp module at runtime.
+RUN npm install --cpu=x64 --os=linux --libc=musl sharp
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Stage 2 — builder
@@ -113,6 +118,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/        ./node_
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma/      ./node_modules/prisma/
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/     ./node_modules/@prisma/
 COPY --from=builder --chown=nextjs:nodejs /app/prisma                    ./prisma
+
+# Explicitly copy the sharp native binaries installed for Alpine (musl libc).
+# Next.js standalone file tracing may omit optional platform-specific packages,
+# so we copy them here to guarantee the correct linuxmusl binary is present.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/sharp        ./node_modules/sharp
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@img         ./node_modules/@img
 
 # ── Startup script ────────────────────────────────────────────────────────────
 # start.sh runs: prisma migrate deploy → exec node server.js
