@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
 import { getPresignedPartUrl }       from '@/lib/r2'
@@ -66,10 +67,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ presignedUrls })
   } catch (err: any) {
-    console.error('[multipart/presign]', err)
-    return NextResponse.json(
-      { error: 'Could not generate upload URLs — please try again.' },
-      { status: 500 },
-    )
+    return handleApiError(err, 'multipart/presign')
   }
 }

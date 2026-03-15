@@ -92,6 +92,10 @@ model User {
   sentMessages      Message[]          @relation("messageSender")
   messageRecipients MessageRecipient[] @relation("messageRecipient")
 
+  // Email digest frequency — controls when upload digest emails are sent
+  /// "IMMEDIATE" | "DAILY" | "WEEKLY" | "NEVER"
+  emailDigestFrequency String @default("IMMEDIATE")
+
   // Brute-force protection (Layer 3 — account lockout)
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
@@ -117,6 +121,10 @@ model User {
   deactivatedById String?
   deactivatedBy   User?     @relation("DeactivatedBy", fields: [deactivatedById], references: [id], onDelete: SetNull)
   deactivatedUsers User[]   @relation("DeactivatedBy")
+
+  // Self-initiated account deletion (24-hour grace period)
+  pendingDeletionAt     DateTime? // when deletion was requested; null = no pending deletion
+  pendingDeletionAction String?   // 'reassign' | 'archive' | 'trash'
 }
 
 // ─────────────────────────────────────────────
@@ -321,6 +329,10 @@ model Tag {
 model Notification {
   id        String   @id @default(cuid())
   userId    String
+  /// e.g. FILE_UPLOADED | FILE_STATUS_CHANGED | TRANSFER_SENT | MESSAGE_SENT | SYSTEM
+  type      String   @default("SYSTEM")
+  /// Short heading shown bold in the bell panel
+  title     String   @default("")
   message   String
   link      String?
   read      Boolean  @default(false)
@@ -329,6 +341,7 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, read])
+  @@index([userId, createdAt])
 }
 
 /// Web Push API subscription (VAPID)

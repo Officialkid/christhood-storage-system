@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import crypto from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { sendPasswordResetEmail } from '@/lib/email'
@@ -41,6 +42,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[forgot-password]', err)
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
+    return handleApiError(err)
   }
 }

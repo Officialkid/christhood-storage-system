@@ -608,3 +608,129 @@ export async function sendMessageEmail(opts: {
     ),
   })
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. File Uploaded Alert — sent to all admins/editors on new upload
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sendFileUploadedEmail(
+  recipientEmails: string[],
+  opts: {
+    fileName:     string
+    fileId:       string
+    eventName:    string
+    uploaderName: string
+  },
+): Promise<void> {
+  if (recipientEmails.length === 0) return
+
+  const link = `${APP_URL}/media/${opts.fileId}`
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#6366f1;text-transform:uppercase;letter-spacing:0.6px;">New Upload</p>
+    <h1 style="margin:0 0 18px;font-size:26px;font-weight:700;color:#0f172a;line-height:1.2;">A file has been uploaded</h1>
+    <p style="margin:0 0 14px;font-size:15px;color:#334155;line-height:1.6;">
+      <strong>${esc(opts.uploaderName)}</strong> uploaded a new file to the
+      <strong>${esc(opts.eventName)}</strong> event folder.
+    </p>
+    ${infoBox(`
+      <strong>File:</strong>&nbsp;${esc(opts.fileName)}<br>
+      <strong>Event:</strong>&nbsp;${esc(opts.eventName)}<br>
+      <strong>Uploaded by:</strong>&nbsp;${esc(opts.uploaderName)}
+    `)}
+    ${btn('View File →', link)}
+    <p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">
+      Manage notification preferences at
+      <a href="${APP_URL}/notifications" style="color:#6366f1;">${APP_URL}/notifications</a>.
+    </p>`
+
+  await sendEmail({
+    to:      recipientEmails,
+    subject: `[${APP}] New upload: ${opts.fileName} — ${opts.eventName}`,
+    html:    layout(`${opts.uploaderName} uploaded "${opts.fileName}" to ${opts.eventName}.`, body),
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. File Status Changed — sent to the uploader when their file's status changes
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sendFileStatusChangedEmail(opts: {
+  toEmail:   string
+  toName:    string
+  fileName:  string
+  fileId:    string
+  newStatus: string
+  changedBy: string
+}): Promise<void> {
+  const link       = `${APP_URL}/media/${opts.fileId}`
+  const statusFmt  = opts.newStatus.replace(/_/g, ' ')
+
+  const statusColors: Record<string, string> = {
+    RAW:                 '#64748b',
+    EDITING_IN_PROGRESS: '#d97706',
+    EDITED:              '#2563eb',
+    PUBLISHED:           '#16a34a',
+    ARCHIVED:            '#7c3aed',
+  }
+  const color = statusColors[opts.newStatus] ?? '#475569'
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:${color};text-transform:uppercase;letter-spacing:0.6px;">File Updated</p>
+    <h1 style="margin:0 0 18px;font-size:26px;font-weight:700;color:#0f172a;line-height:1.2;">Your file was updated</h1>
+    <p style="margin:0 0 14px;font-size:15px;color:#334155;line-height:1.6;">
+      Hi <strong>${esc(opts.toName)}</strong>,
+      <strong>${esc(opts.changedBy)}</strong> updated the status of one of your uploaded files.
+    </p>
+    ${infoBox(`
+      <strong>File:</strong>&nbsp;${esc(opts.fileName)}<br>
+      <strong>New status:</strong>&nbsp;<span style="color:${color};font-weight:600;">${esc(statusFmt)}</span><br>
+      <strong>Changed by:</strong>&nbsp;${esc(opts.changedBy)}
+    `)}
+    ${btn('View File →', link)}
+    <p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">
+      Manage notification preferences at
+      <a href="${APP_URL}/notifications" style="color:#6366f1;">${APP_URL}/notifications</a>.
+    </p>`
+
+  await sendEmail({
+    to:      opts.toEmail,
+    subject: `[${APP}] Your file "${opts.fileName}" is now ${statusFmt}`,
+    html:    layout(`"${opts.fileName}" status changed to ${statusFmt}.`, body),
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12. Transfer Completed — sent to the recipient when admin marks COMPLETED
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sendTransferCompletedEmail(opts: {
+  toEmail:     string
+  toName:      string
+  adminName:   string
+  subject:     string
+  transferId:  string
+}): Promise<void> {
+  const link = `${APP_URL}/transfers/inbox/${opts.transferId}`
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#10b981;text-transform:uppercase;letter-spacing:0.6px;">Transfer Complete</p>
+    <h1 style="margin:0 0 18px;font-size:26px;font-weight:700;color:#0f172a;line-height:1.2;">Your transfer has been completed</h1>
+    <p style="margin:0 0 14px;font-size:15px;color:#334155;line-height:1.6;">
+      Hi <strong>${esc(opts.toName)}</strong>,
+      <strong>${esc(opts.adminName)}</strong> has reviewed and accepted your edited files.
+      The transfer is now marked as complete.
+    </p>
+    ${infoBox(`<strong>Transfer:</strong>&nbsp;${esc(opts.subject)}`)}
+    <p style="margin:0 0 4px;font-size:15px;color:#334155;line-height:1.6;">
+      Thank you for your work!
+    </p>
+    ${btn('View Transfer →', link)}
+    <p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">
+      Manage notification preferences at
+      <a href="${APP_URL}/notifications" style="color:#6366f1;">${APP_URL}/notifications</a>.
+    </p>`
+
+  await sendEmail({
+    to:      opts.toEmail,
+    subject: `[${APP}] Transfer completed: ${opts.subject}`,
+    html:    layout(`Your transfer "${opts.subject}" has been completed.`, body),
+  })
+}

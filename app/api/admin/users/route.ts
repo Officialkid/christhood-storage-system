@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { getServerSession } from 'next-auth'
@@ -95,6 +96,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ user }, { status: 201 })
   } catch (err) {
     console.error('[admin/users POST]', err)
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
+    return handleApiError(err)
   }
 }

@@ -1,83 +1,50 @@
+import { headers }         from 'next/headers'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
-import Link from 'next/link'
+import { authOptions }      from '@/lib/auth'
+import DashboardClient      from './DashboardClient'
+
+export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions)
+  if (!session?.user) return null
 
-  const [totalMedia, totalEvents, recentMedia] = await Promise.all([
-    prisma.mediaFile.count(),
-    prisma.event.count(),
-    prisma.mediaFile.findMany({
-      orderBy: { createdAt: 'desc' },
-      take:    6,
-      include: { uploader: { select: { username: true } }, event: { select: { name: true } } }
+  // Fetch initial data server-side so the page arrives pre-populated (no flash).
+  let initialData: any = null
+  try {
+    const reqHeaders = headers()
+    const cookie     = reqHeaders.get('cookie') ?? ''
+    const origin     = process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
+    const res = await fetch(`${origin}/api/dashboard`, {
+      headers: { cookie },
+      cache:   'no-store',
     })
-  ])
+    if (res.ok) initialData = await res.json()
+  } catch { /* client will fetch on mount */ }
 
-  return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-white">
-          Welcome back{session?.user?.name ? `, ${session.user.name}` : ''}
-        </h1>
-        <p className="mt-1 text-slate-400">Here's an overview of your media library.</p>
-      </div>
+  if (!initialData) {
+    const role = (session.user as any).role ?? 'UPLOADER'
+    initialData = {
+      role,
+      stats:
+        role === 'ADMIN'   ? { totalFiles: 0, weekUploads: 0, pendingEdit: 0, activeToday: 0, monthChangePct: null }
+        : role === 'EDITOR'  ? { filesToEdit: 0, editedThisMonth: 0, transfersWaiting: 0 }
+        : { myTotal: 0, myWeek: 0, myEvents: 0 },
+      recentUploads:  [],
+      activity:       [],
+      upcomingEvents: [],
+      storage:        null,
+      onboarding: {
+        dismissed:      true,
+        items:          { uploaded: false, installedPwa: false, setNotifications: false, exploredEvents: false, askedZara: false },
+        completedCount: 0,
+        totalCount:     5,
+      },
+      generatedAt: new Date().toISOString(),
+    }
+  }
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        <StatCard label="Total Media"      value={totalMedia}  href="/media"   />
-        <StatCard label="Events"           value={totalEvents} href="/events"  />
-        <StatCard label="Your Role"        value={session?.user?.role ?? '—'} href="/profile" text />
-      </div>
-
-      {/* Recent uploads */}
-      <section>
-        <h2 className="text-xl font-semibold text-white mb-4">Recent Uploads</h2>
-        {recentMedia.length === 0 ? (
-          <p className="text-slate-500">No media yet. Upload your first file!</p>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {recentMedia.map((m) => (
-              <div key={m.id} className="rounded-xl overflow-hidden bg-slate-800 aspect-square
-                                         flex items-center justify-center text-slate-500 text-xs text-center p-2">
-                <div>
-                  <div className="text-2xl mb-1">{m.fileType === 'VIDEO' ? '🎬' : '🖼️'}</div>
-                  <div className="truncate w-full">{m.originalName}</div>
-                  {m.event && <div className="text-indigo-400 mt-0.5">{m.event.name}</div>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  )
+  return <DashboardClient initialData={initialData} />
 }
 
-function StatCard({
-  label,
-  value,
-  href,
-  text
-}: {
-  label: string
-  value: string | number
-  href:  string
-  text?: boolean
-}) {
-  return (
-    <Link
-      href={href}
-      className="block rounded-2xl bg-slate-800 p-6 border border-slate-700
-                 hover:border-slate-600 hover:bg-slate-700/80 transition-all group"
-    >
-      <p className="text-sm text-slate-400 group-hover:text-slate-300 transition-colors">{label}</p>
-      <p className={`mt-1 font-bold text-white ${text ? 'text-xl' : 'text-4xl'}`}>{value}</p>
-      <p className="mt-2 text-xs text-slate-500 group-hover:text-indigo-400 transition-colors">
-        View {label.toLowerCase()} →
-      </p>
-    </Link>
-  )
-}
+

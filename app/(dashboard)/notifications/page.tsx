@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Bell, Mail, Smartphone, Folder, Save, Check, Loader2 } from 'lucide-react'
+import { Bell, Mail, Smartphone, Folder, Save, Check, Loader2, ArrowLeftRight } from 'lucide-react'
 
 type NotificationCategory =
   | 'UPLOAD_IN_FOLLOWED_FOLDER'
@@ -11,6 +11,11 @@ type NotificationCategory =
   | 'WEEKLY_DIGEST'
   | 'FILE_PUBLISHED_ALERT'
   | 'STORAGE_THRESHOLD_ALERT'
+  | 'TRANSFER_RECEIVED'
+  | 'TRANSFER_RESPONDED'
+  | 'TRANSFER_COMPLETED'
+  | 'TRANSFER_CANCELLED'
+  | 'DIRECT_MESSAGE'
 
 interface CategoryMeta {
   label:       string
@@ -63,6 +68,36 @@ const CATEGORIES: Record<NotificationCategory, CategoryMeta> = {
     hasPush:     false,
     hasEmail:    true,
     adminOnly:   true,
+  },
+  TRANSFER_RECEIVED: {
+    label:       'Transfer received',
+    description: 'Get notified when someone sends you files via a transfer request.',
+    hasPush:     true,
+    hasEmail:    true,
+  },
+  TRANSFER_RESPONDED: {
+    label:       'Transfer responded',
+    description: 'Get notified when a recipient uploads their edited files back to your transfer.',
+    hasPush:     true,
+    hasEmail:    true,
+  },
+  TRANSFER_COMPLETED: {
+    label:       'Transfer completed',
+    description: 'Get notified when a transfer is marked completed by the sender.',
+    hasPush:     true,
+    hasEmail:    false,
+  },
+  TRANSFER_CANCELLED: {
+    label:       'Transfer cancelled',
+    description: 'Get notified when a transfer is cancelled.',
+    hasPush:     true,
+    hasEmail:    false,
+  },
+  DIRECT_MESSAGE: {
+    label:       'Direct messages',
+    description: 'Get notified when you receive a direct message from an admin.',
+    hasPush:     true,
+    hasEmail:    true,
   },
 }
 
@@ -143,8 +178,59 @@ export default function NotificationPreferencesPage() {
     )
   }
 
-  const visibleCats = (Object.entries(CATEGORIES) as [NotificationCategory, CategoryMeta][])
-    .filter(([, meta]) => !meta.adminOnly || role === 'ADMIN')
+  const SYSTEM_CATS: NotificationCategory[] = [
+    'UPLOAD_IN_FOLLOWED_FOLDER',
+    'FILE_STATUS_CHANGED',
+    'NEW_EVENT_CREATED',
+    'FILE_RESTORED',
+    'FILE_PUBLISHED_ALERT',
+    'WEEKLY_DIGEST',
+    'STORAGE_THRESHOLD_ALERT',
+  ]
+  const COMMS_CATS: NotificationCategory[] = [
+    'TRANSFER_RECEIVED',
+    'TRANSFER_RESPONDED',
+    'TRANSFER_COMPLETED',
+    'TRANSFER_CANCELLED',
+    'DIRECT_MESSAGE',
+  ]
+
+  const visibleSys   = SYSTEM_CATS.filter((cat) => {
+    const meta = CATEGORIES[cat]
+    return !meta.adminOnly || role === 'ADMIN'
+  })
+  const visibleComms = COMMS_CATS
+
+  // Reusable row renderer
+  function CategoryRow({ cat }: { cat: NotificationCategory }) {
+    const meta    = CATEGORIES[cat]
+    const pushOn  = prefs[cat]?.push  ?? true
+    const emailOn = prefs[cat]?.email ?? true
+    return (
+      <div key={cat} className="grid grid-cols-[1fr_auto_auto] items-center px-6 py-4 border-b border-slate-800/40 last:border-0 hover:bg-slate-800/20 transition-colors">
+        <div>
+          <p className="text-sm font-medium text-white">{meta.label}</p>
+          <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
+        </div>
+        <div className="flex gap-8 pr-0">
+          <div className="w-8 flex justify-center">
+            {meta.hasPush ? (
+              <Toggle enabled={pushOn} onToggle={() => toggle(cat, 'push')} />
+            ) : (
+              <span className="text-slate-700 text-xs">—</span>
+            )}
+          </div>
+          <div className="w-8 flex justify-center">
+            {meta.hasEmail ? (
+              <Toggle enabled={emailOn} onToggle={() => toggle(cat, 'email')} />
+            ) : (
+              <span className="text-slate-700 text-xs">—</span>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-2xl space-y-8">
@@ -156,12 +242,12 @@ export default function NotificationPreferencesPage() {
         </p>
       </div>
 
-      {/* ── Channel toggles ──────────────────────────────────────────────── */}
+      {/* ── System notifications ─────────────────────────────────────────── */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-800">
           <div className="flex items-center gap-2">
             <Bell className="w-4 h-4 text-indigo-400" />
-            <h2 className="text-sm font-semibold text-white">Notification Channels</h2>
+            <h2 className="text-sm font-semibold text-white">System Notifications</h2>
           </div>
         </div>
 
@@ -178,37 +264,35 @@ export default function NotificationPreferencesPage() {
           </div>
         </div>
 
-        {visibleCats.map(([cat, meta]) => {
-          const pushOn  = prefs[cat]?.push  ?? true
-          const emailOn = prefs[cat]?.email ?? true
+        {visibleSys.map((cat) => <CategoryRow key={cat} cat={cat} />)}
+      </section>
 
-          return (
-            <div key={cat} className="grid grid-cols-[1fr_auto_auto] items-center px-6 py-4 border-b border-slate-800/40 last:border-0 hover:bg-slate-800/20 transition-colors">
-              <div>
-                <p className="text-sm font-medium text-white">{meta.label}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
-              </div>
-              <div className="flex gap-8 pr-0">
-                {/* Push toggle */}
-                <div className="w-8 flex justify-center">
-                  {meta.hasPush ? (
-                    <Toggle enabled={pushOn} onToggle={() => toggle(cat, 'push')} />
-                  ) : (
-                    <span className="text-slate-700 text-xs">—</span>
-                  )}
-                </div>
-                {/* Email toggle */}
-                <div className="w-8 flex justify-center">
-                  {meta.hasEmail ? (
-                    <Toggle enabled={emailOn} onToggle={() => toggle(cat, 'email')} />
-                  ) : (
-                    <span className="text-slate-700 text-xs">—</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )
-        })}
+      {/* ── Communications notifications ──────────────────────────────────── */}
+      <section className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <ArrowLeftRight className="w-4 h-4 text-indigo-400" />
+            <h2 className="text-sm font-semibold text-white">Communications</h2>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Transfers, responded files, and direct messages.
+          </p>
+        </div>
+
+        {/* Column header */}
+        <div className="grid grid-cols-[1fr_auto_auto] items-center px-6 py-2 border-b border-slate-800/60">
+          <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Event</span>
+          <div className="flex gap-8 mr-0">
+            <span className="w-8 text-center text-xs font-medium text-slate-500 flex items-center gap-1">
+              <Smartphone className="w-3 h-3" /> Push
+            </span>
+            <span className="w-8 text-center text-xs font-medium text-slate-500 flex items-center gap-1">
+              <Mail className="w-3 h-3" /> Email
+            </span>
+          </div>
+        </div>
+
+        {visibleComms.map((cat) => <CategoryRow key={cat} cat={cat} />)}
       </section>
 
       {/* ── Followed Folders ─────────────────────────────────────────────── */}

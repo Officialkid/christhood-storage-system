@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
 import { createMultipartUpload }     from '@/lib/r2'
@@ -58,10 +59,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ uploadId, key: r2Key, chunkSize: CHUNK_SIZE, totalChunks })
   } catch (err: any) {
-    console.error('[multipart/create]', err)
-    return NextResponse.json(
-      { error: 'Could not start upload session — please try again.' },
-      { status: 500 },
-    )
+    return handleApiError(err, 'multipart/create')
   }
 }

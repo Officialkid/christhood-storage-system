@@ -10,7 +10,7 @@
  */
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const CACHE_NAME    = 'cmms-v3'
+const CACHE_NAME    = 'cmms-v4'
 const OFFLINE_URL   = '/offline'
 
 // App-shell routes to pre-cache on install
@@ -69,16 +69,53 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // ── 2. API routes → network-only (never cache) ────────────────────────────
-  if (url.pathname.startsWith('/api/')) return
+  // ── 2. Next.js image optimisation → stale-while-revalidate ───────────────
+  // Covers thumbnails served via /_next/image?url=...  Thumbnails rarely
+  // change so this gives fast loads while staying up to date in background.
+  if (url.pathname.startsWith('/_next/image')) {
+    event.respondWith(staleWhileRevalidate(request))
+    return
+  }
 
-  // ── 3. Navigation requests → network-first, fallback to cache, then offline page
+  // ── 3. API routes — selective strategy ───────────────────────────────────
+  if (url.pathname.startsWith('/api/')) {
+    // Never cache security-sensitive or time-sensitive endpoints:
+    //   /api/auth/           – session tokens
+    //   /api/admin/          – analytics / admin tools (always fresh)
+    //   /api/download/       – presigned download URLs (expire quickly)
+    //   /api/dashboard       – always-fresh summary stats
+    //   /api/cron/           – cron triggers
+    //   /api/chat/           – AI responses
+    //   /api/assistant/      – AI assistant
+    //   /api/share/          – share tokens (can expire)
+    //   any *presign* path   – R2 presigned PUT/GET URLs
+    if (
+      url.pathname.startsWith('/api/auth/') ||
+      url.pathname.startsWith('/api/admin/') ||
+      url.pathname.startsWith('/api/download/') ||
+      url.pathname.startsWith('/api/dashboard') ||
+      url.pathname.startsWith('/api/cron/') ||
+      url.pathname.startsWith('/api/chat/') ||
+      url.pathname.startsWith('/api/assistant/') ||
+      url.pathname.startsWith('/api/share/') ||
+      url.pathname.includes('presign')
+    ) {
+      return // network-only — do not intercept
+    }
+
+    // Safe read-only listing endpoints → stale-while-revalidate.
+    // Shows cached data instantly while updating in the background.
+    event.respondWith(staleWhileRevalidate(request))
+    return
+  }
+
+  // ── 4. Navigation requests → network-first, fallback to cache, then offline page
   if (request.mode === 'navigate') {
     event.respondWith(networkFirstWithOfflineFallback(request))
     return
   }
 
-  // ── 4. Everything else → stale-while-revalidate ───────────────────────────
+  // ── 5. Everything else → stale-while-revalidate ───────────────────────────
   event.respondWith(staleWhileRevalidate(request))
 })
 

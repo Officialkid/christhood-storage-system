@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -57,8 +58,7 @@ export async function PATCH(
     await logActivity('EVENT_UPDATED', session.user.id, { name, date }, event.id)
     return NextResponse.json({ event })
   } catch (err) {
-    console.error('[hierarchy/events PATCH]', err)
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
+    return handleApiError(err, 'hierarchy/events PATCH')
   }
 }
 

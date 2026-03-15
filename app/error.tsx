@@ -1,26 +1,7 @@
 'use client'
 
-/**
- * Global error boundary — app/error.tsx (Next.js App Router)
- *
- * This component catches any unhandled runtime errors thrown inside the root
- * layout's subtree (every page in the app). It replaces the default Next.js
- * error UI which can expose stack traces and framework internals in development,
- * and — if production error reporting is misconfigured — in production too.
- *
- * Security goals:
- *   - Never render the original error message or stack trace to the browser.
- *   - Give users a clear, friendly message so they know something went wrong.
- *   - Provide a recovery action (try again) without a full page reload where
- *     possible.
- *
- * The `error` prop is intentionally not rendered anywhere in the JSX to
- * prevent accidental information disclosure. In development you will still
- * see the full overlay from React / Next.js dev mode — that is correct
- * behaviour and does not affect production.
- */
-
 import { useEffect } from 'react'
+import { AlertTriangle } from 'lucide-react'
 
 interface Props {
   error: Error & { digest?: string }
@@ -29,24 +10,27 @@ interface Props {
 
 export default function GlobalError({ error, reset }: Props) {
   useEffect(() => {
-    // Log to the browser console in development only — never send raw errors
-    // to an external endpoint here (use a server-side error reporter instead,
-    // e.g. Sentry's Next.js SDK which captures on the server before this
-    // component ever renders).
+    // Never expose raw errors to the user — log server-side via an APM tool (e.g. Sentry).
     if (process.env.NODE_ENV !== 'production') {
       console.error('[GlobalError boundary]', error)
     }
   }, [error])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
       <div className="max-w-md w-full text-center">
-        {/* Generic heading — no framework names, no status codes */}
-        <h1 className="text-2xl font-semibold text-gray-800 mb-3">
+        {/* Warning icon */}
+        <div className="flex justify-center mb-5">
+          <span className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500/10">
+            <AlertTriangle className="w-8 h-8 text-red-400" strokeWidth={1.5} />
+          </span>
+        </div>
+
+        <h1 className="text-2xl font-semibold text-white mb-3">
           Something went wrong
         </h1>
 
-        <p className="text-gray-500 mb-8 leading-relaxed">
+        <p className="text-slate-400 mb-8 leading-relaxed">
           An unexpected error occurred. Please try again, or contact the
           Christhood team if the problem persists.
         </p>
@@ -55,9 +39,10 @@ export default function GlobalError({ error, reset }: Props) {
           <button
             onClick={reset}
             className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg
-                       bg-blue-600 text-white text-sm font-medium
-                       hover:bg-blue-700 focus:outline-none focus:ring-2
-                       focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                       bg-indigo-600 text-white text-sm font-medium
+                       hover:bg-indigo-500 focus:outline-none focus:ring-2
+                       focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-950
+                       transition-colors"
           >
             Try again
           </button>
@@ -65,11 +50,12 @@ export default function GlobalError({ error, reset }: Props) {
           <a
             href="/dashboard"
             className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg
-                       border border-gray-300 text-gray-700 text-sm font-medium
-                       hover:bg-gray-100 focus:outline-none focus:ring-2
-                       focus:ring-gray-400 focus:ring-offset-2 transition-colors"
+                       border border-slate-700 text-slate-300 text-sm font-medium
+                       hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2
+                       focus:ring-slate-500 focus:ring-offset-2 focus:ring-offset-slate-950
+                       transition-colors"
           >
-            Go to dashboard
+            Go to Dashboard
           </a>
         </div>
       </div>

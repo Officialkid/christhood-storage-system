@@ -4,6 +4,7 @@ import { authOptions }                           from '@/lib/auth'
 import { prisma }                                from '@/lib/prisma'
 import { log }                                   from '@/lib/activityLog'
 import { createInAppNotification, sendPushToUser } from '@/lib/notifications'
+import { sendTransferCompletedEmail }            from '@/lib/email'
 
 /**
  * PATCH /api/transfers/[transferId]/complete
@@ -83,6 +84,23 @@ export async function PATCH(
     url:   notifLink,
     tag:   `transfer-completed-${transferId}`,
   }).catch((e: unknown) => console.warn('[complete] push failed:', e))
+
+  // Email the recipient if they have a TRANSFER_COMPLETED email preference (default: send)
+  if (transfer.recipient.email) {
+    prisma.notificationPreference.findUnique({
+      where: { userId_category: { userId: transfer.recipientId, category: 'TRANSFER_COMPLETED' } },
+    }).then((pref) => {
+      if (pref?.email === false) return
+      const adminName = session.user.username ?? session.user.name ?? session.user.email ?? 'Admin'
+      return sendTransferCompletedEmail({
+        toEmail:    transfer.recipient.email as string,
+        toName:     recipientName,
+        adminName,
+        subject:    transfer.subject,
+        transferId,
+      })
+    }).catch((e: unknown) => console.warn('[complete] email failed:', e))
+  }
 
   console.info(`[complete] transferId=${transferId}  completedBy=${session.user.id}  recipient=${recipientName}`)
 

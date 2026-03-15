@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getPresignedUploadUrl } from '@/lib/r2'
@@ -45,10 +46,6 @@ export async function POST(req: NextRequest) {
     const presignedUrl = await getPresignedUploadUrl(r2Key, contentType, 3600)
     return NextResponse.json({ presignedUrl, r2Key })
   } catch (err: any) {
-    console.error('[transfers/presign]', err)
-    return NextResponse.json(
-      { error: 'Could not generate upload URL. Please try again.' },
-      { status: 500 },
-    )
+    return handleApiError(err, 'transfers/presign')
   }
 }

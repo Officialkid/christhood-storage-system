@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -111,10 +112,7 @@ export async function POST(req: NextRequest) {
     // DB write failed — purge all R2 objects the client already uploaded
     console.error('[transfer] DB create failed — rolling back R2 objects:', dbErr)
     await Promise.allSettled(incomingFiles.map(f => deleteObject(f.r2Key)))
-    return NextResponse.json(
-      { error: 'Failed to record transfer. Uploaded files have been removed. Please try again.' },
-      { status: 500 },
-    )
+    return handleApiError(dbErr, 'transfers/create')
   }
 
   // ── Fire-and-forget side-effects ───────────────────────────────────────────
@@ -146,15 +144,20 @@ export async function POST(req: NextRequest) {
       url:   '/transfers/inbox',
     }),
 
-    // 4. Email
-    sendTransferReceivedEmail({
-      toEmail:    recipient.email,
-      toName:     recipient.username ?? recipient.name ?? recipient.email,
-      senderName,
-      subject:    subject.trim(),
-      message:    message?.trim() || null,
-      fileCount,
-      totalSize:  totalBytes,
+    // 4. Email — respect TRANSFER_RECEIVED email preference (default: send)
+    prisma.notificationPreference.findUnique({
+      where: { userId_category: { userId: recipientId, category: 'TRANSFER_RECEIVED' } },
+    }).then((pref) => {
+      if (pref && !pref.email) return
+      return sendTransferReceivedEmail({
+        toEmail:    recipient.email,
+        toName:     recipient.username ?? recipient.name ?? recipient.email,
+        senderName,
+        subject:    subject.trim(),
+        message:    message?.trim() || null,
+        fileCount,
+        totalSize:  totalBytes,
+      })
     }),
   ]).catch(() => {})
 

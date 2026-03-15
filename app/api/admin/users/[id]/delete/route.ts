@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -216,7 +217,6 @@ export async function POST(
 
     return NextResponse.json({ ok: true })
   } catch (err) {
-    console.error('[admin/users/delete]', err)
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
+    return handleApiError(err, 'admin/users/delete')
   }
 }

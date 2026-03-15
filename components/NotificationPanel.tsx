@@ -3,11 +3,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
-import { X, Bell, CheckCheck, MessageSquare } from 'lucide-react'
+import {
+  X, Bell, CheckCheck, MessageSquare,
+  Upload, RefreshCw, ArrowLeftRight, FileEdit, Megaphone,
+} from 'lucide-react'
 
 interface NotificationItem {
   id:          string
   itemType:    'notification' | 'message'
+  type?:       string
+  title?:      string
   message:     string
   subject?:    string
   senderName?: string
@@ -19,6 +24,24 @@ interface NotificationItem {
 
 interface Props {
   onClose: () => void
+}
+
+// Return an icon component based on the notification type
+function NotifIcon({ type, itemType, priority }: { type?: string; itemType: string; priority?: string }) {
+  const cls = 'w-3.5 h-3.5 shrink-0'
+  if (itemType === 'message') return <MessageSquare className={`${cls} text-indigo-400`} />
+  switch (type) {
+    case 'FILE_UPLOADED':          return <Upload      className={`${cls} text-emerald-400`} />
+    case 'FILE_STATUS_CHANGED':
+    case 'FILE_PUBLISHED_ALERT':   return <FileEdit    className={`${cls} text-amber-400`} />
+    case 'FILE_RESTORED':          return <RefreshCw   className={`${cls} text-sky-400`} />
+    case 'TRANSFER_SENT':
+    case 'TRANSFER_RECEIVED':
+    case 'TRANSFER_RESPONDED':
+    case 'TRANSFER_COMPLETED':     return <ArrowLeftRight className={`${cls} text-violet-400`} />
+    case 'DIRECT_MESSAGE':         return <Megaphone   className={`${cls} text-rose-400`} />
+    default:                       return <Bell        className={`${cls} text-slate-500`} />
+  }
 }
 
 export function NotificationPanel({ onClose }: Props) {
@@ -126,29 +149,30 @@ export function NotificationPanel({ onClose }: Props) {
               ? 'bg-red-950/20 hover:bg-red-950/30'
               : 'bg-indigo-950/30 hover:bg-indigo-950/50'
 
+          // Determine display title: explicit title > message fallback
+          const heading = n.title || (n.itemType === 'message'
+            ? (isUrgentMsg ? '🔴 Urgent Message' : '📬 New Message')
+            : null)
+
           const inner = (
             <div
               className={`flex gap-3 px-4 py-3 border-b border-slate-800/60 transition-colors cursor-pointer ${rowBg}`}
               onClick={() => { if (!n.read) markRead(n) }}
             >
-              {/* Unread indicator dot */}
-              <div className="mt-1.5 shrink-0">
-                <div className={`w-2 h-2 rounded-full ${dotColor}`} />
+              {/* Type icon */}
+              <div className="mt-1 shrink-0 flex flex-col items-center gap-1">
+                <NotifIcon type={n.type} itemType={n.itemType} priority={n.priority} />
+                {!n.read && <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />}
               </div>
 
               <div className="flex-1 min-w-0">
-                {/* Message-type tag row */}
-                {n.itemType === 'message' && (
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <MessageSquare className="w-3 h-3 text-slate-500 shrink-0" />
-                    <span className={`text-[10px] font-semibold uppercase tracking-wide ${
-                      isUrgentMsg ? 'text-red-400' : 'text-indigo-400'
-                    }`}>
-                      {isUrgentMsg ? 'Urgent Message' : 'Message'}
-                    </span>
-                  </div>
+                {heading && (
+                  <p className={`text-xs font-semibold mb-0.5 truncate ${
+                    isUrgentMsg ? 'text-red-400' : 'text-indigo-300'
+                  }`}>
+                    {heading}
+                  </p>
                 )}
-
                 <p className={`text-sm leading-snug ${n.read ? 'text-slate-400' : 'text-white'}`}>
                   {n.message}
                 </p>

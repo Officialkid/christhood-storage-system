@@ -56,6 +56,10 @@ export type LogAction =
   // External share links
   | 'SHARE_LINK_CREATED'
   | 'SHARE_LINK_REVOKED'
+  // Profile & account lifecycle
+  | 'PROFILE_UPDATED'
+  | 'ACCOUNT_DELETION_REQUESTED'
+  | 'ACCOUNT_DELETION_CANCELLED'
   // Legacy aliases (kept for backward compat)
   | 'MEDIA_UPLOADED'
   | 'MEDIA_DOWNLOADED'

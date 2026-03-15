@@ -176,7 +176,7 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger }) {
       if (user) {
         token.id       = user.id
         token.role     = ((user as { role?: string }).role ?? 'UPLOADER') as import('@/types').AppRole
@@ -189,6 +189,17 @@ export const authOptions: NextAuthOptions = {
           token.id       = dbUser.id
           token.role     = dbUser.role
           token.username = dbUser.username ?? null
+        }
+      }
+      // Re-read from DB when session is explicitly updated (e.g. after username change)
+      if (trigger === 'update' && token.id) {
+        const dbUser = await prisma.user.findUnique({
+          where:  { id: token.id as string },
+          select: { username: true, role: true },
+        })
+        if (dbUser) {
+          token.username = dbUser.username ?? null
+          token.role     = dbUser.role
         }
       }
       return token

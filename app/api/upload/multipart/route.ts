@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse }     from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import { getServerSession }             from 'next-auth'
 import { authOptions }                  from '@/lib/auth'
 import {
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ url })
     } catch (err: any) {
       console.error('[multipart part]', err)
-      return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
+      return handleApiError(err)
     }
   }
 
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest) {
       console.error('[multipart complete]', err)
       // Attempt to abort to avoid orphaned partial uploads
       try { await abortMultipartUpload(r2Key, uploadId) } catch {}
-      return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
+      return handleApiError(err)
     }
   }
 
@@ -162,7 +163,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     } catch (err: any) {
       console.error('[multipart abort]', err)
-      return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
+      return handleApiError(err)
     }
   }
 

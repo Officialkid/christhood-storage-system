@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse }      from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import { getServerSession }               from 'next-auth'
 import { authOptions }                    from '@/lib/auth'
 import { prisma }                         from '@/lib/prisma'
@@ -123,7 +124,7 @@ export async function POST(
     console.error('[respond] DB write failed — rolling back R2 uploads:', err)
     // Delete all uploaded objects so they don't orphan in R2
     await Promise.allSettled(files.map(f => deleteObject(f.r2Key)))
-    return NextResponse.json({ error: 'Failed to save response. Please try again.' }, { status: 500 })
+    return handleApiError(err, 'transfers/respond')
   }
 
   // ── Side-effects (fire-and-forget) ────────────────────────────────────────
@@ -149,15 +150,21 @@ export async function POST(
   }).catch((e: unknown) => console.warn('[respond] push failed:', e))
 
   if (senderEmail) {
-    sendTransferRespondedEmail({
-      toEmail:       senderEmail,
-      toName:        senderName,
-      recipientName,
-      subject:       transfer.subject,
-      recipientMsg:  message?.trim() || null,
-      fileCount:     files.length,
-      totalSize:     totalBytes,
-      transferId,
+    // Respect TRANSFER_RESPONDED email preference (default: send)
+    prisma.notificationPreference.findUnique({
+      where: { userId_category: { userId: transfer.senderId, category: 'TRANSFER_RESPONDED' } },
+    }).then((pref) => {
+      if (pref && !pref.email) return
+      return sendTransferRespondedEmail({
+        toEmail:       senderEmail,
+        toName:        senderName,
+        recipientName,
+        subject:       transfer.subject,
+        recipientMsg:  message?.trim() || null,
+        fileCount:     files.length,
+        totalSize:     totalBytes,
+        transferId,
+      })
     }).catch((e: unknown) => console.warn('[respond] email failed:', e))
   }
 

@@ -3,6 +3,7 @@
 import { Suspense }         from 'react'
 import { useSession }       from 'next-auth/react'
 import { NotificationBell } from './NotificationBell'
+import { NetworkStatus }    from './NetworkStatus'
 import { SearchBar }        from './SearchBar'
 import { useSidebar }       from './DashboardShell'
 import { Menu }             from 'lucide-react'
@@ -33,6 +34,7 @@ export function TopBar() {
 
       {/* Right — actions */}
       <div className="flex items-center gap-3 shrink-0">
+        <NetworkStatus />
         {data?.user && (
           <span className="hidden sm:block text-sm text-slate-500">
             {data.user.username ?? data.user.name ?? data.user.email}

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getPresignedUploadUrl } from '@/lib/r2'
@@ -61,10 +62,6 @@ export async function POST(req: NextRequest) {
     ])
     return NextResponse.json({ uploadUrl, r2Key, mediaId: mediaFile.id })
   } catch (err: any) {
-    console.error('[upload/presign]', err)
-    return NextResponse.json(
-      { error: 'Could not prepare upload. Please try again.' },
-      { status: 500 },
-    )
+    return handleApiError(err, 'upload/route')
   }
 }

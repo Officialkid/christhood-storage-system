@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse }           from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import { getServerSession }                   from 'next-auth'
 import { authOptions }                        from '@/lib/auth'
 import { completeMultipartUpload }            from '@/lib/r2'
@@ -124,10 +125,6 @@ export async function POST(req: NextRequest) {
       fileSize,
     })
   } catch (err: any) {
-    console.error('[multipart/complete]', err)
-    return NextResponse.json(
-      { error: 'Could not finalize upload — your progress is saved, please retry.' },
-      { status: 500 },
-    )
+    return handleApiError(err, 'multipart/complete')
   }
 }

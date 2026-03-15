@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
   const notifItems = rawNotifications.map((n) => ({
     id:       n.id,
     itemType: 'notification' as const,
+    type:     n.type,
+    title:    n.title || undefined,
     message:  n.message,
     link:     n.link,
     read:     n.read,

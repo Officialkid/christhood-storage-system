@@ -98,10 +98,11 @@ export async function PATCH(
 
   // Notifications — fire-and-forget
   notifyFileStatusChanged({
-    fileId:    file.id,
-    fileName:  file.originalName,
+    fileId:     file.id,
+    fileName:   file.originalName,
     newStatus,
-    actorId:   session.user.id,
+    actorId:    session.user.id,
+    uploaderId: file.uploaderId,
   }).catch(() => {})
 
   if (newStatus === 'PUBLISHED') {

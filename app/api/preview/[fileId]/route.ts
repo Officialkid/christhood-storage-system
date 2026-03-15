@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse }   from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import { getServerSession }           from 'next-auth'
 import { authOptions }                from '@/lib/auth'
 import { prisma }                     from '@/lib/prisma'
@@ -82,14 +83,6 @@ export async function GET(
       },
     })
   } catch (err) {
-    console.error('[preview] error for fileId=%s:', fileId, err)
-    const code = (err as any)?.code
-    if (code === 'P1001' || code === 'P1008' || code === 'P1017') {
-      return NextResponse.json(
-        { error: 'Database temporarily unavailable, please retry' },
-        { status: 503 },
-      )
-    }
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err, 'preview')
   }
 }

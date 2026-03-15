@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { handleApiError } from '@/lib/apiError'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { sendWelcomeEmail } from '@/lib/email'
@@ -70,6 +71,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ user }, { status: 201 })
   } catch (err) {
     console.error('[register]', err)
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })
+    return handleApiError(err)
   }
 }
