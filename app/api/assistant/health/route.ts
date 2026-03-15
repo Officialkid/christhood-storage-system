@@ -81,7 +81,7 @@ export async function GET() {
   }
 
   // ── 3. Live test call — race against a 5-second timeout ───────────────────
-  const MODEL = 'gemini-2.0-flash-lite'
+  const MODEL = 'gemini-2.5-flash'
 
   const geminiCall = async () => {
     const genAI = new GoogleGenerativeAI(apiKey)

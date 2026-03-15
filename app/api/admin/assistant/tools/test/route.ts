@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
     if (healthJson.status === 'ok') {
       result.gemini                = 'ok'
       result.detail.geminiMessage  = 'Gemini API responded successfully'
-      result.detail.geminiModel    = healthJson.model ?? 'gemini-2.0-flash-lite'
+      result.detail.geminiModel    = healthJson.model ?? 'gemini-2.5-flash'
     } else {
       result.detail.geminiMessage  = healthJson.message ?? 'Health check returned non-ok status'
     }
