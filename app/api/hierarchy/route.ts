@@ -23,9 +23,9 @@ export async function GET() {
             include: {
               subfolders: {
                 orderBy: { label: 'asc' },
-                include: { _count: { select: { mediaFiles: true } } },
+                include: { _count: { select: { mediaFiles: { where: { status: { notIn: ['DELETED', 'PURGED'] } } } } } },
               },
-              _count: { select: { mediaFiles: true } },
+              _count: { select: { mediaFiles: { where: { status: { notIn: ['DELETED', 'PURGED'] } } } } },
             },
           },
         },

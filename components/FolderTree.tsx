@@ -1,13 +1,17 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useParams, useSearchParams } from 'next/navigation'
+import useSWR from 'swr'
 import {
   ChevronRight, ChevronDown, Calendar, FolderOpen, FolderClosed,
   Image, Loader2, RefreshCw,
 } from 'lucide-react'
+import { SWR_CONFIG } from '@/lib/cache'
 import type { HierarchyYear, HierarchyCategory, HierarchyEvent } from '@/types'
+
+const fetcher = (url: string) => fetch(url).then(r => r.json())
 
 // ── helpers ────────────────────────────────────────────────────
 
@@ -211,25 +215,20 @@ export function FolderTree() {
   const activeEventId     = params?.eventId as string | undefined
   const activeSubfolderId = searchParams?.get('subfolder') ?? undefined
 
-  const [years,   setYears]   = useState<HierarchyYear[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState('')
+  const {
+    data,
+    error: swrError,
+    isLoading,
+    mutate: refreshTree,
+  } = useSWR<{ years: HierarchyYear[] }>(
+    '/api/hierarchy',
+    fetcher,
+    { ...SWR_CONFIG, refreshInterval: 30_000 },  // hierarchy poll can be slower than dashboard
+  )
 
-  const fetchTree = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res  = await fetch('/api/hierarchy')
-      const data = await res.json()
-      setYears(data.years ?? [])
-      setError('')
-    } catch {
-      setError('Failed to load')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { fetchTree() }, [fetchTree])
+  const years   = data?.years ?? []
+  const loading = isLoading
+  const error   = swrError ? 'Failed to load' : ''
 
   return (
     <div className="flex flex-col h-full">
@@ -240,7 +239,7 @@ export function FolderTree() {
           <span className="text-sm font-semibold text-white">Event Library</span>
         </div>
         <button
-          onClick={fetchTree}
+          onClick={() => refreshTree()}
           className="text-slate-500 hover:text-slate-300 transition"
           title="Refresh"
         >

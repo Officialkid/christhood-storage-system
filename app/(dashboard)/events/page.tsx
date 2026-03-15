@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { CalendarDays, FolderOpen, Image } from 'lucide-react'
 import { RecentEventsList } from '@/components/RecentEventsList'
 
+export const dynamic = 'force-dynamic'
+
 export default async function EventsPage() {
   const session = await getServerSession(authOptions)
 
@@ -12,13 +14,13 @@ export default async function EventsPage() {
   const [yearCount, eventCount, mediaCount, recentEvents] = await Promise.all([
     prisma.year.count(),
     prisma.event.count(),
-    prisma.mediaFile.count(),
+    prisma.mediaFile.count({ where: { status: { notIn: ['DELETED', 'PURGED'] } } }),
     prisma.event.findMany({
       orderBy: { date: 'desc' },
       take: 8,
       include: {
         category: { include: { year: true } },
-        _count:   { select: { mediaFiles: true } },
+        _count: { select: { mediaFiles: { where: { status: { notIn: ['DELETED', 'PURGED'] } } } } },
       },
     }),
   ])

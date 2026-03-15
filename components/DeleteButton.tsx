@@ -2,10 +2,13 @@
 
 import { useState } from 'react'
 import { Trash2, Loader2 } from 'lucide-react'
+import { invalidateFileCache } from '@/lib/cache'
 
 interface Props {
   fileId:    string
   fileName:  string
+  /** Event this file belongs to — used to narrow the media-list cache key. */
+  eventId?:  string
   /** Called after a successful soft-delete so the parent can refresh/remove the item */
   onDeleted?: (fileId: string) => void
   /** Visual variant */
@@ -18,7 +21,7 @@ interface Props {
  *
  * Render this only when session.user.role === 'ADMIN'.
  */
-export function DeleteButton({ fileId, fileName, onDeleted, variant = 'button' }: Props) {
+export function DeleteButton({ fileId, fileName, eventId, onDeleted, variant = 'button' }: Props) {
   const [loading, setLoading] = useState(false)
 
   async function handleDelete() {
@@ -34,6 +37,8 @@ export function DeleteButton({ fileId, fileName, onDeleted, variant = 'button' }
         return
       }
 
+      // Immediately revalidate sidebar counts and dashboard stats
+      await invalidateFileCache(eventId)
       onDeleted?.(fileId)
     } catch {
       alert('Network error — please try again.')

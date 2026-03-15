@@ -12,6 +12,8 @@ import { canBatchDownload }    from '@/lib/downloadAuth'
 import { CalendarDays, FolderOpen, Image, Upload } from 'lucide-react'
 import ShareButton             from '@/components/ShareButton'
 
+export const dynamic = 'force-dynamic'
+
 interface Props {
   params:      { eventId: string }
   searchParams: { subfolder?: string }
@@ -30,7 +32,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
     include: {
       category:  { include: { year: true } },
       subfolders: { orderBy: { label: 'asc' } },
-      _count:    { select: { mediaFiles: true } },
+      _count:    { select: { mediaFiles: { where: { status: { notIn: ['DELETED', 'PURGED'] } } } } },
     },
   })
 

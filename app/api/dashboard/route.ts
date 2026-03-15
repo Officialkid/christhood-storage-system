@@ -171,13 +171,14 @@ async function fetchStats(
           by:    ['userId'],
           where: { createdAt: { gte: todayStart } },
         }),
-        prisma.mediaFile.count({ where: { createdAt: { gte: monthStart } } }),
+        prisma.mediaFile.count({ where: { createdAt: { gte: monthStart }, status: { notIn: ['DELETED', 'PURGED'] } } }),
         prisma.mediaFile.count({
           where: {
             createdAt: {
               gte: new Date(monthStart.getFullYear(), monthStart.getMonth() - 1, 1),
               lt:  monthStart,
             },
+            status: { notIn: ['DELETED', 'PURGED'] },
           },
         }),
       ])

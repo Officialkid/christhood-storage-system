@@ -3,6 +3,7 @@
 import { useState }                 from 'react'
 import { Trash2, X, AlertTriangle, Loader2, Image as ImageIcon } from 'lucide-react'
 import type { AppRole }             from '@/types'
+import { invalidateFileCache }      from '@/lib/cache'
 
 export interface DeleteFileInfo {
   id:            string
@@ -49,12 +50,14 @@ export function DeleteFileDialog({
         if (deletedIds.length === 0 && (data.failed ?? []).length > 0) {
           throw new Error((data.failed[0] as { reason: string }).reason)
         }
+        await invalidateFileCache()
         onDeleted(deletedIds)
       } else {
         const file = files[0]
         const res  = await fetch(`/api/files/${file.id}`, { method: 'DELETE' })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error ?? 'Failed to delete file')
+        await invalidateFileCache()
         onDeleted([file.id])
       }
     } catch (err: unknown) {
