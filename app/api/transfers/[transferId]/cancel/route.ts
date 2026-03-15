@@ -23,11 +23,12 @@ export async function PATCH(
   const { transferId } = await params
 
   const session = await getServerSession(authOptions)
+  const role = session?.user?.role as string | undefined
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  if (session.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden — admin only' }, { status: 403 })
+  if (!role || role === 'UPLOADER') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const transfer = await prisma.transfer.findUnique({
@@ -41,6 +42,13 @@ export async function PATCH(
 
   if (!transfer) {
     return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
+  }
+  // Editors may only cancel transfers they sent themselves
+  if (role !== 'ADMIN' && transfer.senderId !== session.user.id) {
+    return NextResponse.json(
+      { error: 'Forbidden — you can only cancel transfers you sent.' },
+      { status: 403 },
+    )
   }
   if (transfer.status !== 'PENDING') {
     return NextResponse.json(

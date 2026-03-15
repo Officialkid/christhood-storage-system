@@ -70,7 +70,7 @@ interface AppSettings {
 type Tab = 'general' | 'storage' | 'access' | 'notifications' | 'ai' | 'transfers' | 'maintenance'
 
 interface MaintenanceData {
-  health: { db: boolean; r2: boolean; email: boolean; ai: boolean; push: boolean }
+  health: { db: boolean; r2: boolean; email: boolean; ai: boolean; aiMessage: string; push: boolean }
   stats:  { users: number; files: number; events: number; trashed: number; logs: number }
   jobs:   Record<string, { lastRun: string | null }>
 }
@@ -875,16 +875,26 @@ export default function AdminSettingsPage() {
                   {/* ── System Status ───────────────────────────────────── */}
                   <SectionCard icon={<CheckCircle2 className="w-4 h-4 text-emerald-400" />} title="System Status" desc="Connectivity and configuration of all subsystems">
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {[
+                      {([
                         { key: 'db',    label: 'Database',            ok: maint.health.db },
                         { key: 'r2',    label: 'R2 Storage',          ok: maint.health.r2 },
                         { key: 'email', label: 'Email (Resend)',       ok: maint.health.email },
-                        { key: 'ai',    label: 'AI (Gemini)',          ok: maint.health.ai },
+                        { key: 'ai',    label: 'AI (Gemini)',          ok: maint.health.ai, detail: maint.health.aiMessage },
                         { key: 'push',  label: 'Push Notifications',  ok: maint.health.push },
-                      ].map(({ key, label, ok }) => (
-                        <div key={key} className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border ${ok ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400' : 'bg-red-500/10 border-red-500/25 text-red-400'}`}>
-                          {ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
-                          <span className="text-xs font-medium">{label}</span>
+                      ] as { key: string; label: string; ok: boolean; detail?: string }[]).map(({ key, label, ok, detail }) => (
+                        <div key={key} className={`flex items-start gap-2.5 px-4 py-3 rounded-xl border ${
+                          ok ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
+                             : 'bg-red-500/10 border-red-500/25 text-red-400'
+                        }`}>
+                          {ok
+                            ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                            : <XCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+                          <div>
+                            <p className="text-xs font-medium">{label}</p>
+                            {!ok && detail && (
+                              <p className="text-xs opacity-70 mt-0.5 leading-snug break-words">{detail}</p>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>

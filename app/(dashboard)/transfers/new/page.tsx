@@ -8,7 +8,7 @@ export const metadata = { title: 'New Transfer — Christhood CMMS' }
 
 export default async function NewTransferPage() {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.role !== 'ADMIN') redirect('/dashboard')
+  if (!session || !(['ADMIN', 'EDITOR'] as string[]).includes(session.user.role as string)) redirect('/dashboard')
 
   return (
     <div>

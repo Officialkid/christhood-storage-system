@@ -28,20 +28,22 @@ interface IncomingFile {
 
 /**
  * POST /api/transfers
- * Admin-only. Called after the client has uploaded all files to R2 via presigned URLs.
+ * Admin and Editor only. Called after the client has uploaded all files to R2 via presigned URLs.
  * Creates the Transfer + TransferFile DB records, fires notifications, writes activity log.
  * On DB failure, deletes all uploaded R2 objects to prevent orphaned files.
  *
- * Quality guarantee:
- *   - Files are stored in R2 exactly as uploaded — zero recompression, no resizing.
- *   - SHA-256 checksums supplied by the client are persisted verbatim for integrity verification.
- *   - ZIP assembly (future download endpoint) will use STORE for binary formats
- *     and DEFLATE only for plaintext (txt, csv, xml, json).
+ * Permission model:
+ *   ADMIN  — can send to anyone
+ *   EDITOR — can send to anyone
+ *   UPLOADER — forbidden
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!session || !(['ADMIN', 'EDITOR'] as string[]).includes(session.user.role as string)) {
+    return NextResponse.json(
+      { error: 'Only Admins and Editors can send file transfers.' },
+      { status: 403 },
+    )
   }
 
   const body = await req.json()

@@ -35,8 +35,23 @@ export async function GET(req: NextRequest) {
                     process.env.CLOUDFLARE_R2_BUCKET_NAME)
 
   const emailOk = !!process.env.RESEND_API_KEY
-  const aiOk    = !!process.env.GEMINI_API_KEY
   const pushOk  = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY)
+
+  // ── Live Gemini health check — reuses the cached result from /api/assistant/health
+  let aiOk      = false
+  let aiMessage = 'Not checked'
+  try {
+    const appBase = process.env.NEXTAUTH_URL
+      ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
+    const hRes  = await fetch(`${appBase}/api/assistant/health`, {
+      signal: AbortSignal.timeout(12_000),
+    })
+    const hData = await hRes.json() as { status: string; message?: string; detail?: string }
+    aiOk      = hData.status === 'ok'
+    aiMessage = hData.detail ?? hData.message ?? (aiOk ? 'Connected' : 'Connection failed')
+  } catch (hErr: unknown) {
+    aiMessage = `Health check failed: ${(hErr as Error).message ?? 'timeout'}`
+  }
 
   // ── Database stats ───────────────────────────────────────────────────────
   const [users, files, events, trashed, logs] = await Promise.all([
@@ -64,7 +79,7 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    health: { db: dbOk, r2: r2Ok, email: emailOk, ai: aiOk, push: pushOk },
+    health: { db: dbOk, r2: r2Ok, email: emailOk, ai: aiOk, aiMessage, push: pushOk },
     stats:  { users, files, events, trashed, logs },
     jobs: {
       trash_purge:    jobEntry('job_trash_purge_last_run'),

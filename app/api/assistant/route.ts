@@ -451,38 +451,53 @@ export async function POST(req: NextRequest) {
         if (err instanceof GoogleGenerativeAIFetchError) {
           const status = err.status ?? 0
 
+          console.error('[/api/assistant] GEMINI_FETCH_ERROR:', {
+            status,
+            message: err.message,
+            errorType: err.constructor?.name,
+          })
+
           if (status === 401 || status === 403) {
-            console.error('[/api/assistant] GEMINI_KEY_ERROR:', err.message)
             sendError("The assistant isn't configured correctly. Please contact your admin.", 'AUTH_ERROR')
 
           } else if (status === 429) {
-            console.error('[/api/assistant] GEMINI_RATE_LIMIT:', err.message)
             sendError("I'm a bit busy right now — please try again in a minute! 😊", 'RATE_LIMIT')
 
           } else if (status === 400) {
-            // Usually a malformed request (empty prompt, bad history shape, etc.)
-            console.error('[/api/assistant] GEMINI_BAD_REQUEST:', err.message)
-            sendError("I had trouble understanding that request. Please try again.", 'BAD_REQUEST')
+            // 400 from Gemini means the API key was rejected
+            sendError("The assistant isn't configured correctly. Please contact your admin.", 'AUTH_ERROR')
+
+          } else if (status === 0 || err.message.toLowerCase().includes('fetch')) {
+            // status 0 = network-level failure (DNS, TCP, etc.)
+            sendError("I'm having trouble connecting right now. Please try again in a moment.", 'NETWORK_ERROR')
 
           } else {
             // 500, 503, or other server-side Gemini errors
-            console.error('[/api/assistant] GEMINI_SERVER_ERROR:', err.status, err.message)
             sendError("I'm having trouble connecting right now. Please try again in a moment.", 'SERVER_ERROR')
           }
 
         // ── Gemini response errors (safety block thrown as exception) ─────────
         } else if (err instanceof GoogleGenerativeAIResponseError) {
-          console.error('[/api/assistant] GEMINI_RESPONSE_ERROR:', err.message)
+          console.error('[/api/assistant] GEMINI_RESPONSE_ERROR:', { message: err.message })
           sendError("I wasn't able to respond to that one. Try rephrasing your question!", 'SAFETY_FILTER')
 
-        // ── Network / fetch-level errors ──────────────────────────────────────
-        } else if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
-          console.error('[/api/assistant] GEMINI_NETWORK_ERROR:', err.message)
+        // ── Network / fetch-level errors not wrapped by the SDK ───────────────
+        } else if (
+          (err instanceof TypeError || err instanceof Error) &&
+          (err.message.toLowerCase().includes('fetch') ||
+           err.message.includes('ECONNREFUSED') ||
+           err.message.includes('ENOTFOUND') ||
+           err.name === 'FetchError')
+        ) {
+          console.error('[/api/assistant] GEMINI_NETWORK_ERROR:', { message: err.message, name: err.name })
           sendError("I'm having trouble connecting right now. Please try again in a moment.", 'NETWORK_ERROR')
 
         // ── Anything else ─────────────────────────────────────────────────────
         } else {
-          console.error('[/api/assistant] GEMINI_UNKNOWN_ERROR:', err)
+          console.error('[/api/assistant] GEMINI_UNKNOWN_ERROR:', {
+            errorType: (err as Error).constructor?.name ?? typeof err,
+            message:   (err as Error).message,
+          })
           sendError("Something went wrong on my end. Please try again — and if it keeps happening, let your admin know.", 'UNKNOWN')
         }
 

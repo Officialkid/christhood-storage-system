@@ -14,12 +14,13 @@ export default async function CommunicationsPage({ params }: Props) {
   if (!session?.user?.id) redirect('/login')
 
   const { slug } = await params
-  const tab = slug?.[0] === 'messages' ? 'messages' : 'transfers'
-  const isAdmin = session.user.role === 'ADMIN'
+  const tab             = slug?.[0] === 'messages' ? 'messages' : 'transfers'
+  const isAdmin         = session.user.role === 'ADMIN'
+  const canSendTransfer = (['ADMIN', 'EDITOR'] as string[]).includes(session.user.role as string)
 
   return (
     <div className="px-0 sm:px-0">
-      <CommunicationsHub initialTab={tab} isAdmin={isAdmin} />
+      <CommunicationsHub initialTab={tab} isAdmin={isAdmin} canSendTransfer={canSendTransfer} />
     </div>
   )
 }

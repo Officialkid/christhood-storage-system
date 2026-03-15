@@ -7,13 +7,13 @@ import { prisma } from '@/lib/prisma'
 
 /**
  * POST /api/transfers/presign
- * Admin-only. Returns a presigned R2 PUT URL for a single transfer file.
+ * Admin and Editor only. Returns a presigned R2 PUT URL for a single transfer file.
  *
  * Body: { transferId: string, filename: string, folderPath: string | null, contentType: string }
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.role !== 'ADMIN') {
+  if (!session || !(['ADMIN', 'EDITOR'] as string[]).includes(session.user.role as string)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

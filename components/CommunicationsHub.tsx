@@ -34,13 +34,15 @@ interface ReceivedTransferItem {
 }
 
 interface Props {
-  initialTab: MainTab
-  isAdmin:    boolean
+  initialTab:       MainTab
+  isAdmin:          boolean
+  /** true for ADMIN and EDITOR — controls New Transfer button + Sent sub-tab */
+  canSendTransfer:  boolean
 }
 
 // â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export function CommunicationsHub({ initialTab, isAdmin }: Props) {
+export function CommunicationsHub({ initialTab, isAdmin, canSendTransfer }: Props) {
   const router = useRouter()
 
   const [activeTab,      setActiveTab]      = useState<MainTab>(initialTab)
@@ -76,7 +78,7 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
       const data = await res.json()
       const list = (data.transfers ?? []) as ReceivedTransferItem[]
       setReceivedTransfers(list)
-      if (!isAdmin) setTotalTransfers(list.length)
+      if (!canSendTransfer) setTotalTransfers(list.length)
     } catch { /* ignore */ } finally {
       setReceivedLoading(false)
       setReceivedFetched(true)
@@ -100,12 +102,12 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
   // Load transfer data when transfers tab is active
   useEffect(() => {
     if (activeTab !== 'transfers') return
-    if (!isAdmin || transferSubTab === 'inbox') {
+    if (!canSendTransfer || transferSubTab === 'inbox') {
       loadReceived()
     } else {
       loadSent()
     }
-  }, [activeTab, isAdmin, transferSubTab, loadReceived, loadSent])
+  }, [activeTab, isAdmin, canSendTransfer, transferSubTab, loadReceived, loadSent])
 
   // â”€â”€â”€ Tab switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -117,7 +119,7 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
   // â”€â”€â”€ Unified empty state for non-admin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const isUnifiedEmpty =
-    !isAdmin &&
+    !canSendTransfer &&
     totalTransfers === 0 &&
     messagesBadge  === 0 &&
     receivedFetched &&
@@ -153,8 +155,8 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
           </TabBtn>
         </div>
 
-        {/* Action button â€” admin only */}
-        {isAdmin && (
+        {/* Action button — transfers: ADMIN+EDITOR; messages: ADMIN only */}
+        {(activeTab === 'transfers' ? canSendTransfer : isAdmin) && (
           <Link
             href={activeTab === 'transfers' ? '/transfers/new' : '/messages/new'}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl
@@ -185,6 +187,7 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
         ) : activeTab === 'transfers' ? (
           <TransferTabContent
             isAdmin={isAdmin}
+            canSendTransfer={canSendTransfer}
             subTab={transferSubTab}
             setSubTab={(s) => {
               setTransferSubTab(s)
@@ -216,12 +219,13 @@ export function CommunicationsHub({ initialTab, isAdmin }: Props) {
 // â”€â”€â”€ Transfers tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function TransferTabContent({
-  isAdmin, subTab, setSubTab,
+  isAdmin, canSendTransfer, subTab, setSubTab,
   receivedTransfers, receivedLoading,
   sentTransfers, sentLoading,
   transfersBadge,
 }: {
-  isAdmin:    boolean
+  isAdmin:          boolean
+  canSendTransfer:  boolean
   subTab:     TransferSubTab
   setSubTab:  (s: TransferSubTab) => void
   receivedTransfers: ReceivedTransferItem[]
@@ -232,7 +236,7 @@ function TransferTabContent({
 }) {
   return (
     <>
-      {isAdmin && (
+      {canSendTransfer && (
         <div className="shrink-0 flex items-center gap-0.5
                         px-3 py-2 border-b border-slate-800/50 bg-slate-900">
           <SubTabBtn
@@ -250,7 +254,7 @@ function TransferTabContent({
       )}
 
       <div className="flex-1 overflow-y-auto min-h-0 p-4">
-        {(!isAdmin || subTab === 'inbox') ? (
+        {(!canSendTransfer || subTab === 'inbox') ? (
           receivedLoading
             ? <LoadingSpinner />
             : <TransferInbox transfers={receivedTransfers} />
