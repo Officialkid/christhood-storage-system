@@ -86,6 +86,10 @@ services:
       - key: CRON_SECRET
         sync: false
 
+      # ── Zara AI (Gemini) ──────────────────────────────────────────────────────
+      - key: GEMINI_API_KEY
+        sync: false
+
       # ── Storage alert thresholds (optional) ──────────────────────────────────
       - key: STORAGE_THRESHOLD_PERCENT
         value: "80"

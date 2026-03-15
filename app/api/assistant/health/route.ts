@@ -157,7 +157,11 @@ export async function GET() {
     ) {
       cache = err503(
         `Cannot reach Gemini API — ${(err as Error).message ?? 'fetch failed'}`,
-        'Network error reaching generativelanguage.googleapis.com from Cloud Run. Verify the service account has internet access: Cloud Console → Cloud Run → your service → Security tab.',
+        'Cloud Run cannot connect to generativelanguage.googleapis.com. ' +
+        'Fix: In Cloud Console → Cloud Run → your service → Edit & Deploy New Revision → ' +
+        'set "VPC egress" to "Route only requests to private IPs through VPC" (NOT all traffic), ' +
+        'OR under Networking ensure "Allow all outbound traffic" is selected. ' +
+        'If using a VPC connector, verify it has a Cloud NAT gateway attached.',
       )
       return respond(cache)
     }
