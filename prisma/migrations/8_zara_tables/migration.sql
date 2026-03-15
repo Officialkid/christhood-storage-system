@@ -84,15 +84,21 @@ CREATE TABLE IF NOT EXISTS "ZaraConversationLog" (
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Foreign keys
+-- Foreign keys (idempotent — EXCEPTION block swallows duplicate_object errors)
 -- ─────────────────────────────────────────────────────────────────────────────
-ALTER TABLE "ZaraActionLog"
-    ADD CONSTRAINT "ZaraActionLog_requestedByUserId_fkey"
-    FOREIGN KEY ("requestedByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "ZaraActionLog"
+        ADD CONSTRAINT "ZaraActionLog_requestedByUserId_fkey"
+        FOREIGN KEY ("requestedByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END; $$;
 
-ALTER TABLE "ZaraUsageLog"
-    ADD CONSTRAINT "ZaraUsageLog_userId_fkey"
-    FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    ALTER TABLE "ZaraUsageLog"
+        ADD CONSTRAINT "ZaraUsageLog_userId_fkey"
+        FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END; $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Indices
