@@ -27,7 +27,14 @@ export async function GET(req: NextRequest) {
         include: {
           deletedBy: { select: { id: true, username: true, email: true } },
           mediaFile: {
-            include: {
+            select: {
+              id:           true,
+              originalName: true,
+              storedName:   true,
+              fileType:     true,
+              fileSize:     true, // BigInt — serialised to string below
+              status:       true,
+              createdAt:    true,
               event:     { select: { id: true, name: true } },
               subfolder: { select: { id: true, label: true } },
             },
@@ -37,8 +44,16 @@ export async function GET(req: NextRequest) {
       prisma.trashItem.count(),
     ])
 
+    // Serialise BigInt fileSize to string (JSON.stringify cannot handle BigInt natively)
+    const serializedItems = items.map(item => ({
+      ...item,
+      mediaFile: item.mediaFile
+        ? { ...item.mediaFile, fileSize: item.mediaFile.fileSize.toString() }
+        : null,
+    }))
+
     return NextResponse.json({
-      items,
+      items: serializedItems,
       total,
       page,
       limit,

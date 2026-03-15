@@ -29,9 +29,10 @@ export function DeleteFileDialog({
   const [deleting, setDeleting] = useState(false)
   const [error,    setError]    = useState('')
 
-  const isBatch   = files.length > 1
-  const single    = !isBatch ? files[0] : null
-  const pubCount  = files.filter(f => f.status === 'PUBLISHED').length
+  const isBatch         = files.length > 1
+  const single          = !isBatch ? files[0] : null
+  const pubCount        = files.filter(f => f.status === 'PUBLISHED').length
+  const isAlreadyTrashed = !isBatch && single?.status === 'DELETED'
 
   async function handleDelete() {
     setDeleting(true)
@@ -120,6 +121,17 @@ export function DeleteFileDialog({
             </div>
           )}
 
+          {/* ── Already-trashed warning ── */}
+          {isAlreadyTrashed && (
+            <div className="flex items-start gap-2.5 p-3 bg-amber-500/10 border
+                            border-amber-500/20 rounded-xl">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-300">
+                This file is already in Trash. Visit the Trash page to restore or permanently delete it.
+              </p>
+            </div>
+          )}
+
           {/* ── Published warning ── */}
           {pubCount > 0 && (
             <div className="flex items-start gap-2.5 p-3 bg-amber-500/10 border
@@ -198,7 +210,7 @@ export function DeleteFileDialog({
           <button
             type="button"
             onClick={handleDelete}
-            disabled={deleting}
+            disabled={deleting || isAlreadyTrashed}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white
                        bg-red-600 hover:bg-red-500
                        disabled:opacity-50 disabled:cursor-not-allowed transition
@@ -206,7 +218,9 @@ export function DeleteFileDialog({
           >
             {deleting
               ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <><Trash2 className="w-4 h-4" /><span>Move to Trash</span></>
+              : isAlreadyTrashed
+                ? <span>Already in Trash</span>
+                : <><Trash2 className="w-4 h-4" /><span>Move to Trash</span></>
             }
           </button>
         </div>

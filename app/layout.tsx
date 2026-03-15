@@ -13,6 +13,7 @@ export const metadata: Metadata = {
     title: 'Christhood CMMS',
   },
   icons: {
+    shortcut: '/icons/icon-192.svg',
     apple: '/icons/apple-touch-icon.svg',
     icon:  [
       { url: '/icons/icon-192.svg', sizes: '192x192', type: 'image/svg+xml' },

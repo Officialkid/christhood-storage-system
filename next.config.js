@@ -113,6 +113,18 @@ const nextConfig = {
         ],
       },
     ]
+  },
+
+  // Redirect bare /favicon.ico to the existing SVG icon so browsers don't
+  // get a 404 when they probe for the default favicon location.
+  async redirects() {
+    return [
+      {
+        source:      '/favicon.ico',
+        destination: '/icons/icon-192.svg',
+        permanent:   true,
+      },
+    ]
   },}
 
 module.exports = nextConfig

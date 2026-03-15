@@ -225,36 +225,48 @@ async function fetchStats(
 }
 
 async function fetchOnboardingStatus(userId: string) {
-  const [uploads, pushSubs, notifPrefs, zaraUsage, user] = await Promise.all([
-    prisma.mediaFile.count({ where: { uploaderId: userId } }),
-    prisma.pushSubscription.count({ where: { userId } }),
-    prisma.notificationPreference.count({ where: { userId } }),
-    prisma.zaraUsageLog.count({ where: { userId } }),
-    prisma.user.findUnique({
-      where:  { id: userId },
-      select: { hasCompletedOnboarding: true },
-    }),
-  ])
-
-  // "Explored events" — have they interacted with any event hierarchy?
-  const exploredEvents = await prisma.activityLog.count({
-    where: { userId, eventId: { not: null } },
-  }).then(c => c > 0)
-
-  const items = {
-    uploaded:        uploads > 0,
-    installedPwa:    pushSubs > 0,
-    setNotifications: notifPrefs > 0,
-    exploredEvents,
-    askedZara:       zaraUsage > 0,
+  const safeDefault = {
+    dismissed:     false,
+    items:         { uploaded: false, installedPwa: false, setNotifications: false, exploredEvents: false, askedZara: false },
+    completedCount: 0,
+    totalCount:    5,
   }
-  const completedCount = Object.values(items).filter(Boolean).length
+  try {
+    const [uploads, pushSubs, notifPrefs, zaraUsage, user] = await Promise.all([
+      prisma.mediaFile.count({ where: { uploaderId: userId } }),
+      prisma.pushSubscription.count({ where: { userId } }),
+      prisma.notificationPreference.count({ where: { userId } }),
+      // ZaraUsageLog table may not exist yet in production; fall back to 0
+      prisma.zaraUsageLog.count({ where: { userId } }).catch(() => 0),
+      prisma.user.findUnique({
+        where:  { id: userId },
+        select: { hasCompletedOnboarding: true },
+      }),
+    ])
 
-  return {
-    dismissed:    user?.hasCompletedOnboarding ?? false,
-    items,
-    completedCount,
-    totalCount:   5,
+    // "Explored events" — have they interacted with any event hierarchy?
+    const exploredEvents = await prisma.activityLog.count({
+      where: { userId, eventId: { not: null } },
+    }).then(c => c > 0)
+
+    const items = {
+      uploaded:         uploads > 0,
+      installedPwa:     pushSubs > 0,
+      setNotifications: notifPrefs > 0,
+      exploredEvents,
+      askedZara:        zaraUsage > 0,
+    }
+    const completedCount = Object.values(items).filter(Boolean).length
+
+    return {
+      dismissed:    user?.hasCompletedOnboarding ?? false,
+      items,
+      completedCount,
+      totalCount:   5,
+    }
+  } catch (err) {
+    console.error('[fetchOnboardingStatus] failed:', err)
+    return safeDefault
   }
 }
 

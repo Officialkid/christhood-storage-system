@@ -157,11 +157,15 @@ export async function GET() {
     ) {
       cache = err503(
         `Cannot reach Gemini API — ${(err as Error).message ?? 'fetch failed'}`,
-        'Cloud Run cannot connect to generativelanguage.googleapis.com. ' +
-        'Fix: In Cloud Console → Cloud Run → your service → Edit & Deploy New Revision → ' +
-        'set "VPC egress" to "Route only requests to private IPs through VPC" (NOT all traffic), ' +
-        'OR under Networking ensure "Allow all outbound traffic" is selected. ' +
-        'If using a VPC connector, verify it has a Cloud NAT gateway attached.',
+        'Cloud Run cannot reach generativelanguage.googleapis.com. ' +
+        'RECOMMENDED FIX (fastest): Remove the VPC connector entirely — ' +
+        'Cloud Run → Edit & Deploy New Revision → Networking tab → ' +
+        '"VPC connector" → select "None" → Deploy. ' +
+        'Neon.tech uses a public endpoint so no VPC connector is needed; ' +
+        'removing it restores direct internet egress and fixes Zara immediately. ' +
+        'If a VPC connector is required for another reason, attach a Cloud NAT gateway ' +
+        'to the connector\'s subnet and set VPC egress to ' +
+        '"Route only requests to private IPs through VPC".',
       )
       return respond(cache)
     }
