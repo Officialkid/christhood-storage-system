@@ -3,7 +3,7 @@ import { handleApiError } from '@/lib/apiError'
 import { getServerSession }                  from 'next-auth'
 import { authOptions }                       from '@/lib/auth'
 import { prisma }                            from '@/lib/prisma'
-import { generateStoredName }                from '@/lib/uploadNaming'
+import { sanitizeFilename }                  from '@/lib/uploadNaming'
 import { notifyUploadInFollowedFolder }      from '@/lib/notifications'
 
 
@@ -13,10 +13,10 @@ import { notifyUploadInFollowedFolder }      from '@/lib/notifications'
  * Called after a successful simple (single-PUT) upload to create the MediaFile
  * record and log the activity.
  *
- * Body: { r2Key, originalName, contentType, fileSize, eventId, subfolderId? }
+ * Body: { r2Key, originalName, contentType, fileSize, eventId, subfolderId?, force? }
  *
- * storedName is generated server-side inside the transaction to avoid
- * race conditions when multiple files are uploaded concurrently.
+ * When force:true is passed, an existing MediaFile with the same r2Key is
+ * replaced (its fields are updated in-place rather than creating a duplicate).
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   const {
     r2Key, originalName,
-    contentType, fileSize, eventId, subfolderId,
+    contentType, fileSize, eventId, subfolderId, force,
   } = await req.json() as {
     r2Key:        string
     originalName: string
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
     fileSize:     number
     eventId:      string
     subfolderId?: string
+    force?:       boolean
   }
 
   if (!r2Key || !originalName || !contentType || !fileSize || !eventId) {
@@ -43,10 +44,35 @@ export async function POST(req: NextRequest) {
   const fileType = contentType.startsWith('video/') ? 'VIDEO' : 'PHOTO'
 
   try {
+    const storedName = sanitizeFilename(originalName)
+
     const mediaFile = await prisma.$transaction(async tx => {
-      // Generate storedName atomically inside the transaction so concurrent
-      // uploads always get distinct sequence numbers.
-      const { storedName } = await generateStoredName(eventId, originalName, tx as any)
+      // When force:true, update the existing record instead of creating a duplicate.
+      if (force) {
+        const existingFile = await tx.mediaFile.findFirst({ where: { r2Key, eventId } })
+        if (existingFile) {
+          const mf = await tx.mediaFile.update({
+            where: { id: existingFile.id },
+            data: {
+              originalName,
+              storedName,
+              fileType:   fileType as any,
+              fileSize:   BigInt(fileSize),
+              uploaderId: session.user.id,
+            },
+          })
+          await tx.activityLog.create({
+            data: {
+              action:      'FILE_REPLACED',
+              userId:      session.user.id,
+              mediaFileId: mf.id,
+              eventId,
+              metadata: { originalName, storedName, fileType, fileSize, mode: 'simple' },
+            },
+          })
+          return mf
+        }
+      }
 
       const mf = await tx.mediaFile.create({
         data: {

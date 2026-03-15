@@ -37,6 +37,21 @@ export class NetworkError extends Error {
   }
 }
 
+/**
+ * Thrown by runMultipartUpload when /multipart/create returns 409 (duplicate filename).
+ * Catch this in the upload UI to show the duplicate-resolution dialog.
+ */
+export class DuplicateError extends Error {
+  override name  = 'DuplicateError'
+  existingId:    string
+  existingName:  string
+  constructor(existingId: string, existingName: string) {
+    super('A file with this name already exists in the event')
+    this.existingId   = existingId
+    this.existingName = existingName
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────── Types ───
 
 export interface MultipartResumeInfo {
@@ -46,11 +61,15 @@ export interface MultipartResumeInfo {
 }
 
 export interface MultipartUploadOptions {
-  file:          File
-  eventId:       string
-  subfolderId?:  string | null
+  file:              File
+  eventId:           string
+  subfolderId?:      string | null
+  /** Override the filename sent to the server (used for 'Keep both' duplicate resolution). */
+  filenameOverride?: string
+  /** Skip the server-side duplicate check (used for 'Replace' duplicate resolution). */
+  force?:            boolean
   /** Resume a previous interrupted session (skip already-uploaded parts). */
-  resume?:       MultipartResumeInfo
+  resume?:           MultipartResumeInfo
   /**
    * Fired once immediately after the upload session is created on R2.
    * NOT fired when resuming an existing session.
@@ -86,6 +105,9 @@ async function apiPost(path: string, body: unknown, signal?: AbortSignal): Promi
     signal,
   })
   const json = await res.json()
+  if (res.status === 409 && (json as any).error === 'duplicate') {
+    throw new DuplicateError((json as any).existingId ?? '', (json as any).existingName ?? '')
+  }
   if (!res.ok) throw new Error((json as { error?: string }).error ?? `${path} failed (HTTP ${res.status})`)
   return json
 }
@@ -209,9 +231,12 @@ function runConcurrent<T>(
  */
 export async function runMultipartUpload(opts: MultipartUploadOptions): Promise<MultipartUploadResult> {
   const {
-    file, eventId, subfolderId, resume,
+    file, eventId, subfolderId, resume, filenameOverride, force,
     onCreate, onPartDone, onCompleting, onProgress, signal,
   } = opts
+
+  // Effective filename: caller may override it for duplicate 'Keep both' flow.
+  const effectiveFilename = filenameOverride ?? file.name
 
   // ── 1. Create or resume the R2 multipart session ────────────────────────────
   let uploadId: string
@@ -226,11 +251,12 @@ export async function runMultipartUpload(opts: MultipartUploadOptions): Promise<
     key      = resume.key
   } else {
     const created = await apiPost('/api/upload/multipart/create', {
-      fileName:    file.name,
+      fileName:    effectiveFilename,
       fileSize:    file.size,
       mimeType:    file.type || 'application/octet-stream',
       eventId,
       subfolderId,
+      force:       force ?? false,
     }, signal) as { uploadId: string; key: string }
 
     uploadId = created.uploadId
@@ -294,11 +320,12 @@ export async function runMultipartUpload(opts: MultipartUploadOptions): Promise<
     uploadId,
     key,
     parts:        completedParts,
-    originalName: file.name,
+    originalName: effectiveFilename,
     fileType:     file.type.startsWith('video/') ? 'VIDEO' : 'PHOTO',
     fileSize:     file.size,
     eventId,
     subfolderId,
+    force:        force ?? false,
   }, signal) as { mediaFile: { id: string; storedName: string; r2Key: string } }
 
   onProgress?.(100)

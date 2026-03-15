@@ -54,7 +54,6 @@ export async function POST(req: NextRequest) {
     select: {
       id:           true,
       r2Key:        true,
-      storedName:   true,
       originalName: true,
       eventId:      true,
     },
@@ -77,14 +76,14 @@ export async function POST(req: NextRequest) {
         const url = await getPresignedDownloadUrl(file.r2Key, 900) // 15-min URL per file
         const res = await fetch(url)
         if (!res.ok || !res.body) {
-          console.warn(`[batch-zip] skipping ${file.storedName}: R2 fetch failed`)
+          console.warn(`[batch-zip] skipping ${file.originalName}: R2 fetch failed`)
           continue
         }
         // Convert the Web ReadableStream returned by fetch into a Node.js Readable
         const nodeStream = Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0])
-        archive.append(nodeStream, { name: file.storedName })
+        archive.append(nodeStream, { name: file.originalName })
       } catch (err) {
-        console.warn(`[batch-zip] error adding ${file.storedName}:`, err)
+        console.warn(`[batch-zip] error adding ${file.originalName}:`, err)
       }
     }
     archive.finalize()
@@ -114,9 +113,7 @@ export async function POST(req: NextRequest) {
   }).catch((e: unknown) => console.warn('[batch-zip log]', e))
 
   // Derive a clean filename for the ZIP
-  const label = subfolderId
-    ? files[0]?.storedName.split('_').slice(0, 2).join('_')   // e.g. Mission_20260315
-    : event.name.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 50)
+  const label = event.name.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 50)
   const zipName = `${label}_${files.length}files.zip`
 
   return new Response(webStream, {

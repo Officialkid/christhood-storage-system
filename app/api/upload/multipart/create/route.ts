@@ -3,7 +3,7 @@ import { handleApiError } from '@/lib/apiError'
 import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
 import { createMultipartUpload }     from '@/lib/r2'
-import { generateR2Key }             from '@/lib/uploadNaming'
+import { makeEventR2Key }            from '@/lib/uploadNaming'
 import { prisma }                    from '@/lib/prisma'
 
 const CHUNK_SIZE = 10 * 1024 * 1024  // 10 MB — must match lib/upload/multipart-uploader.ts
@@ -15,8 +15,11 @@ const CHUNK_SIZE = 10 * 1024 * 1024  // 10 MB — must match lib/upload/multipar
  * Initiates a new R2 multipart upload session and returns the uploadId,
  * the generated R2 key, and the chunk size the client should use.
  *
- * Body:    { fileName, fileSize, mimeType, eventId, subfolderId? }
+ * Body:    { fileName, fileSize, mimeType, eventId, subfolderId?, force? }
  * Returns: { uploadId, key, chunkSize, totalChunks }
+ *
+ * Returns 409 { error:'duplicate', existingId, existingName } when a file with
+ * the same name already exists in the event, unless force:true is passed.
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -30,9 +33,10 @@ export async function POST(req: NextRequest) {
     mimeType?:    string
     eventId?:     string
     subfolderId?: string
+    force?:       boolean
   }
 
-  const { fileName, fileSize, mimeType, eventId, subfolderId } = body
+  const { fileName, fileSize, mimeType, eventId, subfolderId, force } = body
 
   if (!fileName || !fileSize || !mimeType || !eventId) {
     return NextResponse.json({ error: 'Missing required fields: fileName, fileSize, mimeType, eventId' }, { status: 400 })
@@ -53,8 +57,23 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { r2Key } = await generateR2Key(eventId, fileName)
-    const uploadId  = await createMultipartUpload(r2Key, mimeType)
+    const r2Key = makeEventR2Key(eventId, fileName)
+
+    // Duplicate check
+    if (!force) {
+      const existing = await prisma.mediaFile.findFirst({
+        where:  { r2Key, eventId },
+        select: { id: true, originalName: true },
+      })
+      if (existing) {
+        return NextResponse.json(
+          { error: 'duplicate', existingId: existing.id, existingName: existing.originalName },
+          { status: 409 },
+        )
+      }
+    }
+
+    const uploadId    = await createMultipartUpload(r2Key, mimeType)
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE)
 
     return NextResponse.json({ uploadId, key: r2Key, chunkSize: CHUNK_SIZE, totalChunks })

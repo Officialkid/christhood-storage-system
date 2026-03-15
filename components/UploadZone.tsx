@@ -9,7 +9,7 @@ import {
   WifiOff, Wifi, Camera, Video as VideoIcon, GalleryHorizontalEnd, Clock, PauseCircle,
 } from 'lucide-react'
 import { queueUpload, getQueue, removeFromQueue, type QueuedUpload } from '@/lib/offlineQueue'
-import { runMultipartUpload, abortMultipartSession, NetworkError }   from '@/lib/upload/multipart-uploader'
+import { runMultipartUpload, abortMultipartSession, NetworkError, DuplicateError }   from '@/lib/upload/multipart-uploader'
 import {
   getSession, saveSession, updateSession, deleteSession,
   getActiveSessions, discardAllSessions, sessionIdFor,
@@ -139,8 +139,9 @@ function FileRow({
           <span className="text-xs text-slate-500 shrink-0">{formatSize(uf.file.size)}</span>
         </div>
 
-        {uf.storedName && uf.status !== 'error' && (
-          <p className="text-xs text-slate-600 truncate mt-0.5">→ {uf.storedName}</p>
+        {/* Show the saved-as name only when a suffix was added (e.g. "IMG_6063 (1).jpg") */}
+        {uf.storedName && uf.storedName !== uf.file.name && uf.status !== 'error' && (
+          <p className="text-xs text-slate-500 truncate mt-0.5">→ saved as {uf.storedName}</p>
         )}
 
         {(uf.status === 'uploading' || uf.status === 'completing') && (
@@ -256,6 +257,12 @@ export function UploadZone({ defaultDestination, events }: Props) {
   const [resumeSessions, setResumeSessions] = useState<import('@/lib/upload/upload-session-store').UploadSession[]>([])
   // Track last notification % to throttle SW messages
   const lastNotifPctRef = useRef(-NOTIF_THROTTLE_PCT)
+  // Duplicate-resolution dialog state
+  const [duplicatePrompt, setDuplicatePrompt] = useState<{
+    filename:     string
+    existingName: string
+  } | null>(null)
+  const duplicateResolveRef = useRef<((choice: 'replace' | 'keep-both' | 'cancel') => void) | null>(null)
 
   // Keep destination state in sync with the prop (for SSR-hydrated page)
   useEffect(() => {
@@ -389,6 +396,32 @@ export function UploadZone({ defaultDestination, events }: Props) {
     syncState()
   }
 
+  /** Inserts a numeric suffix before the file extension: IMG.jpg → IMG (1).jpg */
+  function addSuffix(filename: string, n: number): string {
+    const dot = filename.lastIndexOf('.')
+    return dot !== -1
+      ? `${filename.slice(0, dot)} (${n})${filename.slice(dot)}`
+      : `${filename} (${n})`
+  }
+
+  /** Pauses the upload and shows the duplicate-resolution dialog. */
+  function askDuplicateAction(
+    filename:     string,
+    existingName: string,
+  ): Promise<'replace' | 'keep-both' | 'cancel'> {
+    return new Promise(resolve => {
+      duplicateResolveRef.current = resolve
+      setDuplicatePrompt({ filename, existingName })
+    })
+  }
+
+  function handleDuplicateChoice(choice: 'replace' | 'keep-both' | 'cancel') {
+    const resolve = duplicateResolveRef.current
+    duplicateResolveRef.current = null
+    setDuplicatePrompt(null)
+    resolve?.(choice)
+  }
+
   // ── Drain offline queue ─────────────────────────────────────────────────────
   // Called when the device comes back online. Retrieves all queued items from
   // IndexedDB, adds them to the UI as pending files, and kicks off an upload.
@@ -468,19 +501,79 @@ export function UploadZone({ defaultDestination, events }: Props) {
     try {
       if (!isMultipart) {
         // ── SIMPLE PATH ────────────────────────────────────────────────────────
-        const presignRes = await fetch('/api/upload/presign', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({
-            filename:    file.name,
-            contentType,
-            fileSize:    file.size,
-            eventId:     destination.eventId,
-            subfolderId: destination.subfolderId,
-          }),
-        })
-        if (!presignRes.ok) throw new Error((await presignRes.json()).error)
-        const { uploadUrl, r2Key } = await presignRes.json()
+        let effectiveFilename = file.name
+        let uploadForce       = false
+        let presignData: { uploadUrl: string; r2Key: string } | null = null
+
+        {
+          const firstRes = await fetch('/api/upload/presign', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+              filename:    effectiveFilename,
+              contentType,
+              fileSize:    file.size,
+              eventId:     destination.eventId,
+              subfolderId: destination.subfolderId,
+            }),
+          })
+
+          if (firstRes.status === 409) {
+            const dupData = await firstRes.json()
+            updateFile(uid, { status: 'paused', progress: 0, speed: undefined })
+            const choice = await askDuplicateAction(effectiveFilename, dupData.existingName ?? effectiveFilename)
+            updateFile(uid, { status: 'starting' })
+
+            if (choice === 'cancel') {
+              updateFile(uid, { status: 'error', error: 'Upload cancelled' })
+              return
+            }
+            if (choice === 'replace') {
+              uploadForce = true
+            }
+            if (choice === 'keep-both') {
+              let found = false
+              for (let n = 1; n <= 10; n++) {
+                const candidate = addSuffix(file.name, n)
+                const ckRes = await fetch('/api/upload/presign', {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body:    JSON.stringify({
+                    filename:    candidate,
+                    contentType,
+                    fileSize:    file.size,
+                    eventId:     destination.eventId,
+                    subfolderId: destination.subfolderId,
+                    checkOnly:   true,
+                  }),
+                })
+                if (ckRes.status !== 409) { effectiveFilename = candidate; found = true; break }
+              }
+              if (!found) throw new Error('Could not find a unique filename — please rename the file and retry')
+            }
+
+            // Re-call presign with the resolved name / force flag
+            const retryRes = await fetch('/api/upload/presign', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify({
+                filename:    effectiveFilename,
+                contentType,
+                fileSize:    file.size,
+                eventId:     destination.eventId,
+                subfolderId: destination.subfolderId,
+                force:       uploadForce,
+              }),
+            })
+            if (!retryRes.ok) throw new Error((await retryRes.json()).error)
+            presignData = await retryRes.json()
+          } else {
+            if (!firstRes.ok) throw new Error((await firstRes.json()).error)
+            presignData = await firstRes.json()
+          }
+        }
+
+        const { uploadUrl, r2Key } = presignData!
 
         updateFile(uid, { status: 'uploading', mode: 'simple' })
 
@@ -499,17 +592,22 @@ export function UploadZone({ defaultDestination, events }: Props) {
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({
             r2Key,
-            originalName: file.name,
+            originalName: effectiveFilename,
             contentType,
             fileSize:     file.size,
             eventId:      destination.eventId,
             subfolderId:  destination.subfolderId,
+            force:        uploadForce,
           }),
         })
         if (!regRes.ok) throw new Error((await regRes.json()).error)
         const { mediaFile: regMf } = await regRes.json()
 
-        updateFile(uid, { status: 'done', progress: 100, storedName: regMf?.storedName })
+        updateFile(uid, {
+          status:     'done',
+          progress:   100,
+          storedName: effectiveFilename !== file.name ? effectiveFilename : undefined,
+        })
 
       } else {
         // ── PARALLEL MULTIPART PATH ──────────────────────────────────────────
@@ -534,67 +632,137 @@ export function UploadZone({ defaultDestination, events }: Props) {
             : 0,
         })
 
-        let mpSession: { uploadId: string; key: string } | null = null
+        // Object property avoids TypeScript narrowing-to-never in catch blocks
+        const mpCtx = { session: null as { uploadId: string; key: string } | null }
+        let mpFilenameOverride: string | undefined = undefined
+        let mpForce                                                      = false
         const mpStartedAt = Date.now()
         const CHUNK_SIZE  = 10 * 1024 * 1024
 
+        // Build upload options (filename/force may be updated on duplicate retry)
+        const makeMpOpts = () => ({
+          file,
+          eventId:          destination.eventId,
+          subfolderId:      destination.subfolderId,
+          filenameOverride: mpFilenameOverride,
+          force:            mpForce,
+
+          resume: hasResume
+            ? {
+                uploadId:       storedSession!.uploadId,
+                key:            storedSession!.key,
+                completedParts: storedSession!.completedParts,
+              }
+            : undefined,
+
+          // Fired once on fresh session creation — persist to IDB immediately.
+          onCreate: ({ uploadId, key, totalParts }: { uploadId: string; key: string; totalParts: number }) => {
+            mpCtx.session = { uploadId, key }
+            void saveSession({
+              sessionId:      sId,
+              uploadId,
+              key,
+              fileName:       mpFilenameOverride ?? file.name,
+              fileSize:       file.size,
+              mimeType:       contentType,
+              eventId:        destination.eventId,
+              subfolderId:    destination.subfolderId ?? null,
+              totalChunks:    totalParts,
+              chunkSize:      CHUNK_SIZE,
+              completedParts: [],
+              failedChunks:   [],
+              status:         'active',
+              startedAt:      new Date().toISOString(),
+              lastProgressAt: new Date().toISOString(),
+            })
+            updateFile(uid, { totalParts })
+          },
+
+          // Fired after each chunk — update IDB so a crash/reload can resume.
+          onPartDone: (completed: { PartNumber: number; ETag: string }[], done: number) => {
+            void updateSession(sId, { completedParts: completed, status: 'active' })
+            updateFile(uid, { doneParts: done })
+          },
+
+          onCompleting: () => updateFile(uid, { status: 'completing', progress: 99 }),
+          onProgress: (pct: number) => {
+            const bytesLoaded = Math.round((pct / 100) * file.size)
+            const elapsed     = (Date.now() - mpStartedAt) / 1000
+            const speed       = elapsed > 0.3 ? Math.round(bytesLoaded / elapsed) : undefined
+            updateFile(uid, { progress: pct, bytesLoaded, speed })
+          },
+        })
+
         try {
-          const result = await runMultipartUpload({
-            file,
-            eventId:     destination.eventId,
-            subfolderId: destination.subfolderId,
-
-            resume: hasResume
-              ? {
-                  uploadId:       storedSession!.uploadId,
-                  key:            storedSession!.key,
-                  completedParts: storedSession!.completedParts,
-                }
-              : undefined,
-
-            // Fired once on fresh session creation — persist to IDB immediately.
-            onCreate: ({ uploadId, key, totalParts }) => {
-              mpSession = { uploadId, key }
-              void saveSession({
-                sessionId:      sId,
-                uploadId,
-                key,
-                fileName:       file.name,
-                fileSize:       file.size,
-                mimeType:       contentType,
-                eventId:        destination.eventId,
-                subfolderId:    destination.subfolderId ?? null,
-                totalChunks:    totalParts,
-                chunkSize:      CHUNK_SIZE,
-                completedParts: [],
-                failedChunks:   [],
-                status:         'active',
-                startedAt:      new Date().toISOString(),
-                lastProgressAt: new Date().toISOString(),
-              })
-              updateFile(uid, { totalParts })
-            },
-
-            // Fired after each chunk — update IDB so a crash/reload can resume.
-            onPartDone: (completed, done, total) => {
-              void updateSession(sId, { completedParts: completed, status: 'active' })
-              updateFile(uid, { doneParts: done })
-            },
-
-            onCompleting: () => updateFile(uid, { status: 'completing', progress: 99 }),
-            onProgress: pct => {
-              const bytesLoaded = Math.round((pct / 100) * file.size)
-              const elapsed     = (Date.now() - mpStartedAt) / 1000
-              const speed       = elapsed > 0.3 ? Math.round(bytesLoaded / elapsed) : undefined
-              updateFile(uid, { progress: pct, bytesLoaded, speed })
-            },
-          })
+          const result = await runMultipartUpload(makeMpOpts())
 
           // Success — clean up the IDB session (R2 object is now committed)
           void deleteSession(sId)
-          updateFile(uid, { status: 'done', progress: 100, storedName: result.mediaFile.storedName })
+          updateFile(uid, {
+            status:     'done',
+            progress:   100,
+            storedName: mpFilenameOverride ?? undefined,
+          })
 
         } catch (err: any) {
+          if (err instanceof DuplicateError) {
+            // DuplicateError comes from /multipart/create — no R2 session was opened yet.
+            updateFile(uid, { status: 'paused', progress: 0, speed: undefined })
+            const fname  = mpFilenameOverride ?? file.name
+            const choice = await askDuplicateAction(fname, err.existingName)
+            updateFile(uid, { status: 'starting' })
+
+            if (choice === 'cancel') {
+              updateFile(uid, { status: 'error', error: 'Upload cancelled' })
+              return
+            }
+            if (choice === 'replace') {
+              mpForce = true
+            }
+            if (choice === 'keep-both') {
+              let found = false
+              for (let n = 1; n <= 10; n++) {
+                const candidate = addSuffix(file.name, n)
+                const ckRes = await fetch('/api/upload/presign', {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body:    JSON.stringify({
+                    filename:    candidate,
+                    contentType,
+                    fileSize:    file.size,
+                    eventId:     destination.eventId,
+                    subfolderId: destination.subfolderId,
+                    checkOnly:   true,
+                  }),
+                })
+                if (ckRes.status !== 409) { mpFilenameOverride = candidate; found = true; break }
+              }
+              if (!found) throw new Error(
+                'Could not find a unique filename — please rename the file and retry',
+              )
+            }
+
+            // Retry with resolved filename / force flag (fresh session — create never opened R2)
+            try {
+              const result2 = await runMultipartUpload(makeMpOpts())
+              void deleteSession(sId)
+              updateFile(uid, {
+                status:     'done',
+                progress:   100,
+                storedName: mpFilenameOverride ?? undefined,
+              })
+              return
+            } catch (retryErr: any) {
+              if ((retryErr instanceof NetworkError) || !navigator.onLine) {
+                void updateSession(sId, { status: 'paused' })
+                throw new NetworkError('Connection lost — upload paused. Will resume when online.')
+              }
+              if (mpCtx.session) void abortMultipartSession(mpCtx.session.uploadId, mpCtx.session.key)
+              void deleteSession(sId)
+              throw retryErr
+            }
+          }
+
           const isNetworkDrop = (err instanceof NetworkError) || !navigator.onLine
 
           if (isNetworkDrop) {
@@ -605,8 +773,9 @@ export function UploadZone({ defaultDestination, events }: Props) {
           }
 
           // Genuine failure — abort the R2 session to free orphaned chunk storage.
-          const s = mpSession ?? (
-            hasResume ? { uploadId: storedSession!.uploadId, key: storedSession!.key } : null
+          const s = mpCtx.session ?? (storedSession
+            ? { uploadId: storedSession.uploadId, key: storedSession.key }
+            : null
           )
           if (s) void abortMultipartSession(s.uploadId, s.key)
           void deleteSession(sId)    // session is no longer valid
@@ -1168,6 +1337,55 @@ export function UploadZone({ defaultDestination, events }: Props) {
         </div>
       )}
 
+      {/* ── Duplicate-file resolution dialog ─────────────────────────── */}
+      {duplicatePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-6 space-y-4">
+            <div className="space-y-1">
+              <p className="text-base font-semibold text-white">File already exists</p>
+              <p className="text-sm text-slate-400 break-all">
+                <span className="text-white font-medium">{duplicatePrompt.filename}</span>
+                {' '}was already uploaded to this event.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                onClick={() => handleDuplicateChoice('replace')}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl
+                           bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-700/50
+                           text-left transition"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-indigo-300">Replace existing</p>
+                  <p className="text-xs text-slate-500">Overwrite the current file with this version</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleDuplicateChoice('keep-both')}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl
+                           bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/50
+                           text-left transition"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white">Keep both</p>
+                  <p className="text-xs text-slate-500">Save with a new name (adds a number suffix)</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleDuplicateChoice('cancel')}
+                className="w-full px-4 py-2.5 rounded-xl text-sm text-slate-400
+                           hover:text-white hover:bg-slate-800/60 border border-transparent
+                           hover:border-slate-700/50 transition text-left"
+              >
+                Cancel upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )

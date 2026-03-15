@@ -4,7 +4,7 @@ import { getServerSession }                   from 'next-auth'
 import { authOptions }                        from '@/lib/auth'
 import { completeMultipartUpload }            from '@/lib/r2'
 import { prisma }                             from '@/lib/prisma'
-import { generateStoredName }                 from '@/lib/uploadNaming'
+import { sanitizeFilename }                   from '@/lib/uploadNaming'
 import { notifyUploadInFollowedFolder }       from '@/lib/notifications'
 
 /**
@@ -37,9 +37,10 @@ export async function POST(req: NextRequest) {
     fileSize?:     number
     eventId?:      string
     subfolderId?:  string
+    force?:        boolean
   }
 
-  const { uploadId, key, parts, originalName, fileType, fileSize, eventId, subfolderId } = body
+  const { uploadId, key, parts, originalName, fileType, fileSize, eventId, subfolderId, force } = body
 
   if (!uploadId || !key || !Array.isArray(parts) || !parts.length
       || !originalName || !fileSize || !eventId) {
@@ -54,9 +55,36 @@ export async function POST(req: NextRequest) {
     // ── 1. Tell R2 to assemble all parts ──────────────────────────────────────
     await completeMultipartUpload(key, uploadId, parts)
 
-    // ── 2. Create DB record (storedName generated atomically in a transaction) ─
+    // ── 2. Create (or replace) DB record ─────────────────────────────────────
+    const storedName = sanitizeFilename(originalName)
+
     const mediaFile = await prisma.$transaction(async tx => {
-      const { storedName } = await generateStoredName(eventId, originalName, tx as any)
+      // When force:true, update the existing record instead of creating a duplicate.
+      if (force) {
+        const existingFile = await tx.mediaFile.findFirst({ where: { r2Key: key, eventId } })
+        if (existingFile) {
+          const mf = await tx.mediaFile.update({
+            where: { id: existingFile.id },
+            data: {
+              originalName,
+              storedName,
+              fileType:   resolvedType,
+              fileSize:   BigInt(fileSize),
+              uploaderId: session.user.id,
+            },
+          })
+          await tx.activityLog.create({
+            data: {
+              action:      'FILE_REPLACED',
+              userId:      session.user.id,
+              mediaFileId: mf.id,
+              eventId,
+              metadata: { originalName, storedName, fileType: resolvedType, fileSize, mode: 'multipart-parallel' },
+            },
+          })
+          return mf
+        }
+      }
 
       const mf = await tx.mediaFile.create({
         data: {

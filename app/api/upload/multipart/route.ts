@@ -8,7 +8,7 @@ import {
   abortMultipartUpload,
 }                                       from '@/lib/r2'
 import { prisma }                       from '@/lib/prisma'
-import { generateStoredName }           from '@/lib/uploadNaming'
+import { sanitizeFilename }             from '@/lib/uploadNaming'
 import { generateAndStoreThumbnail }    from '@/lib/thumbnail'
 import { notifyUploadInFollowedFolder } from '@/lib/notifications'
 
@@ -83,11 +83,8 @@ export async function POST(req: NextRequest) {
       await completeMultipartUpload(r2Key, uploadId, parts)
 
       // 2. Create the DB record in a transaction alongside the activity log.
-      //    storedName is generated inside the transaction to ensure sequential
-      //    numbering is consistent even with concurrent uploads.
+      const storedName = sanitizeFilename(originalName)
       const mediaFile = await prisma.$transaction(async tx => {
-        const { storedName } = await generateStoredName(eventId, originalName, tx as any)
-
         const mf = await tx.mediaFile.create({
           data: {
             originalName,
