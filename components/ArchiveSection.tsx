@@ -10,9 +10,10 @@
 
 import { useState }                         from 'react'
 import { Archive, ChevronDown, ChevronUp }  from 'lucide-react'
+import { useSession }                       from 'next-auth/react'
 import { MediaCard }                        from '@/components/MediaCard'
 import { PreviewModal }                     from '@/components/PreviewModal'
-import type { MediaFile, TagItem }          from '@/types'
+import type { MediaFile, AppRole, TagItem } from '@/types'
 import { useRouter }                        from 'next/navigation'
 
 type EnrichedMedia = MediaFile & {
@@ -27,10 +28,12 @@ interface Props {
 }
 
 export function ArchiveSection({ files, isAdmin }: Props) {
-  const router  = useRouter()
+  const router    = useRouter()
+  const { data: session } = useSession()
+  const role      = (session?.user?.role ?? (isAdmin ? 'ADMIN' : 'EDITOR')) as AppRole
   // Auto-expand when there are few archived files
-  const [open,      setOpen]      = useState(files.length > 0 && files.length <= 5)
-  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [open,        setOpen]        = useState(files.length > 0 && files.length <= 5)
+  const [previewFile, setPreviewFile] = useState<EnrichedMedia | null>(null)
 
   if (files.length === 0) return null
 
@@ -71,7 +74,10 @@ export function ArchiveSection({ files, isAdmin }: Props) {
               <div key={m.id} className="opacity-75 hover:opacity-100 transition-opacity">
                 <MediaCard
                   media={m}
-                  onPreview={setPreviewId}
+                  onPreview={(id) => {
+                    const f = files.find(f => f.id === id)
+                    if (f) setPreviewFile(f)
+                  }}
                   onStatusChanged={() => router.refresh()}
                 />
               </div>
@@ -81,7 +87,14 @@ export function ArchiveSection({ files, isAdmin }: Props) {
       )}
 
       {/* Preview modal for archived files */}
-      <PreviewModal fileId={previewId} onClose={() => setPreviewId(null)} />
+      <PreviewModal
+        file={previewFile}
+        allFiles={files}
+        role={role}
+        onClose={() => setPreviewFile(null)}
+        onStatusChanged={() => router.refresh()}
+        onDeleted={() => router.refresh()}
+      />
     </section>
   )
 }
