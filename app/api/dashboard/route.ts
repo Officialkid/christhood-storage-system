@@ -79,13 +79,7 @@ export async function GET(req: NextRequest) {
     (isAdmin || isEditor)
       ? prisma.event.findMany({
           where: {
-            OR: [
-              { date: { gte: now, lte: in30Days } },
-              {
-                date:      { equals: undefined },
-                createdAt: { gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) },
-              },
-            ],
+            date: { gte: now, lte: in30Days },
           },
           select: {
             id:   true,

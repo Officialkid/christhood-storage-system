@@ -532,6 +532,21 @@ function StorageOverview({ storage }: { storage: Storage }) {
 
 // ── Zara quick access ─────────────────────────────────────────────────────────
 function ZaraCard() {
+  const [zaraStatus, setZaraStatus] = useState<'checking' | 'online' | 'offline'>('checking')
+
+  useEffect(() => {
+    fetch('/api/assistant/health')
+      .then(res => res.json())
+      .then((data: { status?: string }) => setZaraStatus(data.status === 'ok' ? 'online' : 'offline'))
+      .catch(() => setZaraStatus('offline'))
+  }, [])
+
+  const statusInfo = {
+    checking: { dot: 'bg-slate-500',             label: 'Checking…',      sub: null },
+    online:   { dot: 'bg-green-400 animate-pulse', label: 'Zara is online', sub: null },
+    offline:  { dot: 'bg-red-500',                label: 'Zara is offline', sub: 'Contact admin to restore' },
+  }[zaraStatus]
+
   return (
     <button
       onClick={() => window.dispatchEvent(new CustomEvent('open-zara-chat'))}
@@ -548,9 +563,12 @@ function ZaraCard() {
             Ask Zara anything →
           </p>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-xs text-slate-500">Zara is online</span>
+            <div className={`w-1.5 h-1.5 rounded-full ${statusInfo.dot}`} />
+            <span className="text-xs text-slate-500">{statusInfo.label}</span>
           </div>
+          {statusInfo.sub && (
+            <p className="text-[10px] text-red-400 mt-0.5 ml-3">{statusInfo.sub}</p>
+          )}
         </div>
       </div>
     </button>
@@ -642,6 +660,10 @@ export default function DashboardClient({ initialData }: { initialData: Dashboar
 
   // 15-second auto-refresh; paused when tab is hidden
   useEffect(() => {
+    // Immediately fetch real data on mount — SSR fallback may have given zeros
+    // if the server-side internal fetch failed (common in production).
+    refresh(true)
+
     const tick = () => setSecsSince(s => s + 1)
     const clock = setInterval(tick, 1000)
 
