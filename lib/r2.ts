@@ -37,12 +37,26 @@ export async function getPresignedUploadUrl(
   return getSignedUrl(R2, command, { expiresIn: expiresInSeconds })
 }
 
-/** Generate a presigned GET URL to securely serve a private object. */
+/** Generate a presigned GET URL to securely serve a private object.
+ *
+ * Pass `originalName` to embed a `Content-Disposition: attachment` header
+ * inside the presigned URL, so the browser always saves the file with the
+ * correct human-readable filename regardless of the R2 object key.
+ */
 export async function getPresignedDownloadUrl(
   key: string,
-  expiresInSeconds = 3600
+  expiresInSeconds = 3600,
+  originalName?: string,
 ): Promise<string> {
-  const command = new GetObjectCommand({ Bucket: BUCKET, Key: key })
+  const command = new GetObjectCommand({
+    Bucket: BUCKET,
+    Key:    key,
+    // RFC 5987 encoding ensures unicode filenames survive the URL round-trip
+    ...(originalName && {
+      ResponseContentDisposition:
+        `attachment; filename*=UTF-8''${encodeURIComponent(originalName)}`,
+    }),
+  })
   return getSignedUrl(R2, command, { expiresIn: expiresInSeconds })
 }
 

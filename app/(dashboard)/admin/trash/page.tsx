@@ -5,6 +5,7 @@ import {
   Trash2, RotateCcw, Clock, AlertTriangle, Loader2,
   RefreshCw, ShieldAlert, FileImage, FileVideo, Info, XCircle,
 } from 'lucide-react'
+import { invalidateFileCache } from '@/lib/cache'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -139,6 +140,8 @@ export default function AdminTrashPage() {
           }
         : prev
       )
+      // Bust SWR caches so FolderTree sidebar counts update immediately
+      void invalidateFileCache()
     } catch {
       alert('Network error — please try again.')
     } finally {

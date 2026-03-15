@@ -31,8 +31,8 @@ export async function GET(
 
   const { file } = result
 
-  // Generate a fresh short-lived URL
-  const url = await getPresignedDownloadUrl(file.r2Key, URL_EXPIRY_SECONDS)
+  // Generate a fresh short-lived URL with correct download filename
+  const url = await getPresignedDownloadUrl(file.r2Key, URL_EXPIRY_SECONDS, file.originalName)
 
   // Log the download — fire-and-forget, never block the response
   log('FILE_DOWNLOADED', session.user.id, {

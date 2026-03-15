@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { queueUpload, getQueue, removeFromQueue, type QueuedUpload } from '@/lib/offlineQueue'
 import { runMultipartUpload, abortMultipartSession, NetworkError, DuplicateError }   from '@/lib/upload/multipart-uploader'
+import { invalidateFileCache } from '@/lib/cache'
 import {
   getSession, saveSession, updateSession, deleteSession,
   getActiveSessions, discardAllSessions, sessionIdFor,
@@ -840,7 +841,11 @@ export function UploadZone({ defaultDestination, events }: Props) {
       notifyUploadFailed(errored)
     } else {
       const completed = filesRef.current.filter(f => f.status === 'done').length
-      if (completed > 0) notifyUploadComplete(completed)
+      if (completed > 0) {
+        notifyUploadComplete(completed)
+        // Bust SWR caches so FolderTree sidebar counts update immediately
+        void invalidateFileCache(destination.eventId)
+      }
     }
   }
 
