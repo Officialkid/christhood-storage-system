@@ -4,7 +4,8 @@ import { authOptions }                from '@/lib/auth'
 import { prisma }                     from '@/lib/prisma'
 import { getPresignedDownloadUrl }    from '@/lib/r2'
 import { computeSHA256 }              from '@/lib/transferIntegrity'
-import { log }                        from '@/lib/activityLog'import { logger }                       from '@/lib/logger'
+import { log }                        from '@/lib/activityLog'
+import { logger }                     from '@/lib/logger'
 /**
  * GET /api/transfers/[transferId]/verify
  *
