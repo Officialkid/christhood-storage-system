@@ -85,6 +85,7 @@ export async function PATCH(
       subject:   transfer.subject,
       fileCount: transfer.files.length,
     },
+  })
   .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/cancel', transferId, error: (e as Error)?.message, message: '[cancel] log failed' }))
 
   createInAppNotification(transfer.recipientId, notifMsg, notifLink)
