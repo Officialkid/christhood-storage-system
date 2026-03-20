@@ -70,7 +70,7 @@ export const env = {
   // Used by NextAuth to build callback redirect URLs.
   NEXTAUTH_URL: required('NEXTAUTH_URL'),
 
-  // ── Cloudflare R2 ─────────────────────────────────────────────────────────
+  // ── Cloudflare R2 — CMMS bucket ──────────────────────────────────────────
   // Found in the Cloudflare dashboard → R2 → Overview → Account ID
   CLOUDFLARE_R2_ACCOUNT_ID: required('CLOUDFLARE_R2_ACCOUNT_ID'),
 
@@ -80,6 +80,16 @@ export const env = {
 
   // The name of the bucket where media files are stored
   CLOUDFLARE_R2_BUCKET_NAME: required('CLOUDFLARE_R2_BUCKET_NAME'),
+
+  // ── Cloudflare R2 — Gallery bucket (SEPARATE — never mix with CMMS above) ─
+  // Same Cloudflare account ID is reused; credentials MUST be a separate API token
+  // scoped to the christhood-gallery bucket only.
+  GALLERY_R2_ACCOUNT_ID:        required('GALLERY_R2_ACCOUNT_ID'),
+  GALLERY_R2_ACCESS_KEY_ID:     required('GALLERY_R2_ACCESS_KEY_ID'),
+  GALLERY_R2_SECRET_ACCESS_KEY: required('GALLERY_R2_SECRET_ACCESS_KEY'),
+  GALLERY_R2_BUCKET_NAME:       required('GALLERY_R2_BUCKET_NAME'),
+  // Public CDN URL configured under R2 → Public Access for the gallery bucket
+  GALLERY_R2_PUBLIC_URL:        required('GALLERY_R2_PUBLIC_URL'),
 
   // ── Resend ────────────────────────────────────────────────────────────────
   // API key from resend.com → API Keys (prefix: re_)
