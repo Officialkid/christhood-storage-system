@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
-  MessagesSquare, X, Bot, Share2, Tags,
+  MessagesSquare, X, Bot, Share2, Tags, GalleryHorizontal,
 } from 'lucide-react'
 import { useSidebar }       from './DashboardShell'
 import { useUnreadCount }   from '@/hooks/useUnreadCount'
@@ -19,6 +19,7 @@ const navItems: NavItem[] = [
   { label: 'Dashboard',      href: '/dashboard',        icon: LayoutDashboard },
   { label: 'Media',          href: '/media',            icon: Image           },
   { label: 'Upload',         href: '/upload',           icon: Upload          },
+  { label: 'Galleries',      href: '/galleries',        icon: GalleryHorizontal },
   { label: 'Events',         href: '/events',           icon: CalendarDays    },
   { label: 'Search',         href: '/search',           icon: Search          },
   { label: 'Communications', href: '/communications',   icon: MessagesSquare, badge: true },

@@ -15,7 +15,7 @@ import { checkIpRateLimit } from '@/lib/rate-limit'
 //   /api/health  — read-only probe
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CSRF_EXEMPT_RE = /^\/api\/(?:auth|cron|health|share\/[^/]+(?:\/download)?)\b/
+const CSRF_EXEMPT_RE = /^\/api\/(?:auth|cron|health|gallery\/public|share\/[^/]+(?:\/download)?)\b/
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 function checkCsrfOrigin(req: NextRequest): boolean {
@@ -114,15 +114,19 @@ function extractIp(req: NextRequest): string {
 // Paths that bypass session/RBAC enforcement.
 // Auth routes are managed by NextAuth itself; health/cron are secured separately.
 // /share/* and /api/share/[token]/GET are public (external sharing).
+// /gallery-public/* and /api/gallery/public/* are the public gallery — no auth.
 // All of these still go through the CRLF guard above.
 const AUTH_PASSTHROUGH_RE =
-  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|share(?:\/|$)|api\/auth|api\/health|api\/assistant\/health|api\/cron)\b/
+  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|gallery-public(?:\/|$)|share(?:\/|$)|api\/auth|api\/health|api\/assistant\/health|api\/cron|api\/gallery\/public(?:\/|$))\b/
 
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl
   const ip = extractIp(req)
 
   // ── Approach 1: CRLF injection guard — runs FIRST on every matched request ─
+  //
+  // NOTE: gallery subdomain rewrite (below) runs AFTER this check so that
+  // CRLF protection still covers gallery subdomain requests.
   //
   // We test two representations:
   //   req.url     → raw URL string; percent-encoded forms (%0d %0a) are present
@@ -135,6 +139,25 @@ export async function middleware(req: NextRequest) {
     console.warn(`[security] CRLF injection attempt blocked: ${safeUrl} from IP: ${ip}`)
     // Return 400 with a generic body — do not reveal the specific detection reason.
     return NextResponse.json({ error: 'Bad Request' }, { status: 400 })
+  }
+
+  // ── Gallery subdomain rewrite ─────────────────────────────────────────────
+  // When the request comes from gallery.cmmschristhood.org (or gallery.localhost
+  // for dev), internally rewrite to /gallery-public/* so the App Router serves
+  // the public gallery layout without any auth checks.
+  // API calls from the gallery frontend (/api/...) are NOT rewritten — they
+  // route normally, but gallery/public/* is in AUTH_PASSTHROUGH_RE.
+  const host = req.headers.get('host') ?? ''
+  const isGalleryHost = host.startsWith('gallery.')
+  if (
+    isGalleryHost &&
+    !pathname.startsWith('/gallery-public') &&
+    !pathname.startsWith('/api/') &&
+    !pathname.startsWith('/_next/')
+  ) {
+    const url = req.nextUrl.clone()
+    url.pathname = '/gallery-public' + (pathname === '/' ? '' : pathname)
+    return applySecurityHeaders(NextResponse.rewrite(url), pathname)
   }
 
   // ── CSRF Origin check — blocks cross-site state-changing requests ──────────
