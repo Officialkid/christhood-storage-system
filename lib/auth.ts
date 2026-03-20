@@ -5,6 +5,7 @@ import { PrismaAdapter }   from '@next-auth/prisma-adapter'
 import bcrypt              from 'bcryptjs'
 import { prisma }          from './prisma'
 import { log }             from './activityLog'
+import { logger }          from './logger'
 
 // ── Progressive delay (Layer 2): slow down repeated failures before hard lockout ──
 // Uses the per-user consecutive failure count already stored in the DB.
@@ -114,6 +115,7 @@ export const authOptions: NextAuthOptions = {
           await log('USER_LOGIN_FAILED', user.id, {
             metadata: { reason: 'ACCOUNT_LOCKED', identifier, ip },
           })
+          logger.warn('USER_LOGIN_FAILED', { userId: user.id, route: '/api/auth/signin', error: 'ACCOUNT_LOCKED', metadata: { ip }, message: 'Login attempt on locked account' })
           return null  // UI queries /api/auth/account-status for lockout details
         }
 
@@ -149,6 +151,7 @@ export const authOptions: NextAuthOptions = {
           await log('USER_LOGIN_FAILED', user.id, {
             metadata: { reason: 'WRONG_PASSWORD', identifier, ip, attempt: newCount, locked: shouldLock },
           })
+          logger.warn('USER_LOGIN_FAILED', { userId: user.id, route: '/api/auth/signin', error: 'WRONG_PASSWORD', metadata: { ip, attempt: newCount, locked: shouldLock }, message: 'Failed login attempt — wrong password' })
 
           return null
         }
