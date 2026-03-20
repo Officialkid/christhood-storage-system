@@ -149,6 +149,11 @@ jobs:
             VAPID_SUBJECT=VAPID_SUBJECT:latest
             CRON_SECRET=CRON_SECRET:latest
             GEMINI_API_KEY=GEMINI_API_KEY:latest
+            GALLERY_R2_ACCOUNT_ID=GALLERY_R2_ACCOUNT_ID:latest
+            GALLERY_R2_ACCESS_KEY_ID=GALLERY_R2_ACCESS_KEY_ID:latest
+            GALLERY_R2_SECRET_ACCESS_KEY=GALLERY_R2_SECRET_ACCESS_KEY:latest
+            GALLERY_R2_BUCKET_NAME=GALLERY_R2_BUCKET_NAME:latest
+            GALLERY_R2_PUBLIC_URL=GALLERY_R2_PUBLIC_URL:latest
 
       # ── 8. Print deployed URL ───────────────────────────────────────────────
       - name: Print live URL
