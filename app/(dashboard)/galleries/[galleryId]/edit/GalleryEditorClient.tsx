@@ -576,10 +576,8 @@ export function GalleryEditorClient({ gallery: initial, userRole, userId }: Prop
     try {
       const res = await fetch(`/api/gallery/${gallery.id}/publish`, { method: 'PATCH' })
       if (res.ok) {
-        const data = await res.json()
         setGallery(g => ({ ...g, status: 'PUBLISHED' }))
-        alert(`Gallery published! Public URL: ${data.url}`)
-        startTransition(() => router.push('/galleries'))
+        // Stay on the editor so sections and photos can be added right away
       } else {
         const d = await res.json().catch(() => ({}))
         alert(d.error ?? 'Failed to publish gallery')

@@ -54,15 +54,21 @@ async function handler(req: Request) {
   const baseSlug = rawSlug ? slugify(rawSlug) : slugify(title)
   const slug     = await ensureUniqueSlug(baseSlug)
 
+  // Admins skip the review queue — gallery is immediately published
+  const isAdmin  = role === 'ADMIN'
+  const now      = new Date()
+
   const gallery = await prisma.publicGallery.create({
     data: {
       slug,
       title,
-      description:  description ?? null,
-      categoryName: categoryName ?? null,
-      year:         Number(year),
-      status:       'DRAFT',
-      createdById:  userId,
+      description:   description ?? null,
+      categoryName:  categoryName ?? null,
+      year:          Number(year),
+      status:        isAdmin ? 'PUBLISHED' : 'DRAFT',
+      createdById:   userId,
+      publishedById: isAdmin ? userId : null,
+      publishedAt:   isAdmin ? now    : null,
     },
   })
 
