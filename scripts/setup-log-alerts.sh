@@ -2,9 +2,12 @@
 # ─────────────────────────────────────────────────────────────
 # setup-log-alerts.sh
 #
-# Creates Cloud Logging log-based alerts in GCP so the team is
-# notified by email when critical events occur — no manual
-# log-checking required for severe issues.
+# Creates keyword-based log alert policies (fires on the first
+# matching log entry — no threshold, no window).
+#
+# For the FULL monitoring setup (metric thresholds, uptime check,
+# dashboard), run setup-monitoring.sh instead — it supersedes this
+# script and handles the notification channel too.
 #
 # Run once after deploying to Cloud Run:
 #   bash scripts/setup-log-alerts.sh
