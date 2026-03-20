@@ -178,9 +178,8 @@ export async function processAndUploadImage(
     const originalUrl = await uploadToGallery(origKey, sourceBuffer, mimeType)
 
     logger.info('GALLERY_IMAGE_PROCESSED', {
-      message:      `RAW file ${originalFilename} stored without processing`,
-      originalSize: sourceBuffer.length,
-      isRaw:        true,
+      message:  `RAW file ${originalFilename} stored without processing`,
+      metadata: { originalSize: sourceBuffer.length, isRaw: true },
     })
 
     return {
@@ -209,14 +208,16 @@ export async function processAndUploadImage(
   ])
 
   logger.info('GALLERY_IMAGE_PROCESSED', {
-    message:       `Processed ${originalFilename}: original ${processed.originalSize} bytes preserved exactly`,
-    thumbnailSize: processed.thumbnailBuffer.length,
-    previewSize:   processed.previewBuffer.length,
-    originalSize:  processed.originalSize,
-    width:         processed.width,
-    height:        processed.height,
-    format:        processed.format,
-    isRaw:         false,
+    message:  `Processed ${originalFilename}: original ${processed.originalSize} bytes preserved exactly`,
+    metadata: {
+      thumbnailSize: processed.thumbnailBuffer.length,
+      previewSize:   processed.previewBuffer.length,
+      originalSize:  processed.originalSize,
+      width:         processed.width,
+      height:        processed.height,
+      format:        processed.format,
+      isRaw:         false,
+    },
   })
 
   return {
