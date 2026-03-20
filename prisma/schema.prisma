@@ -50,6 +50,18 @@ enum MessagePriority {
   URGENT /// red badge + immediate email regardless of user preferences
 }
 
+enum GalleryStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum GalleryFileType {
+  PHOTO
+  VIDEO
+}
+
 // ─────────────────────────────────────────────
 // Users & Auth
 // ─────────────────────────────────────────────
@@ -125,6 +137,10 @@ model User {
   // Self-initiated account deletion (24-hour grace period)
   pendingDeletionAt     DateTime? // when deletion was requested; null = no pending deletion
   pendingDeletionAction String?   // 'reassign' | 'archive' | 'trash'
+
+  // Gallery relations
+  galleriesCreated   PublicGallery[] @relation("GalleryCreatedBy")
+  galleriesPublished PublicGallery[] @relation("GalleryPublishedBy")
 }
 
 // ─────────────────────────────────────────────
@@ -209,6 +225,7 @@ model Event {
   activityLogs ActivityLog[]
   tags         Tag[]            @relation("EventTags")
   followers    FolderFollow[]
+  galleries    PublicGallery[]
 }
 
 /// e.g. Friday, Saturday, Sunday
@@ -252,6 +269,7 @@ model MediaFile {
   activityLogs ActivityLog[]
   trashItem    TrashItem?
   tags         Tag[]         @relation("MediaFileTags")
+  galleryFiles GalleryFile[]
 
   @@index([uploaderId])
   @@index([eventId])
@@ -732,4 +750,146 @@ model ShareLinkAccess {
 
   @@index([shareLinkId])
   @@index([accessedAt])
+}
+
+// ─────────────────────────────────────────────
+// Public Gallery System
+// ─────────────────────────────────────────────
+//
+// QUALITY CONTRACT:
+// Three separate R2 keys per file — original is NEVER modified.
+//   thumbnailKey  — small preview ~30KB for grid loading
+//   previewKey    — medium quality ~200KB for lightbox
+//   originalKey   — byte-for-byte identical to the source file
+
+model PublicGallery {
+  id                     String        @id @default(cuid())
+  slug                   String        @unique
+  title                  String
+  description            String?
+  coverImageKey          String?
+  eventId                String?
+  event                  Event?        @relation(fields: [eventId], references: [id])
+  categoryName           String?
+  year                   Int
+  status                 GalleryStatus @default(DRAFT)
+  createdById            String
+  createdBy              User          @relation("GalleryCreatedBy", fields: [createdById], references: [id])
+  publishedById          String?
+  publishedBy            User?         @relation("GalleryPublishedBy", fields: [publishedById], references: [id])
+  publishedAt            DateTime?
+  isPasswordProtected    Boolean       @default(false)
+  passwordHash           String?
+  allowDownload          Boolean       @default(true)
+  allowFullRes           Boolean       @default(true)
+  requireNameForDownload Boolean       @default(false)
+  totalPhotos            Int           @default(0)
+  totalVideos            Int           @default(0)
+  viewCount              Int           @default(0)
+  downloadCount          Int           @default(0)
+  r2Bucket               String        @default("christhood-gallery")
+  sections               GallerySection[]
+  files                  GalleryFile[]
+  views                  GalleryView[]
+  downloads              GalleryDownload[]
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  @@index([slug])
+  @@index([status])
+  @@index([year])
+  @@index([eventId])
+  @@index([createdById])
+}
+
+model GallerySection {
+  id        String       @id @default(cuid())
+  galleryId String
+  gallery   PublicGallery @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  title     String
+  date      DateTime?
+  sortOrder Int          @default(0)
+  coverKey  String?
+  photoCount Int         @default(0)
+  files     GalleryFile[]
+  createdAt DateTime     @default(now())
+
+  @@index([galleryId])
+}
+
+model GalleryFile {
+  id          String          @id @default(cuid())
+  galleryId   String
+  gallery     PublicGallery   @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  sectionId   String?
+  section     GallerySection? @relation(fields: [sectionId], references: [id])
+  mediaFileId String?
+  mediaFile   MediaFile?      @relation(fields: [mediaFileId], references: [id])
+
+  /// Small preview ~30KB for grid loading
+  thumbnailKey String
+  /// Medium quality ~200KB for lightbox
+  previewKey   String
+  /// ORIGINAL FILE: byte-for-byte identical to source — never modified
+  originalKey  String
+
+  originalName String
+  fileType     GalleryFileType
+  fileSize     BigInt
+  width        Int?            /// image width in pixels (for masonry layout)
+  height       Int?            /// image height in pixels (for masonry layout)
+  sortOrder    Int             @default(0)
+  isVisible    Boolean         @default(true)
+  downloads    GalleryDownload[]
+  faces        FaceEmbedding[]
+  createdAt    DateTime        @default(now())
+
+  @@index([galleryId])
+  @@index([sectionId])
+  @@index([mediaFileId])
+  @@index([fileType])
+}
+
+model GalleryView {
+  id         String       @id @default(cuid())
+  galleryId  String
+  gallery    PublicGallery @relation(fields: [galleryId], references: [id])
+  viewedAt   DateTime     @default(now())
+  /// MOBILE / DESKTOP / TABLET
+  deviceType String?
+  /// Derived from Cloudflare headers — raw IP is never stored
+  country    String?
+
+  @@index([galleryId])
+  @@index([viewedAt])
+}
+
+model GalleryDownload {
+  id           String       @id @default(cuid())
+  galleryId    String
+  gallery      PublicGallery @relation(fields: [galleryId], references: [id])
+  fileId       String?
+  file         GalleryFile? @relation(fields: [fileId], references: [id])
+  /// SINGLE / ALL_ZIP / SELECTION
+  downloadType String
+  /// Only populated if requireNameForDownload is true
+  visitorName  String?
+  downloadedAt DateTime     @default(now())
+  deviceType   String?
+
+  @@index([galleryId])
+  @@index([fileId])
+  @@index([downloadedAt])
+}
+
+model FaceEmbedding {
+  id          String      @id @default(cuid())
+  fileId      String
+  file        GalleryFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  faceIndex   Int
+  vector      Float[]
+  boundingBox Json
+  createdAt   DateTime    @default(now())
+
+  @@index([fileId])
 }
