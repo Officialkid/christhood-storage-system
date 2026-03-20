@@ -4,6 +4,7 @@ import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { deleteObject }              from '@/lib/r2'
 import { log }                       from '@/lib/activityLog'
+import { logger }                    from '@/lib/logger'
 
 // DELETE /api/admin/trash/[trashItemId]
 // ADMIN only — immediately purges a trashed file (deletes from R2 + removes DB records)
