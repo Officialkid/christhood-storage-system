@@ -7,6 +7,7 @@ import { log }                          from '@/lib/activityLog'
 import { createSHA256Transform }        from '@/lib/transferIntegrity'
 import archiver                         from 'archiver'
 import { PassThrough, Readable }        from 'stream'
+import { logger }                        from '@/lib/logger'
 
 // Binary formats — stored without recompression to preserve integrity
 const STORE_EXTENSIONS = new Set([
@@ -74,7 +75,7 @@ export async function GET(
         const url = await getPresignedDownloadUrl(file.r2Key, 900)
         const res = await fetch(url)
         if (!res.ok || !res.body) {
-          console.warn(`[transfer-zip] skipping ${file.originalName}: R2 fetch failed`)
+          logger.warn('TRANSFER_ZIP_SKIP', { route: '/api/transfers/download', transferId, message: `Skipping ${file.originalName}: R2 fetch failed` })
           continue
         }
         const rawStream  = Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0])
@@ -94,7 +95,7 @@ export async function GET(
               log('TRANSFER_INTEGRITY_FAILURE', userId, {
                 metadata: { transferId, fileId: capturedId, fileName: capturedName,
                             expected: storedHash, actual, source: 'zip-download' },
-              }).catch((e: unknown) => console.warn('[transfer-zip] integrity log failed:', e))
+              }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/download', transferId, error: (e as Error)?.message, message: 'Integrity log failed' }))
             }
           })
         }
@@ -110,7 +111,7 @@ export async function GET(
           archive.append(piped, { name: entryName })
         }
       } catch (err) {
-        console.warn(`[transfer-zip] error adding ${file.originalName}:`, err)
+        logger.warn('TRANSFER_ZIP_ERROR', { route: '/api/transfers/download', transferId, error: (err as Error)?.message, message: `Error adding ${file.originalName} to ZIP` })
       }
     }
     archive.finalize()
@@ -133,7 +134,7 @@ export async function GET(
     prisma.transfer.update({
       where: { id: transferId },
       data:  { status: 'DOWNLOADED' },
-    }).catch((e: unknown) => console.warn('[transfer-zip] status update failed:', e))
+    }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/download', transferId, error: (e as Error)?.message, message: 'Status update to DOWNLOADED failed' }))
   }
 
   // Activity log (non-blocking)
@@ -143,7 +144,7 @@ export async function GET(
       subject:   transfer.subject,
       fileCount: transfer.files.length,
     },
-  }).catch(e => console.warn('[transfer-zip] log failed:', e))
+  }).catch(e => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/download', transferId, error: (e as Error)?.message, message: 'Activity log failed' }))
 
   const senderLabel = transfer.sender.username ?? transfer.sender.name ?? 'transfer'
   const dateLabel   = new Date().toISOString().slice(0, 10).replace(/-/g, '')

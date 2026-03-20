@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt                        from 'bcryptjs'
 import { prisma }                    from '@/lib/prisma'
 import { getPresignedDownloadUrl }   from '@/lib/r2'
+import { logger }                    from '@/lib/logger'
 
 function extractIp(req: NextRequest): string {
   const fwd = req.headers.get('x-forwarded-for')
@@ -71,7 +72,7 @@ export async function GET(
   const userAgent = req.headers.get('user-agent') ?? 'unknown'
   prisma.shareLinkAccess.create({
     data: { shareLinkId: link.id, ipAddress: ip, userAgent, downloaded: false },
-  }).catch((e: unknown) => console.warn('[share/view] access log failed:', e))
+  }).catch((e: unknown) => logger.warn('SHARE_SIDE_EFFECT_FAILED', { route: '/api/share/[token]', error: (e as Error)?.message, message: 'Access log failed on share link view' }))
 
   // ── Resolve file list ──────────────────────────────────────────────────────
   const senderName = link.createdBy.username ?? link.createdBy.name ?? 'Admin'
@@ -186,7 +187,7 @@ export async function DELETE(
   const { log } = await import('@/lib/activityLog')
   log('SHARE_LINK_REVOKED', session.user.id, {
     metadata: { shareLinkId: link.id, title: link.title },
-  }).catch((e: unknown) => console.warn('[share] revoke log failed:', e))
+  }).catch((e: unknown) => logger.warn('SHARE_SIDE_EFFECT_FAILED', { route: '/api/share/[token]', error: (e as Error)?.message, message: 'Activity log failed after share link revocation' }))
 
   return NextResponse.json({ ok: true })
 }

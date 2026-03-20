@@ -19,6 +19,7 @@
 import { NextRequest }                from 'next/server'
 import { getToken }                   from 'next-auth/jwt'
 import { executePendingAction }       from '@/lib/assistant/tools/action-tools'
+import { logger }                     from '@/lib/logger'
 import type { AppRole }               from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
 
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error'
-        console.error('[/api/assistant/confirm]', msg)
+        logger.error('ZARA_ERROR', { route: '/api/assistant/confirm', error: msg, message: 'Error executing confirmed action' })
         send(JSON.stringify({ error: 'Something went wrong executing that action. Please try again.' }))
       } finally {
         send('[DONE]')

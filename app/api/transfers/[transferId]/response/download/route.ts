@@ -8,6 +8,7 @@ import { createSHA256Transform }        from '@/lib/transferIntegrity'
 import archiver                         from 'archiver'
 import { PassThrough, Readable }        from 'stream'
 import { format }                       from 'date-fns'
+import { logger }                       from '@/lib/logger'
 
 // Binary formats — stored without recompression to preserve zero-quality-loss guarantee
 const STORE_EXTENSIONS = new Set([
@@ -70,7 +71,7 @@ export async function GET(
         const url = await getPresignedDownloadUrl(file.r2Key, 900)
         const res = await fetch(url)
         if (!res.ok || !res.body) {
-          console.warn(`[response-zip] skipping ${file.originalName}: R2 fetch failed`)
+          logger.warn('RESPONSE_ZIP_SKIP', { route: '/api/transfers/response/download', transferId, message: `Skipping ${file.originalName}: R2 fetch failed` })
           continue
         }
         const rawStream = Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0])
@@ -90,7 +91,7 @@ export async function GET(
               log('TRANSFER_INTEGRITY_FAILURE', userId, {
                 metadata: { transferId, fileId: capturedId, fileName: capturedName,
                             expected: storedHash, actual, source: 'response-zip-download' },
-              }).catch((e: unknown) => console.warn('[response-zip] integrity log failed:', e))
+              }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/response/download', transferId, error: (e as Error)?.message, message: 'Integrity log failed' }))
             }
           })
         }
@@ -105,7 +106,7 @@ export async function GET(
           archive.append(piped, { name: entryName })
         }
       } catch (err) {
-        console.warn(`[response-zip] error adding ${file.originalName}:`, err)
+        logger.warn('RESPONSE_ZIP_ERROR', { route: '/api/transfers/response/download', transferId, error: (err as Error)?.message, message: `Error adding ${file.originalName} to response ZIP` })
       }
     }
     archive.finalize()
@@ -130,7 +131,7 @@ export async function GET(
     prisma.transferResponse.update({
       where: { id: transfer.response.id },
       data:  { downloadedByAdmin: true },
-    }).catch((e: unknown) => console.warn('[response-zip] downloadedByAdmin update failed:', e))
+    }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/response/download', transferId, error: (e as Error)?.message, message: 'downloadedByAdmin update failed' }))
   }
 
   // Activity log
@@ -140,7 +141,7 @@ export async function GET(
       subject:   transfer.subject,
       fileCount: transfer.response.files.length,
     },
-  }).catch((e: unknown) => console.warn('[response-zip] log failed:', e))
+  }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/response/download', transferId, error: (e as Error)?.message, message: 'Activity log failed' }))
 
   // ── Build filename: Subject_RESPONSE_YYYYMMDD.zip ─────────────────────────
   const safeSubject  = transfer.subject.replace(/[^a-zA-Z0-9_\-. ]/g, '').trim().replace(/\s+/g, '_').slice(0, 60)

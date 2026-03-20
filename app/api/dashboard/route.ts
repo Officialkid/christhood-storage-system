@@ -3,6 +3,7 @@ import { getToken }                  from 'next-auth/jwt'
 import { prisma }                    from '@/lib/prisma'
 import { getPresignedDownloadUrl }   from '@/lib/r2'
 import { thumbnailKey }              from '@/lib/thumbnail'
+import { logger }                    from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic'
 export async function GET(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
   if (!token?.id) {
-    console.warn('DASHBOARD_AUTH_FAIL: getToken returned null — check NEXTAUTH_SECRET env var.')
+    logger.warn('DASHBOARD_AUTH_FAIL', { route: '/api/dashboard', message: 'getToken returned null — check NEXTAUTH_SECRET env var' })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -22,9 +23,7 @@ export async function GET(req: NextRequest) {
   const isAdmin  = role === 'ADMIN'
   const isEditor = role === 'EDITOR'
 
-  // Diagnostic — confirm the request is reaching this route with the right identity.
-  // Visible in Cloud Console → Cloud Run → Logs; search "DASHBOARD_REQUEST".
-  console.log('DASHBOARD_REQUEST:', { userId, role, isAdmin, isEditor })
+  logger.info('DASHBOARD_REQUEST', { userId, userRole: role, route: '/api/dashboard', message: 'Dashboard data requested' })
 
   const now          = new Date()
   const weekAgo      = new Date(now.getTime() - 7  * 24 * 60 * 60 * 1000)
@@ -144,19 +143,7 @@ export async function GET(req: NextRequest) {
   // ── Storage summary ────────────────────────────────────────────────────────
   const storage = isAdmin ? buildStorageSummary(storageGroupsRaw) : null
 
-  // Diagnostic — confirm what the queries returned.
-  // Search "DASHBOARD_STATS" in Cloud Console → Cloud Run → Logs.
-  // If totalFiles / myTotal is 0 here, the DB query is the problem.
-  // If it's > 0 here but the UI shows 0, the component rendering is the problem.
-  const statsForLog = statsRaw as Record<string, unknown>
-  console.log('DASHBOARD_STATS:', {
-    userId,
-    role,
-    stats:               statsForLog,
-    recentUploadsCount:  recentUploads.length,
-    activityCount:       activityRaw.length,
-    upcomingEventsCount: upcomingEventsRaw.length,
-  })
+  logger.info('DASHBOARD_STATS', { userId, userRole: role, route: '/api/dashboard', message: 'Dashboard queries completed', metadata: { recentUploadsCount: recentUploads.length, activityCount: activityRaw.length, upcomingEventsCount: upcomingEventsRaw.length, stats: statsRaw as Record<string, unknown> } })
 
   return NextResponse.json({
     role,
@@ -171,14 +158,7 @@ export async function GET(req: NextRequest) {
 
   } catch (error: unknown) {
     const err = error as { message?: string; code?: string; stack?: string }
-    // Visible in Cloud Console → Cloud Run → Logs; search "DASHBOARD_ERROR".
-    console.error('DASHBOARD_ERROR:', {
-      userId,
-      role,
-      message: err?.message,
-      code:    err?.code,
-      stack:   err?.stack?.split('\n').slice(0, 4).join(' | '),
-    })
+    logger.error('DASHBOARD_ERROR', { userId, userRole: role, route: '/api/dashboard', error: err?.message, errorCode: err?.code, message: 'Failed to load dashboard data' })
     return NextResponse.json(
       { error: 'Failed to load dashboard data', detail: err?.message ?? 'Unknown error' },
       { status: 500 },
@@ -225,13 +205,7 @@ async function fetchStats(
       ? Math.round(((thisMonthUploads - lastMonthUploads) / lastMonthUploads) * 100)
       : null
 
-    // Verbose diagnostic — each value on its own line for easy grep.
-    // Search "DASHBOARD_STATS_ADMIN" in Cloud Run logs.
-    console.log('DASHBOARD_STATS_ADMIN:', {
-      totalFiles, weekUploads, pendingEdit,
-      activeToday: activeGroups.length,
-      thisMonthUploads, lastMonthUploads, monthChangePct,
-    })
+    logger.info('DASHBOARD_STATS_ADMIN', { userId, userRole: 'ADMIN', route: '/api/dashboard', message: 'Admin dashboard stats', metadata: { totalFiles, weekUploads, pendingEdit, activeToday: activeGroups.length, thisMonthUploads, lastMonthUploads, monthChangePct } })
 
     return {
       totalFiles,
@@ -254,7 +228,7 @@ async function fetchStats(
         },
       }),
     ])
-    console.log('DASHBOARD_STATS_EDITOR:', { filesToEdit, transfersWaiting, editedThisMonth: editActionsThisMonth })
+    logger.info('DASHBOARD_STATS_EDITOR', { userId, userRole: 'EDITOR', route: '/api/dashboard', message: 'Editor dashboard stats', metadata: { filesToEdit, transfersWaiting, editedThisMonth: editActionsThisMonth } })
     return { filesToEdit, transfersWaiting, editedThisMonth: editActionsThisMonth }
   }
 
@@ -268,7 +242,7 @@ async function fetchStats(
     }),
     prisma.event.count({ where: { mediaFiles: { some: { uploaderId: userId } } } }),
   ])
-  console.log('DASHBOARD_STATS_UPLOADER:', { userId, myTotal, myWeek, myEvents })
+    logger.info('DASHBOARD_STATS_UPLOADER', { userId, userRole: 'UPLOADER', route: '/api/dashboard', message: 'Uploader dashboard stats', metadata: { myTotal, myWeek, myEvents } })
   return { myTotal, myWeek, myEvents }
 }
 
@@ -313,7 +287,7 @@ async function fetchOnboardingStatus(userId: string) {
       totalCount:   5,
     }
   } catch (err) {
-    console.error('[fetchOnboardingStatus] failed:', err)
+    logger.error('DASHBOARD_ONBOARDING_ERROR', { route: '/api/dashboard', error: (err as Error)?.message, message: 'fetchOnboardingStatus failed' })
     return safeDefault
   }
 }

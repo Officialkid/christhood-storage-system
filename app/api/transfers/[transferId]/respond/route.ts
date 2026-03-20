@@ -7,6 +7,7 @@ import { deleteObject }                   from '@/lib/r2'
 import { log }                            from '@/lib/activityLog'
 import { createInAppNotification, sendPushToUser } from '@/lib/notifications'
 import { sendTransferRespondedEmail }     from '@/lib/email'
+import { logger }                         from '@/lib/logger'
 
 interface ResponseFilePayload {
   originalName: string
@@ -85,10 +86,7 @@ export async function POST(
   const totalBytes = files.reduce((s, f) => s + f.fileSize, 0)
   const r2Prefix   = `transfers/${transferId}/response/`
 
-  console.info(`[respond] transferId=${transferId}  files=${files.length}`)
-  for (const f of files) {
-    console.info(`[respond]   size=${f.fileSize}  checksum=${f.checksum}`)
-  }
+  logger.info('TRANSFER_RESPOND_STARTED', { userId: session.user.id, userRole: session.user.role as string, route: '/api/transfers/respond', transferId, message: `Recipient is submitting ${files.length} file(s) for transfer ${transferId}`, metadata: { fileCount: files.length } })
 
   // ── Atomic DB write ────────────────────────────────────────────────────────
   let responseId: string
@@ -121,7 +119,7 @@ export async function POST(
     ])
     responseId = response.id
   } catch (err) {
-    console.error('[respond] DB write failed — rolling back R2 uploads:', err)
+    logger.error('TRANSFER_RESPOND_FAILED', { userId: session.user.id, route: '/api/transfers/respond', transferId, error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'DB write failed — rolling back R2 uploads' })
     // Delete all uploaded objects so they don't orphan in R2
     await Promise.allSettled(files.map(f => deleteObject(f.r2Key)))
     return handleApiError(err, 'transfers/respond')
@@ -137,17 +135,17 @@ export async function POST(
 
   log('TRANSFER_RESPONDED', session.user.id, {
     metadata: { transferId, subject: transfer.subject, fileCount: files.length },
-  }).catch((e: unknown) => console.warn('[respond] log failed:', e))
+  }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/respond', transferId, error: (e as Error)?.message, message: '[respond] log failed' }))
 
   createInAppNotification(transfer.senderId, notifMsg, notifLink)
-    .catch((e: unknown) => console.warn('[respond] in-app notif failed:', e))
+    .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/respond', transferId, error: (e as Error)?.message, message: '[respond] in-app notif failed' }))
 
   sendPushToUser(transfer.senderId, 'TRANSFER_RESPONDED', {
     title: 'Response received',
     body:  notifMsg,
     url:   notifLink,
     tag:   `transfer-responded-${transferId}`,
-  }).catch((e: unknown) => console.warn('[respond] push failed:', e))
+  }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/respond', transferId, error: (e as Error)?.message, message: '[respond] push failed' }))
 
   if (senderEmail) {
     // Respect TRANSFER_RESPONDED email preference (default: send)
@@ -165,7 +163,7 @@ export async function POST(
         totalSize:     totalBytes,
         transferId,
       })
-    }).catch((e: unknown) => console.warn('[respond] email failed:', e))
+    }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/respond', transferId, error: (e as Error)?.message, message: '[respond] email failed' }))
   }
 
   return NextResponse.json({ success: true, responseId, totalFiles: files.length })

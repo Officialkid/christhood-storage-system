@@ -2,6 +2,7 @@ import { NextRequest }    from 'next/server'
 import { getToken }       from 'next-auth/jwt'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { buildSystemPrompt } from '@/lib/chatbotSystemPrompt'
+import { logger }            from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -186,7 +187,7 @@ export async function POST(req: NextRequest) {
 
         sendEvent('[DONE]')
       } catch (err) {
-        console.error('[/api/chat] Gemini stream error:', err)
+        logger.error('ZARA_ERROR', { route: '/api/chat', error: (err as Error)?.message, message: 'Gemini stream error' })
         sendEvent(
           JSON.stringify({
             error:

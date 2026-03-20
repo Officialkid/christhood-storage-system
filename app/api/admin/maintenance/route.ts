@@ -3,6 +3,7 @@ import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { SETTING_DEFAULTS }          from '@/lib/settingDefaults'
+import { logger }                    from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -353,7 +354,7 @@ export async function POST(req: NextRequest) {
 
         deleted++
       } catch (err) {
-        console.error(`[maintenance] process_pending_deletions: failed for user ${target.id}:`, err)
+        logger.error('MAINTENANCE_USER_DELETE_FAILED', { userId: adminId, userRole: 'ADMIN', route: '/api/admin/maintenance', error: (err as Error)?.message, metadata: { targetUserId: target.id }, message: 'process_pending_deletions: failed for user' })
       }
     }
 

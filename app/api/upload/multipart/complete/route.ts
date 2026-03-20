@@ -6,6 +6,7 @@ import { completeMultipartUpload }            from '@/lib/r2'
 import { prisma }                             from '@/lib/prisma'
 import { sanitizeFilename }                   from '@/lib/uploadNaming'
 import { notifyUploadInFollowedFolder }       from '@/lib/notifications'
+import { logger }                             from '@/lib/logger'
 
 /**
  * POST /api/upload/multipart/complete
@@ -185,6 +186,16 @@ export async function POST(req: NextRequest) {
       })
       .catch(() => {})
 
+    logger.info('FILE_UPLOADED', {
+      userId:   session.user.id,
+      userRole: session.user.role as string,
+      route:    '/api/upload/multipart/complete',
+      fileId:   mediaFile.id,
+      eventId,
+      message:  `${session.user.username ?? session.user.name ?? session.user.email} uploaded ${originalName}`,
+      metadata: { originalName, fileSize, fileType: resolvedType, mode: 'multipart-parallel' },
+    })
+
     return NextResponse.json({
       success:  true,
       mediaFile: {
@@ -196,6 +207,14 @@ export async function POST(req: NextRequest) {
       fileSize,
     })
   } catch (err: any) {
+    logger.error('FILE_UPLOAD_FAILED', {
+      userId:    session.user.id,
+      route:     '/api/upload/multipart/complete',
+      error:     err?.message,
+      errorCode: err?.code,
+      message:   `Multipart upload completion failed for ${originalName ?? 'unknown'}`,
+      metadata:  { originalName, fileSize, eventId, uploadId, key },
+    })
     return handleApiError(err, 'multipart/complete')
   }
 }

@@ -42,7 +42,7 @@ export async function DELETE(
       prisma.trashItem.delete({ where: { id: trashItemId } }),
     ])
   } catch (err) {
-    console.error('[DELETE /api/admin/trash/[trashItemId]] purge failed:', err)
+    logger.error('FILE_PURGE_FAILED', { userId: adminId, userRole: 'ADMIN', route: '/api/admin/trash/[trashItemId]', fileId: mediaFile.id, error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'Failed to permanently delete file' })
     return NextResponse.json(
       { error: 'Failed to permanently delete file. Please try again.' },
       { status: 500 },

@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { logActivity } from '@/lib/activityLog'
+import { logger }      from '@/lib/logger'
 
 /**
  * POST /api/hierarchy/subfolders
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
     await logActivity('SUBFOLDER_CREATED', session.user.id, { label }, eventId)
     return NextResponse.json({ subfolder }, { status: 201 })
   } catch (err) {
-    console.error('[hierarchy/subfolders POST]', err)
+    logger.error('SUBFOLDER_CREATE_FAILED', { userId: session.user.id, userRole: 'ADMIN', route: '/api/hierarchy/subfolders', error: (err as Error)?.message, message: 'Failed to create subfolder' })
     return handleApiError(err)
   }
 }

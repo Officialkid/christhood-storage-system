@@ -4,8 +4,7 @@ import { authOptions }                from '@/lib/auth'
 import { prisma }                     from '@/lib/prisma'
 import { getPresignedDownloadUrl }    from '@/lib/r2'
 import { computeSHA256 }              from '@/lib/transferIntegrity'
-import { log }                        from '@/lib/activityLog'
-
+import { log }                        from '@/lib/activityLog'import { logger }                       from '@/lib/logger'
 /**
  * GET /api/transfers/[transferId]/verify
  *
@@ -72,7 +71,7 @@ export async function GET(
       const url     = await getPresignedDownloadUrl(file.r2Key, 900)
       const res     = await fetch(url)
       if (!res.ok || !res.body) {
-        console.warn(`[verify] R2 fetch failed for ${file.originalName}`)
+        logger.warn('VERIFY_R2_FETCH_FAILED', { route: '/api/transfers/verify', transferId, message: `R2 fetch failed for ${file.originalName}` })
         return { id: file.id, originalName: file.originalName, pass: null }
       }
       const arrayBuf = await res.arrayBuffer()
@@ -80,7 +79,7 @@ export async function GET(
       const pass     = actual === file.checksum.toLowerCase()
       return { id: file.id, originalName: file.originalName, pass }
     } catch (err) {
-      console.error(`[verify] error verifying ${file.originalName}:`, err)
+      logger.error('VERIFY_ERROR', { route: '/api/transfers/verify', transferId, error: (err as Error)?.message, message: `Error verifying ${file.originalName}` })
       return { id: file.id, originalName: file.originalName, pass: null }
     }
   }
@@ -104,7 +103,7 @@ export async function GET(
         source:      'verify-endpoint',
         failedFiles: failures.map(f => ({ id: f.id, originalName: f.originalName })),
       },
-    }).catch((e: unknown) => console.warn('[verify] log failed:', e))
+    }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/verify', transferId, error: (e as Error)?.message, message: 'Integrity failure log failed' }))
   }
 
   const allPassed = allResults.every(r => r.pass === true || r.pass === null)

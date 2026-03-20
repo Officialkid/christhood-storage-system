@@ -3,7 +3,8 @@ import { getServerSession }          from 'next-auth'
 import bcrypt                        from 'bcryptjs'
 import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
-import { log }                       from '@/lib/activityLog'
+import { log }           from '@/lib/activityLog'
+import { logger }        from '@/lib/logger'
 
 /**
  * POST /api/share
@@ -115,7 +116,7 @@ export async function POST(req: NextRequest) {
 
   log('SHARE_LINK_CREATED', session.user.id, {
     metadata: { shareLinkId: link.id, linkType, title: link.title, expiresAt: expiresAt.toISOString() },
-  }).catch((e: unknown) => console.warn('[share] log failed:', e))
+  }).catch((e: unknown) => logger.warn('SHARE_SIDE_EFFECT_FAILED', { route: '/api/share', error: (e as Error)?.message, message: 'Activity log failed after share link creation' }))
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
   return NextResponse.json({

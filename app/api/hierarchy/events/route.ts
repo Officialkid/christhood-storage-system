@@ -4,6 +4,7 @@ import { getServerSession }           from 'next-auth'
 import { authOptions }                from '@/lib/auth'
 import { prisma }                     from '@/lib/prisma'
 import { logActivity }                from '@/lib/activityLog'
+import { logger }                     from '@/lib/logger'
 import { OFFICIAL_CATEGORY_NAMES, OTHER_CATEGORY_SENTINEL } from '@/lib/hierarchyConstants'
 import { notifyNewEventCreated }      from '@/lib/notifications'
 
@@ -131,7 +132,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ event }, { status: 201 })
   } catch (err) {
-    console.error('[hierarchy/events POST]', err)
+    logger.error('EVENT_CREATE_FAILED', { userId: session.user.id, userRole: 'ADMIN', route: '/api/hierarchy/events', error: (err as Error)?.message, message: 'Failed to create event' })
     return handleApiError(err)
   }
 }

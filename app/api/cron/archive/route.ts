@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma }                    from '@/lib/prisma'
-import { log }                       from '@/lib/activityLog'
-import { SETTING_DEFAULTS }          from '@/lib/settingDefaults'
+import { log }           from '@/lib/activityLog'
+import { logger }        from '@/lib/logger'
+import { SETTING_DEFAULTS } from '@/lib/settingDefaults'
 
 export const dynamic = 'force-dynamic'
 
@@ -91,7 +92,7 @@ export async function GET(req: NextRequest) {
 
       results.archived++
     } catch (err) {
-      console.error('[cron/archive] Failed to archive file', file.id, err)
+      logger.error('FILE_ARCHIVE_FAILED', { route: '/api/cron/archive', fileId: file.id, error: (err as Error)?.message, message: 'Failed to archive file during cron job' })
       results.errors++
     }
   }

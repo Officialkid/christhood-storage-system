@@ -3,6 +3,7 @@ import { handleApiError } from '@/lib/apiError'
 import crypto from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { sendPasswordResetEmail } from '@/lib/email'
+import { logger }                 from '@/lib/logger'
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (err) {
-    console.error('[forgot-password]', err)
+    logger.error('PASSWORD_RESET_FAILED', { route: '/api/auth/forgot-password', error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'Forgot password request failed' })
     return handleApiError(err)
   }
 }

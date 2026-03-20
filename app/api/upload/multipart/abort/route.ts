@@ -2,6 +2,7 @@ import { NextRequest, NextResponse }    from 'next/server'
 import { getServerSession }            from 'next-auth'
 import { authOptions }                 from '@/lib/auth'
 import { abortMultipartUpload }        from '@/lib/r2'
+import { logger }                      from '@/lib/logger'
 
 /**
  * POST /api/upload/multipart/abort
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
     await abortMultipartUpload(key, uploadId)
     return NextResponse.json({ success: true })
   } catch (err: any) {
-    console.error('[multipart/abort]', err)
+    logger.warn('FILE_UPLOAD_ABORTED', { route: '/api/upload/multipart/abort', error: err?.message, message: 'Abort multipart upload failed — R2 parts may still be pending' })
     // Even on error, return success — aborting a session that no longer
     // exists (e.g. already completed/expired) is not an error for the client.
     return NextResponse.json({ success: true })

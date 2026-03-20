@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { log } from '@/lib/activityLog'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
       pages: Math.max(1, Math.ceil(total / limit)),
     })
   } catch (err) {
-    console.error('[GET /api/admin/trash] query failed:', err)
+    logger.error('TRASH_QUERY_FAILED', { route: '/api/admin/trash', error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'Failed to load trash' })
     return NextResponse.json(
       { error: 'Failed to load trash. Please try again.' },
       { status: 500 },

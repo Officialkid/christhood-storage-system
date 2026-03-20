@@ -6,6 +6,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { sendAccountCreatedEmail } from '@/lib/email'
+import { logger }                  from '@/lib/logger'
 
 // ── GET /api/admin/users ── list all users ────────────────────
 export async function GET() {
@@ -91,11 +92,11 @@ export async function POST(req: NextRequest) {
     })
     // Non-fatal — email failure must not prevent account creation
     sendAccountCreatedEmail(user.email, user.username ?? user.email, user.role, setPasswordToken)
-      .catch(e => console.error('[admin/users] sendAccountCreatedEmail failed:', e))
+      .catch(e => logger.warn('ADMIN_USER_CREATE_SIDE_EFFECT_FAILED', { route: '/api/admin/users', error: (e as Error)?.message, message: 'sendAccountCreatedEmail failed' }))
 
     return NextResponse.json({ user }, { status: 201 })
   } catch (err) {
-    console.error('[admin/users POST]', err)
+    logger.error('USER_CREATED_FAILED', { route: '/api/admin/users', error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'Admin user creation failed' })
     return handleApiError(err)
   }
 }

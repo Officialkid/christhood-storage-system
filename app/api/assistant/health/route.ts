@@ -8,6 +8,7 @@
 // Result is cached in memory for 60 seconds to prevent Gemini ping spam.
 
 import { GoogleGenerativeAI, GoogleGenerativeAIFetchError } from '@google/generative-ai'
+import { logger }                                           from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -107,12 +108,7 @@ export async function GET() {
     const httpStatus = isFetchErr ? (err.status ?? 0) : 0
 
     // Structured log — visible in Cloud Console → Cloud Run → Logs
-    console.error('[/api/assistant/health] GEMINI_HEALTH_CHECK_FAILED:', {
-      errorType: (err as Error).constructor?.name ?? typeof err,
-      message:   (err as Error).message,
-      status:    isFetchErr ? err.status : undefined,
-      stack:     (err as Error).stack?.split('\n')[0],
-    })
+    logger.error('ZARA_ERROR', { route: '/api/assistant/health', error: (err as Error).message, errorCode: isFetchErr ? String(err.status) : undefined, message: 'GEMINI_HEALTH_CHECK_FAILED', metadata: { errorType: (err as Error).constructor?.name ?? typeof err, status: isFetchErr ? err.status : undefined } })
 
     // ── 401 / 403 — key rejected by Google ───────────────────────────────────
     if (isFetchErr && (httpStatus === 401 || httpStatus === 403)) {

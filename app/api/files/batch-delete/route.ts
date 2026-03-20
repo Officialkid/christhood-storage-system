@@ -3,6 +3,7 @@ import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { log }                       from '@/lib/activityLog'
+import { logger }                    from '@/lib/logger'
 
 // POST /api/files/batch-delete
 // Body: { fileIds: string[] }
@@ -100,7 +101,7 @@ export async function POST(req: NextRequest) {
 
       deleted.push({ id: file.id, purgesAt: scheduledPurge.toISOString() })
     } catch (err) {
-      console.error(`[POST /api/files/batch-delete] failed for file ${file.id}:`, err)
+      logger.error('FILE_DELETED_FAILED', { userId, userRole: role, route: '/api/files/batch-delete', fileId: file.id, error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'Batch delete transaction failed for file' })
       failed.push({ id: file.id, reason: 'Server error — please try again' })
     }
   }

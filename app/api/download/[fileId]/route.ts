@@ -4,6 +4,7 @@ import { authOptions }               from '@/lib/auth'
 import { getPresignedDownloadUrl }   from '@/lib/r2'
 import { canDownloadFile }           from '@/lib/downloadAuth'
 import { log }                       from '@/lib/activityLog'
+import { logger }                    from '@/lib/logger'
 
 const URL_EXPIRY_SECONDS = 15 * 60  // 15 minutes
 
@@ -42,7 +43,7 @@ export async function GET(
       fileName:     file.originalName,
       storedName:   file.storedName,
     },
-  }).catch((e: unknown) => console.warn('[download log]', e))
+  }).catch((e: unknown) => logger.warn('DOWNLOAD_SIDE_EFFECT_FAILED', { route: '/api/download/[fileId]', error: (e as Error)?.message, message: 'Activity log failed for file download' }))
 
   return NextResponse.json({ url, expiresIn: URL_EXPIRY_SECONDS })
 }

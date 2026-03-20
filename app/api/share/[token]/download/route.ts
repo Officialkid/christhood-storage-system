@@ -5,6 +5,7 @@ import { PassThrough, Readable }      from 'stream'
 import { prisma }                     from '@/lib/prisma'
 import { getPresignedDownloadUrl }    from '@/lib/r2'
 import { sanitizePath }               from '@/lib/sanitize'
+import { logger }                     from '@/lib/logger'
 
 // Binary formats — store without re-compression to preserve quality
 const STORE_EXTS = new Set([
@@ -137,7 +138,7 @@ export async function GET(
         const url = await getPresignedDownloadUrl(file.r2Key, 900)
         const res = await fetch(url)
         if (!res.ok || !res.body) {
-          console.warn(`[share-zip] skipping ${file.name}`)
+          logger.warn('SHARE_ZIP_SKIP', { route: '/api/share/[token]/download', metadata: { fileName: file.name }, message: 'Skipping file — fetch failed or no body' })
           continue
         }
         const stream = Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0])
@@ -146,7 +147,7 @@ export async function GET(
           : file.name
         archive.append(stream, { name: entryName, ...(store ? { store: true } : {}) })
       } catch (err) {
-        console.warn(`[share-zip] error adding ${file.name}:`, err)
+        logger.warn('SHARE_ZIP_ERROR', { route: '/api/share/[token]/download', error: (err as Error)?.message, metadata: { fileName: file.name }, message: 'Error adding file to ZIP' })
       }
     }
     archive.finalize()

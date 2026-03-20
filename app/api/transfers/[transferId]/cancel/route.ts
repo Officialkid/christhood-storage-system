@@ -5,6 +5,7 @@ import { prisma }                                from '@/lib/prisma'
 import { deleteObject }                          from '@/lib/r2'
 import { log }                                   from '@/lib/activityLog'
 import { createInAppNotification, sendPushToUser } from '@/lib/notifications'
+import { logger }                                   from '@/lib/logger'
 
 /**
  * PATCH /api/transfers/[transferId]/cancel
@@ -69,7 +70,7 @@ export async function PATCH(
   )
   const failed = results.filter(r => r.status === 'rejected').length
   if (failed > 0) {
-    console.warn(`[cancel] ${failed}/${transfer.files.length} R2 objects could not be deleted for transferId=${transferId}`)
+    logger.warn('TRANSFER_R2_CLEANUP_PARTIAL', { route: '/api/transfers/cancel', transferId, message: `${failed}/${transfer.files.length} R2 objects could not be deleted for transferId=${transferId}` })
   }
 
   // ── Side-effects (fire-and-forget) ─────────────────────────────────────────
@@ -84,19 +85,19 @@ export async function PATCH(
       subject:   transfer.subject,
       fileCount: transfer.files.length,
     },
-  }).catch((e: unknown) => console.warn('[cancel] log failed:', e))
+  .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/cancel', transferId, error: (e as Error)?.message, message: '[cancel] log failed' }))
 
   createInAppNotification(transfer.recipientId, notifMsg, notifLink)
-    .catch((e: unknown) => console.warn('[cancel] in-app notif failed:', e))
+    .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/cancel', transferId, error: (e as Error)?.message, message: '[cancel] in-app notif failed' }))
 
   sendPushToUser(transfer.recipientId, 'TRANSFER_CANCELLED', {
     title: 'Transfer cancelled',
     body:  notifMsg,
     url:   notifLink,
     tag:   `transfer-cancelled-${transferId}`,
-  }).catch((e: unknown) => console.warn('[cancel] push failed:', e))
+  }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/cancel', transferId, error: (e as Error)?.message, message: '[cancel] push failed' }))
 
-  console.info(`[cancel] transferId=${transferId}  cancelledBy=${session.user.id}  filesDeleted=${transfer.files.length - failed}/${transfer.files.length}`)
+  logger.info('TRANSFER_CANCELLED', { userId: session.user.id, userRole: role, route: '/api/transfers/cancel', transferId, message: `Transfer ${transferId} cancelled by ${session.user.id}: ${transfer.files.length - failed}/${transfer.files.length} R2 objects deleted` })
 
   return NextResponse.json({ success: true })
 }

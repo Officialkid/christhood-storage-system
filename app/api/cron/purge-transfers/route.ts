@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma }                    from '@prisma/client'
 import { prisma }                   from '@/lib/prisma'
 import { deleteObject }             from '@/lib/r2'
-import { log }                      from '@/lib/activityLog'
+import { log }    from '@/lib/activityLog'
+import { logger } from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -94,10 +95,7 @@ export async function GET(req: NextRequest) {
       } catch (err) {
         allR2Deleted = false
         r2ErrorCount++
-        console.error(
-          `[purge-transfers] R2 delete failed for key "${key}" on transfer ${transferId}:`,
-          err,
-        )
+        logger.error('PURGE_TRANSFER_R2_FAILED', { route: '/api/cron/purge-transfers', transferId, error: (err as Error)?.message, metadata: { r2Key: key }, message: 'R2 delete failed during transfer purge' })
         // Do NOT abort — continue deleting the remaining objects
       }
     }
@@ -144,10 +142,7 @@ export async function GET(req: NextRequest) {
 
       await prisma.$transaction(dbOps)
     } catch (dbErr) {
-      console.error(
-        `[purge-transfers] DB cleanup failed for transfer ${transferId}:`,
-        dbErr,
-      )
+      logger.error('PURGE_TRANSFER_DB_FAILED', { route: '/api/cron/purge-transfers', transferId, error: (dbErr as Error)?.message, message: 'DB cleanup failed during transfer purge' })
       skippedCount++
       skippedIds.push(transferId)
       continue
@@ -185,7 +180,7 @@ export async function GET(req: NextRequest) {
     skippedIds,
   }
 
-  console.log('[purge-transfers] completed:', JSON.stringify(summary))
+  logger.info('CRON_PURGE_TRANSFERS_COMPLETE', { route: '/api/cron/purge-transfers', message: 'Transfer purge cron completed', metadata: summary })
 
   return NextResponse.json(summary)
 }

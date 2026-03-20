@@ -3,6 +3,7 @@ import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { log }                       from '@/lib/activityLog'
+import { logger }                    from '@/lib/logger'
 
 // DELETE /api/files/[fileId]
 // Soft-deletes a file by moving it to Trash. Accessible by EDITOR and ADMIN.
@@ -86,7 +87,7 @@ export async function DELETE(
       return item.id
     })
   } catch (err) {
-    console.error('[DELETE /api/files/[fileId]] transaction failed:', err)
+    logger.error('FILE_DELETED_FAILED', { userId, userRole: role, route: '/api/files/[fileId]', fileId, error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'Transaction failed — could not move file to Trash' })
     return NextResponse.json(
       { error: 'Failed to move file to Trash. Please try again.' },
       { status: 500 },

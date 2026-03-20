@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { handleApiError } from '@/lib/apiError'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function POST(req: NextRequest) {
   try {
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (err) {
-    console.error('[reset-password]', err)
+    logger.error('PASSWORD_RESET_FAILED', { route: '/api/auth/reset-password', error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'Password reset failed' })
     return handleApiError(err)
   }
 }

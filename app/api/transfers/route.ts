@@ -7,6 +7,7 @@ import { deleteObject } from '@/lib/r2'
 import { log } from '@/lib/activityLog'
 import { createInAppNotification, sendPushToUser } from '@/lib/notifications'
 import { sendTransferReceivedEmail } from '@/lib/email'
+import { logger }                    from '@/lib/logger'
 
 const EXPIRY_DAYS = 60
 
@@ -67,12 +68,11 @@ export async function POST(req: NextRequest) {
   const totalBytes = incomingFiles.reduce((s, f) => s + f.fileSize, 0)
 
   // Log checksums for audit trail (server-side integrity record)
-  // Note: r2Keys are not logged here to avoid exposing internal storage paths.
-  console.info(`[transfer] NEW — id=${id}  files=${fileCount}`)
+  logger.info('TRANSFER_SENT', { userId: session.user.id, userRole: session.user.role as string, route: '/api/transfers', transferId: id, message: `Transfer ${id} initiated: ${fileCount} file(s) to recipient ${recipientId}`, metadata: { fileCount, totalBytes } })
   for (const f of incomingFiles) {
     const ext  = f.originalName.split('.').pop()?.toLowerCase() ?? ''
     const mode = STORE_EXTENSIONS.has(ext) ? 'STORE' : 'DEFLATE'
-    console.info(`[transfer]   checksum=${f.checksum}  mode=${mode}  size=${f.fileSize}`)
+    logger.debug('TRANSFER_FILE_CHECKSUM', { route: '/api/transfers', transferId: id, message: `checksum=${f.checksum}  mode=${mode}  size=${f.fileSize}` })
   }
 
   const expiresAt = new Date()
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
     transferId = transfer.id
   } catch (dbErr) {
     // DB write failed — purge all R2 objects the client already uploaded
-    console.error('[transfer] DB create failed — rolling back R2 objects:', dbErr)
+    logger.error('TRANSFER_SEND_FAILED', { userId: session.user.id, userRole: session.user.role as string, route: '/api/transfers', error: (dbErr as Error)?.message, errorCode: (dbErr as any)?.code, message: 'Transfer DB create failed — rolling back R2 objects' })
     await Promise.allSettled(incomingFiles.map(f => deleteObject(f.r2Key)))
     return handleApiError(dbErr, 'transfers/create')
   }

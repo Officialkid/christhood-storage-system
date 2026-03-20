@@ -5,6 +5,7 @@ import { authOptions }               from '@/lib/auth'
 import { getPresignedUploadUrl, createMultipartUpload } from '@/lib/r2'
 import { makeEventR2Key }            from '@/lib/uploadNaming'
 import { prisma }                    from '@/lib/prisma'
+import { logger }                    from '@/lib/logger'
 
 // Files below this threshold use a single presigned PUT; larger files use multipart.
 const MULTIPART_THRESHOLD = 5  * 1024 * 1024  //   5 MB
@@ -105,7 +106,7 @@ export async function POST(req: NextRequest) {
       })
     }
   } catch (err: any) {
-    console.error('[presign]', err)
+    logger.error('PRESIGN_FAILED', { route: '/api/upload/presign', error: err?.message, errorCode: err?.code, message: 'Failed to generate presigned upload URL' })
     return handleApiError(err)
   }
 }

@@ -3,6 +3,7 @@ import { handleApiError } from '@/lib/apiError'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { sendWelcomeEmail } from '@/lib/email'
+import { logger }           from '@/lib/logger'
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,11 +67,11 @@ export async function POST(req: NextRequest) {
 
     // Non-fatal welcome email
     sendWelcomeEmail(user.email, user.username ?? user.email)
-      .catch(e => console.error('[register] sendWelcomeEmail failed:', e))
+      .catch(e => logger.warn('REGISTER_SIDE_EFFECT_FAILED', { route: '/api/auth/register', error: (e as Error)?.message, message: 'sendWelcomeEmail failed' }))
 
     return NextResponse.json({ user }, { status: 201 })
   } catch (err) {
-    console.error('[register]', err)
+    logger.error('USER_CREATED_FAILED', { route: '/api/auth/register', error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'User registration failed' })
     return handleApiError(err)
   }
 }

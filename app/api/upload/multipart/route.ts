@@ -11,6 +11,7 @@ import { prisma }                       from '@/lib/prisma'
 import { sanitizeFilename }             from '@/lib/uploadNaming'
 import { generateAndStoreThumbnail }    from '@/lib/thumbnail'
 import { notifyUploadInFollowedFolder } from '@/lib/notifications'
+import { logger }                        from '@/lib/logger'
 
 /**
  * POST /api/upload/multipart
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
       const url = await getPresignedPartUrl(r2Key, uploadId, partNumber)
       return NextResponse.json({ url })
     } catch (err: any) {
-      console.error('[multipart part]', err)
+      logger.error('FILE_UPLOAD_FAILED', { route: '/api/upload/multipart', error: err?.message, errorCode: err?.code, message: 'Presigned part URL failed' })
       return handleApiError(err)
     }
   }
@@ -142,7 +143,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({ mediaFile: { ...mediaFile, fileSize: mediaFile.fileSize.toString() } })
     } catch (err: any) {
-      console.error('[multipart complete]', err)
+      logger.error('FILE_UPLOAD_FAILED', { route: '/api/upload/multipart', error: err?.message, errorCode: err?.code, message: 'Multipart complete failed' })
       // Attempt to abort to avoid orphaned partial uploads
       try { await abortMultipartUpload(r2Key, uploadId) } catch {}
       return handleApiError(err)
@@ -159,7 +160,7 @@ export async function POST(req: NextRequest) {
       await abortMultipartUpload(r2Key, uploadId)
       return NextResponse.json({ ok: true })
     } catch (err: any) {
-      console.error('[multipart abort]', err)
+      logger.warn('FILE_UPLOAD_ABORTED', { route: '/api/upload/multipart', error: err?.message, message: 'Multipart abort failed — upload may still be active in R2' })
       return handleApiError(err)
     }
   }

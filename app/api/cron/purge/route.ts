@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { deleteObject } from '@/lib/r2'
 import { log } from '@/lib/activityLog'
+import { logger } from '@/lib/logger'
 import { sendAdminPurgeAlert, type PurgedFileInfo } from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
@@ -88,12 +89,12 @@ export async function GET(req: NextRequest) {
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[purge] Failed to purge file ${mediaFile.id}:`, msg)
+      logger.error('FILE_PURGE_FAILED', { route: '/api/cron/purge', fileId: mediaFile.id, error: msg, message: 'Cron purge failed for file' })
       results.failed.push({ fileId: mediaFile.id, error: msg })
     }
   }
 
-  console.log(`[purge] ${now.toISOString()} — purged ${results.purged.length}, failed ${results.failed.length}`)
+  logger.info('CRON_PURGE_COMPLETE', { route: '/api/cron/purge', message: `Purged ${results.purged.length} file(s), failed ${results.failed.length}`, metadata: { purged: results.purged.length, failed: results.failed.length, ranAt: now.toISOString() } })
 
   // ── Email all admins a purge summary (non-fatal) ─────────────────────────
   if (purgedFileInfo.length > 0) {
@@ -105,7 +106,7 @@ export async function GET(req: NextRequest) {
       const adminEmails = admins.map(a => a.email)
       await sendAdminPurgeAlert(adminEmails, purgedFileInfo, now)
     } catch (err) {
-      console.error('[purge] sendAdminPurgeAlert failed:', err)
+      logger.warn('PURGE_SIDE_EFFECT_FAILED', { route: '/api/cron/purge', error: (err as Error)?.message, message: 'sendAdminPurgeAlert failed' })
     }
   }
 
@@ -117,10 +118,10 @@ export async function GET(req: NextRequest) {
     })
     expiredLogsCount = expiredLogs.count
     if (expiredLogsCount > 0) {
-      console.log(`[purge] deleted ${expiredLogsCount} expired ZaraConversationLog record(s)`)
+      logger.info('ZARA_LOG_RETENTION_PURGE', { route: '/api/cron/purge', message: `Deleted ${expiredLogsCount} expired ZaraConversationLog record(s)`, metadata: { count: expiredLogsCount } })
     }
   } catch (err) {
-    console.error('[purge] ZaraConversationLog retention purge failed:', err)
+    logger.warn('PURGE_SIDE_EFFECT_FAILED', { route: '/api/cron/purge', error: (err as Error)?.message, message: 'ZaraConversationLog retention purge failed' })
   }
 
   return NextResponse.json({

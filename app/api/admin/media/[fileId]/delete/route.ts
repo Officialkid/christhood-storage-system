@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { log } from '@/lib/activityLog'
+import { logger } from '@/lib/logger'
 
 // POST /api/admin/media/[fileId]/delete
 // ADMIN only — moves a file to Trash (soft delete)
@@ -55,7 +56,7 @@ export async function POST(
       }),
     ])
   } catch (err) {
-    console.error('[POST /api/admin/media/[fileId]/delete] transaction failed:', err)
+    logger.error('FILE_DELETED_FAILED', { userId: adminId, userRole: 'ADMIN', route: '/api/admin/media/[fileId]/delete', fileId, error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'Transaction failed — could not move file to Trash' })
     return NextResponse.json(
       { error: 'Failed to move file to Trash. Please try again.' },
       { status: 500 },

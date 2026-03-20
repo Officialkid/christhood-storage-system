@@ -5,6 +5,7 @@ import { prisma }                                from '@/lib/prisma'
 import { log }                                   from '@/lib/activityLog'
 import { createInAppNotification, sendPushToUser } from '@/lib/notifications'
 import { sendTransferCompletedEmail }            from '@/lib/email'
+import { logger }                                from '@/lib/logger'
 
 /**
  * PATCH /api/transfers/[transferId]/complete
@@ -73,17 +74,17 @@ export async function PATCH(
 
   log('TRANSFER_COMPLETED', session.user.id, {
     metadata: { transferId, subject: transfer.subject },
-  }).catch((e: unknown) => console.warn('[complete] log failed:', e))
+  }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/complete', transferId, error: (e as Error)?.message, message: '[complete] log failed' }))
 
   createInAppNotification(transfer.recipientId, notifMsg, notifLink)
-    .catch((e: unknown) => console.warn('[complete] in-app notif failed:', e))
+    .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/complete', transferId, error: (e as Error)?.message, message: '[complete] in-app notif failed' }))
 
   sendPushToUser(transfer.recipientId, 'TRANSFER_COMPLETED', {
     title: 'Transfer completed',
     body:  notifMsg,
     url:   notifLink,
     tag:   `transfer-completed-${transferId}`,
-  }).catch((e: unknown) => console.warn('[complete] push failed:', e))
+  }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/complete', transferId, error: (e as Error)?.message, message: '[complete] push failed' }))
 
   // Email the recipient if they have a TRANSFER_COMPLETED email preference (default: send)
   if (transfer.recipient.email) {
@@ -99,10 +100,10 @@ export async function PATCH(
         subject:    transfer.subject,
         transferId,
       })
-    }).catch((e: unknown) => console.warn('[complete] email failed:', e))
+    }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/complete', transferId, error: (e as Error)?.message, message: '[complete] email failed' }))
   }
 
-  console.info(`[complete] transferId=${transferId}  completedBy=${session.user.id}  recipient=${recipientName}`)
+  logger.info('TRANSFER_COMPLETED', { userId: session.user.id, userRole: session.user.role as string, route: '/api/transfers/complete', transferId, message: `Transfer ${transferId} completed by ${session.user.id} for recipient ${recipientName}` })
 
   return NextResponse.json({ success: true })
 }

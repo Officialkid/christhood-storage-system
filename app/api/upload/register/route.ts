@@ -5,6 +5,7 @@ import { authOptions }                       from '@/lib/auth'
 import { prisma }                            from '@/lib/prisma'
 import { sanitizeFilename }                  from '@/lib/uploadNaming'
 import { notifyUploadInFollowedFolder }      from '@/lib/notifications'
+import { logger }                            from '@/lib/logger'
 
 
 /**
@@ -167,12 +168,29 @@ export async function POST(req: NextRequest) {
       })
       .catch(() => {})
 
+    logger.info('FILE_UPLOADED', {
+      userId:   session.user.id,
+      userRole: session.user.role as string,
+      route:    '/api/upload/register',
+      fileId:   mediaFile.id,
+      eventId,
+      message:  `${session.user.username ?? session.user.name ?? session.user.email} uploaded ${originalName}`,
+      metadata: { originalName, fileSize, fileType, mode: 'simple' },
+    })
+
     return NextResponse.json(
       { mediaFile: { ...mediaFile, fileSize: mediaFile.fileSize.toString() } },
       { status: 201 },
     )
   } catch (err: any) {
-    console.error('[register]', err)
+    logger.error('FILE_UPLOAD_FAILED', {
+      userId:    session.user.id,
+      route:     '/api/upload/register',
+      error:     err?.message,
+      errorCode: err?.code,
+      message:   `Upload registration failed for ${originalName ?? 'unknown'}`,
+      metadata:  { originalName, fileSize, r2Key, eventId },
+    })
     return handleApiError(err)
   }
 }

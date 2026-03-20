@@ -5,6 +5,7 @@ import { canBatchDownload }          from '@/lib/downloadAuth'
 import { getPresignedDownloadUrl }   from '@/lib/r2'
 import { prisma }                    from '@/lib/prisma'
 import { log }                       from '@/lib/activityLog'
+import { logger }                    from '@/lib/logger'
 import archiver                      from 'archiver'
 import { PassThrough, Readable }     from 'stream'
 
@@ -76,14 +77,14 @@ export async function POST(req: NextRequest) {
         const url = await getPresignedDownloadUrl(file.r2Key, 900) // 15-min URL per file
         const res = await fetch(url)
         if (!res.ok || !res.body) {
-          console.warn(`[batch-zip] skipping ${file.originalName}: R2 fetch failed`)
+          logger.warn('BATCH_ZIP_SKIP', { route: '/api/download/batch', eventId, message: `Skipping ${file.originalName}: R2 fetch failed` })
           continue
         }
         // Convert the Web ReadableStream returned by fetch into a Node.js Readable
         const nodeStream = Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0])
         archive.append(nodeStream, { name: file.originalName })
       } catch (err) {
-        console.warn(`[batch-zip] error adding ${file.originalName}:`, err)
+        logger.warn('BATCH_ZIP_ERROR', { route: '/api/download/batch', eventId, error: (err as Error)?.message, message: `Error adding ${file.originalName} to batch ZIP` })
       }
     }
     archive.finalize()
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
       subfolderId: subfolderId ?? null,
       eventName:   event.name,
     },
-  }).catch((e: unknown) => console.warn('[batch-zip log]', e))
+  }).catch((e: unknown) => logger.warn('DOWNLOAD_SIDE_EFFECT_FAILED', { route: '/api/download/batch', eventId, error: (e as Error)?.message, message: 'Activity log failed for batch download' }))
 
   // Derive a clean filename for the ZIP
   const label = event.name.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 50)

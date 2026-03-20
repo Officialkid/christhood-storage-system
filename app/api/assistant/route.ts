@@ -18,7 +18,8 @@ import { actionToolDeclarations, executeActionTool } from '@/lib/assistant/tools
 import { recordToolCall } from '@/lib/assistant/tool-telemetry'
 import { getActionWarning } from '@/lib/assistant/safety/action-classifier'
 import { logConversationExchange } from '@/lib/assistant/logging/conversation-logger'
-import type { AppRole } from '@/types'
+import { logger }                  from '@/lib/logger'
+import type { AppRole }            from '@/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -451,11 +452,7 @@ export async function POST(req: NextRequest) {
         if (err instanceof GoogleGenerativeAIFetchError) {
           const status = err.status ?? 0
 
-          console.error('[/api/assistant] GEMINI_FETCH_ERROR:', {
-            status,
-            message: err.message,
-            errorType: err.constructor?.name,
-          })
+          logger.error('ZARA_ERROR', { userId, userRole, route: '/api/assistant', error: err.message, errorCode: String(status), message: 'GEMINI_FETCH_ERROR', metadata: { status, errorType: err.constructor?.name } })
 
           if (status === 401 || status === 403) {
             sendError("The assistant isn't configured correctly. Please contact your admin.", 'AUTH_ERROR')
@@ -486,7 +483,7 @@ export async function POST(req: NextRequest) {
 
         // ── Gemini response errors (safety block thrown as exception) ─────────
         } else if (err instanceof GoogleGenerativeAIResponseError) {
-          console.error('[/api/assistant] GEMINI_RESPONSE_ERROR:', { message: err.message })
+          logger.error('ZARA_ERROR', { userId, userRole, route: '/api/assistant', error: err.message, message: 'GEMINI_RESPONSE_ERROR' })
           sendError("I wasn't able to respond to that one. Try rephrasing your question!", 'SAFETY_FILTER')
 
         // ── Network / fetch-level errors not wrapped by the SDK ───────────────
@@ -497,15 +494,12 @@ export async function POST(req: NextRequest) {
            err.message.includes('ENOTFOUND') ||
            err.name === 'FetchError')
         ) {
-          console.error('[/api/assistant] GEMINI_NETWORK_ERROR:', { message: err.message, name: err.name })
+          logger.error('ZARA_ERROR', { userId, userRole, route: '/api/assistant', error: err.message, message: 'GEMINI_NETWORK_ERROR', metadata: { name: err.name } })
           sendError("I'm having trouble connecting right now. Please try again in a moment.", 'NETWORK_ERROR')
 
         // ── Anything else ─────────────────────────────────────────────────────
         } else {
-          console.error('[/api/assistant] GEMINI_UNKNOWN_ERROR:', {
-            errorType: (err as Error).constructor?.name ?? typeof err,
-            message:   (err as Error).message,
-          })
+          logger.error('ZARA_ERROR', { userId, userRole, route: '/api/assistant', error: (err as Error).message, message: 'GEMINI_UNKNOWN_ERROR', metadata: { errorType: (err as Error).constructor?.name ?? typeof err } })
           sendError("Something went wrong on my end. Please try again — and if it keeps happening, let your admin know.", 'UNKNOWN')
         }
 
