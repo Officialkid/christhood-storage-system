@@ -5,7 +5,7 @@ import { useState } from 'react'
 import {
   Send,
   Clock, CheckCircle2, RefreshCcw, Archive, AlertCircle,
-  User2, Bell, Download,
+  User2, Bell, Download, Lock,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -32,16 +32,17 @@ interface ResponseSummary {
 }
 
 export interface SentTransferItem {
-  id:         string
-  subject:    string
-  message:    string | null
-  status:     TransferStatus
-  totalFiles: number
-  totalSize:  number
-  expiresAt:  string
-  createdAt:  string
-  recipient:  RecipientInfo
-  response:   ResponseSummary | null
+  id:             string
+  subject:        string
+  message:        string | null
+  status:         TransferStatus
+  totalFiles:     number
+  totalSize:      number
+  expiresAt:      string
+  createdAt:      string
+  isPinProtected: boolean
+  recipient:      RecipientInfo
+  response:       ResponseSummary | null
 }
 
 interface Props {
@@ -118,7 +119,12 @@ function SentTransferCard({ transfer }: { transfer: SentTransferItem }) {
 
         <div className="min-w-0 flex-1 pr-4">
           <div className="flex items-center justify-between gap-2 mb-0.5">
-            <span className="text-sm font-semibold text-slate-200 truncate">{transfer.subject}</span>
+            <span className="text-sm font-semibold text-slate-200 truncate">
+              {transfer.isPinProtected && (
+                <Lock className="inline w-3 h-3 text-amber-400 mr-1 -mt-0.5" />
+              )}
+              {transfer.subject}
+            </span>
             <span className="text-xs text-slate-500 shrink-0">
               {formatDistanceToNow(new Date(transfer.createdAt), { addSuffix: true })}
             </span>

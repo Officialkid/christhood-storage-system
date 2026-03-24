@@ -9,10 +9,8 @@ import { log } from '@/lib/activityLog'
  * Returns current tags for an event.
  * Access: any authenticated user.
  */
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { eventId: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ eventId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -32,10 +30,8 @@ export async function GET(
  * Replaces the complete set of tags on an event.
  * Access: EDITOR and ADMIN only.
  */
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { eventId: string } }
-) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ eventId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

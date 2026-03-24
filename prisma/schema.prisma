@@ -55,6 +55,8 @@ enum GalleryStatus {
   PENDING_REVIEW
   PUBLISHED
   ARCHIVED
+  DELETED
+  PURGED
 }
 
 enum GalleryFileType {
@@ -141,6 +143,7 @@ model User {
   // Gallery relations
   galleriesCreated   PublicGallery[] @relation("GalleryCreatedBy")
   galleriesPublished PublicGallery[] @relation("GalleryPublishedBy")
+  galleriesDeleted   PublicGallery[] @relation("GalleryDeletedBy")
 }
 
 // ─────────────────────────────────────────────
@@ -451,6 +454,8 @@ model Transfer {
   r2Prefix        String /// R2 path prefix, e.g. "transfers/[transferId]/"
   totalFiles      Int
   totalSize       BigInt /// total bytes of all files combined
+  isPinProtected  Boolean        @default(false) /// recipient must enter PIN before downloading
+  pin             String?        /// bcrypt hash of 4–6 digit PIN; null = no PIN
   expiresAt       DateTime /// 30 days after COMPLETED, or 60 days after createdAt if never completed
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -721,8 +726,9 @@ model ShareLink {
   transferId   String?  /// FK → Transfer   (linkType = TRANSFER)
   title        String
   message      String?
-  pinHash      String?  /// bcrypt hash of 4-digit PIN; null = no PIN required
-  maxDownloads Int?     /// null = unlimited
+  pinHash        String?  /// bcrypt hash of 4-digit PIN; null = no PIN required
+  isPinProtected Boolean  @default(false) /// true when pinHash is set
+  maxDownloads   Int?     /// null = unlimited
   downloadCount Int     @default(0)
   expiresAt    DateTime
   isRevoked    Boolean  @default(false)
@@ -792,14 +798,21 @@ model PublicGallery {
   files                  GalleryFile[]
   views                  GalleryView[]
   downloads              GalleryDownload[]
-  createdAt              DateTime      @default(now())
-  updatedAt              DateTime      @updatedAt
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  deletedAt              DateTime?
+  deletedById            String?
+  deletedBy              User?          @relation("GalleryDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  purgesAt               DateTime?
+  preDeleteStatus        GalleryStatus?
 
   @@index([slug])
   @@index([status])
   @@index([year])
   @@index([eventId])
   @@index([createdById])
+  @@index([deletedAt])
+  @@index([purgesAt])
 }
 
 model GallerySection {

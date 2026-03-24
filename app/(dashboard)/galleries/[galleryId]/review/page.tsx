@@ -7,9 +7,10 @@ import { ReviewClient }     from './ReviewClient'
 
 export const dynamic = 'force-dynamic'
 
-interface Props { params: { galleryId: string } }
+interface Props { params: Promise<{ galleryId: string }> }
 
-export default async function GalleryReviewPage({ params }: Props) {
+export default async function GalleryReviewPage(props: Props) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session?.user) redirect('/login')
 

@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/purge-transfers",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/purge-galleries",
+      "schedule": "0 3 * * *"
     }
   ],
   "headers": [

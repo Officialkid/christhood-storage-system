@@ -35,11 +35,11 @@ function fmtBytes(bytes: string) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 interface PageProps {
-  searchParams: {
+  searchParams: Promise<{
     q?: string; year?: string; categoryId?: string; eventId?: string
     fileType?: string; uploaderId?: string; status?: string; tags?: string
     dateFrom?: string; dateTo?: string; sort?: string; page?: string
-  }
+  }>
 }
 
 const VALID_FILE_TYPE = ['PHOTO', 'VIDEO'] as const
@@ -47,7 +47,8 @@ const VALID_SORT      = ['newest', 'oldest', 'name', 'size'] as const
 const VALID_STATUS    = ['RAW','EDITING_IN_PROGRESS','EDITED','PUBLISHED','ARCHIVED','DELETED'] as const
 const LIMIT = 24
 
-export default async function SearchPage({ searchParams: sp }: PageProps) {
+export default async function SearchPage(props: PageProps) {
+  const sp = await props.searchParams;
   const session = await getServerSession(authOptions)
   if (!session?.user) redirect('/login')
   const isAdmin = session.user.role === 'ADMIN'
@@ -124,10 +125,8 @@ export default async function SearchPage({ searchParams: sp }: PageProps) {
           Search across all files, events, and tags in the system.
         </p>
       </div>
-
       {/* Filter panel */}
       <SearchFilters options={filterOptions} isAdmin={isAdmin} />
-
       {/* Results */}
       {!hasFilters ? (
         <div className="flex flex-col items-center justify-center py-24 text-slate-600">
@@ -167,11 +166,11 @@ export default async function SearchPage({ searchParams: sp }: PageProps) {
                     <div className="aspect-square bg-slate-800 relative overflow-hidden">
                       {f.thumbnailUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        (<img
                           src={f.thumbnailUrl}
                           alt={f.originalName}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
+                        />)
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           {f.fileType === 'VIDEO'
@@ -283,7 +282,7 @@ export default async function SearchPage({ searchParams: sp }: PageProps) {
         </>
       )}
     </div>
-  )
+  );
 }
 
 // ── Query helper (separated for clarity) ─────────────────────────────────────

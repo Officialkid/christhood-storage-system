@@ -25,10 +25,8 @@ const EDITOR_STATUSES = new Set(['RAW', 'EDITING_IN_PROGRESS', 'EDITED', 'PUBLIS
 const ADMIN_STATUSES  = new Set(['RAW', 'EDITING_IN_PROGRESS', 'EDITED', 'PUBLISHED', 'ARCHIVED'])
 const LOCKED_STATUSES = new Set(['DELETED', 'PURGED'])
 
-export async function PATCH(
-  req:     NextRequest,
-  { params }: { params: { fileId: string } }
-) {
+export async function PATCH(req:     NextRequest, props: { params: Promise<{ fileId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

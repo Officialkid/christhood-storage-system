@@ -6,10 +6,8 @@ import { prisma } from '@/lib/prisma'
 import { logActivity } from '@/lib/activityLog'
 
 // ── GET /api/hierarchy/events/[id] ─────────────────────────────
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -30,10 +28,8 @@ export async function GET(
 }
 
 // ── PATCH /api/hierarchy/events/[id] ─ rename / re-date ────────
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (session?.user?.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -63,10 +59,8 @@ export async function PATCH(
 }
 
 // ── DELETE /api/hierarchy/events/[id] ──────────────────────────
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (session?.user?.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

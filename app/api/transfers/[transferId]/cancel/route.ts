@@ -92,10 +92,12 @@ export async function PATCH(
     .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/cancel', transferId, error: (e as Error)?.message, message: '[cancel] in-app notif failed' }))
 
   sendPushToUser(transfer.recipientId, 'TRANSFER_CANCELLED', {
-    title: 'Transfer cancelled',
-    body:  notifMsg,
-    url:   notifLink,
-    tag:   `transfer-cancelled-${transferId}`,
+    title:   '❌ Transfer Cancelled',
+    body:    notifMsg,
+    url:     notifLink,
+    tag:     `transfer-cancelled-${transferId}`,
+    type:    'TRANSFER_CANCELLED',
+    payload: { transferId, senderName, subject: transfer.subject },
   }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/cancel', transferId, error: (e as Error)?.message, message: '[cancel] push failed' }))
 
   logger.info('TRANSFER_CANCELLED', { userId: session.user.id, userRole: role, route: '/api/transfers/cancel', transferId, message: `Transfer ${transferId} cancelled by ${session.user.id}: ${transfer.files.length - failed}/${transfer.files.length} R2 objects deleted` })

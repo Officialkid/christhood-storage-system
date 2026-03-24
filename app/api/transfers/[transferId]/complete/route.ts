@@ -80,10 +80,12 @@ export async function PATCH(
     .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/complete', transferId, error: (e as Error)?.message, message: '[complete] in-app notif failed' }))
 
   sendPushToUser(transfer.recipientId, 'TRANSFER_COMPLETED', {
-    title: 'Transfer completed',
-    body:  notifMsg,
-    url:   notifLink,
-    tag:   `transfer-completed-${transferId}`,
+    title:   '🎉 Transfer Completed',
+    body:    notifMsg,
+    url:     notifLink,
+    tag:     `transfer-completed-${transferId}`,
+    type:    'TRANSFER_COMPLETED',
+    payload: { transferId, subject: transfer.subject },
   }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/complete', transferId, error: (e as Error)?.message, message: '[complete] push failed' }))
 
   // Email the recipient if they have a TRANSFER_COMPLETED email preference (default: send)

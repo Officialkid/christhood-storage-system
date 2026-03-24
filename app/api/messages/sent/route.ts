@@ -5,14 +5,14 @@ import { prisma }                    from '@/lib/prisma'
 
 /**
  * GET /api/messages/sent
- * Admin-only. Returns all messages sent by the current user, with read-receipt
- * summary counts (readCount, totalCount) per message.
+ * All authenticated users. Returns all messages sent by the current user, with
+ * read-receipt summary counts (readCount, totalCount) per message.
  * Sorted newest-first.
  */
 export async function GET(_req: NextRequest) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 
   const messages = await prisma.message.findMany({

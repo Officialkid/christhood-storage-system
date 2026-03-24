@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-export async function POST(
-  req:     NextRequest,
-  { params }: { params: { galleryId: string } },
-) {
+export async function POST(req:     NextRequest, props: { params: Promise<{ galleryId: string }> }) {
+  const params = await props.params;
   const { galleryId } = params
 
   let deviceType: string = 'DESKTOP'

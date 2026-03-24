@@ -346,7 +346,7 @@ export function MessageInbox({ className }: { className?: string }) {
               </div>
               <p className="text-sm font-medium text-slate-400 mb-1">No messages yet</p>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Messages from your admin will appear here.
+                Messages from your team will appear here.
               </p>
             </div>
           )}

@@ -4,8 +4,9 @@ import { getGalleryPublicUrl } from '@/lib/gallery/gallery-r2'
 
 export async function GET(
   req:     NextRequest,
-  { params }: { params: { galleryId: string; fileId: string } },
+  props: { params: Promise<{ galleryId: string; fileId: string }> }
 ) {
+  const params = await props.params;
   const { galleryId, fileId } = params
 
   // Load gallery + file together

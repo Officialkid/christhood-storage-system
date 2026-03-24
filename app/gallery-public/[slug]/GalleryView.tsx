@@ -6,7 +6,7 @@ import {
 import { useRouter } from 'next/navigation'
 import Link         from 'next/link'
 import {
-  ArrowLeft, Lock, Download, Camera, Loader2, Check,
+  ArrowLeft, Lock, Download, Camera, Loader2, Check, Share2,
 } from 'lucide-react'
 import { Lightbox, type LightboxPhoto } from './Lightbox'
 
@@ -216,6 +216,27 @@ export function GalleryView({ gallery, passwordVerified: initialPwVerified }: Pr
   const [pendingDlFileId,  setPendingDlFileId]  = useState<string | null>(null)
   const [zipLoading,       setZipLoading]       = useState(false)
   const [chipRef,          setChipRef]          = useState<HTMLDivElement | null>(null)
+  const [supportsShare,    setSupportsShare]    = useState(false)
+  const [shareCopied,      setShareCopied]      = useState(false)
+
+  useEffect(() => { setSupportsShare(!!navigator.share) }, [])
+
+  async function handleShareGallery() {
+    const url = typeof window !== 'undefined' ? window.location.href : `https://gallery.cmmschristhood.org/${gallery.slug}`
+    try {
+      await navigator.share({
+        title: gallery.title,
+        text:  `Check out these photos from Christhood: ${gallery.title}`,
+        url,
+      })
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        await navigator.clipboard.writeText(url).catch(() => {})
+        setShareCopied(true)
+        setTimeout(() => setShareCopied(false), 2000)
+      }
+    }
+  }
 
   const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
@@ -377,6 +398,17 @@ export function GalleryView({ gallery, passwordVerified: initialPwVerified }: Pr
                       : <><Download className="w-3 h-3" /> Download All</>}
                   </button>
                 )}
+                {supportsShare && (
+                  <button
+                    onClick={handleShareGallery}
+                    className="flex items-center gap-1.5 text-xs bg-white/15 hover:bg-white/25
+                               text-white px-3 py-1.5 rounded-full transition-colors backdrop-blur-sm"
+                  >
+                    {shareCopied
+                      ? <><Check className="w-3 h-3" /> Copied!</>
+                      : <><Share2 className="w-3 h-3" /> Share ↗</>}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -401,6 +433,17 @@ export function GalleryView({ gallery, passwordVerified: initialPwVerified }: Pr
                   {zipLoading
                     ? <><Loader2 className="w-3 h-3 animate-spin" /> Preparing ZIP…</>
                     : <><Download className="w-3 h-3" /> Download All</>}
+                </button>
+              )}
+              {supportsShare && (
+                <button
+                  onClick={handleShareGallery}
+                  className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700
+                             text-white px-3 py-1.5 rounded-full transition-colors"
+                >
+                  {shareCopied
+                    ? <><Check className="w-3 h-3" /> Copied!</>
+                    : <><Share2 className="w-3 h-3" /> Share ↗</>}
                 </button>
               )}
             </div>

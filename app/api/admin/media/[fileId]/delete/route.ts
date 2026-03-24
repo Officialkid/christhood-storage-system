@@ -7,10 +7,8 @@ import { logger } from '@/lib/logger'
 
 // POST /api/admin/media/[fileId]/delete
 // ADMIN only — moves a file to Trash (soft delete)
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { fileId: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ fileId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session?.user)                  return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
   if (session.user.role !== 'ADMIN')   return NextResponse.json({ error: 'Forbidden'       }, { status: 403 })

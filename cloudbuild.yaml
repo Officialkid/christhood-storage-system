@@ -64,7 +64,7 @@ steps:
       - '--concurrency=80'
       - '--timeout=300'
       - '--cpu-boost'
-      - '--set-env-vars=NODE_ENV=production,NEXT_TELEMETRY_DISABLED=1,FFMPEG_PATH=/usr/bin/ffmpeg'
+      - '--set-env-vars=NODE_ENV=production,NEXT_TELEMETRY_DISABLED=1,FFMPEG_PATH=/usr/bin/ffmpeg,SESSION_TIMEOUT_MINUTES=120'
       - >-
         --update-secrets=DATABASE_URL=DATABASE_URL:latest,
         DIRECT_URL=DIRECT_URL:latest,

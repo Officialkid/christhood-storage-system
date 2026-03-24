@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   Upload, X, FolderOpen, ChevronDown, ChevronRight, FileText, Film,
   Image as ImageIcon, File as FileIcon, Send, User, Search,
-  AlertTriangle, CheckCircle2, Loader2, RefreshCw, WifiOff,
+  AlertTriangle, CheckCircle2, Loader2, RefreshCw, WifiOff, Lock,
 } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -31,6 +31,8 @@ interface PendingTransfer {
   recipientLabel: string   // display name for the banner
   subject:        string
   message:        string | null
+  isPinProtected: boolean
+  pin:            string | null
   files:          {
     originalName: string; r2Key: string; fileSize: number
     mimeType: string; folderPath: string | null; checksum: string
@@ -207,6 +209,10 @@ export function NewTransferForm() {
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
 
+  // PIN protection
+  const [pinEnabled, setPinEnabled] = useState(false)
+  const [pinValue,   setPinValue]   = useState('')
+
   // Recipient
   const [recipientSearch, setRecipientSearch] = useState('')
   const [searchResults,   setSearchResults]   = useState<RecipientUser[]>([])
@@ -234,6 +240,7 @@ export function NewTransferForm() {
   const totalSize = staged.reduce((s, f) => s + f.file.size, 0)
   const hasFolders = staged.some(f => f.folderPath)
   const canSend    = staged.length > 0 && !!recipient && subject.trim().length > 0 && sendStatus === 'idle'
+    && (!pinEnabled || /^\d{4,6}$/.test(pinValue))
 
   // ── Ingest files ─────────────────────────────────────────────────────────
   function ingest(incoming: { file: File; folderPath: string | null }[]) {
@@ -372,6 +379,8 @@ export function NewTransferForm() {
         recipientLabel:  recipient.username ?? recipient.name ?? recipient.email,
         subject:         subject.trim(),
         message:         message.trim() || null,
+        isPinProtected:  pinEnabled && /^\d{4,6}$/.test(pinValue),
+        pin:             pinEnabled && /^\d{4,6}$/.test(pinValue) ? pinValue : null,
         files:           uploadedFiles,
         totalFiles:      staged.length,
         totalSize:       totalSize,
@@ -422,6 +431,8 @@ export function NewTransferForm() {
         recipientId:     pending.recipientId,
         subject:         pending.subject,
         message:         pending.message,
+        isPinProtected:  pending.isPinProtected,
+        pin:             pending.pin,
         files:           pending.files,
         totalFiles:      pending.totalFiles,
         totalSize:       pending.totalSize,
@@ -669,6 +680,55 @@ export function NewTransferForm() {
                        focus:ring-1 focus:ring-indigo-500/30 transition-colors resize-none"
           />
           <p className="text-xs text-slate-600 mt-1 text-right">{message.length}/500</p>
+        </div>
+
+        {/* PIN protection */}
+        <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <Lock className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm text-slate-200">PIN protection</p>
+                <p className="text-xs text-slate-500 mt-0.5">Recipient must enter a PIN before downloading</p>
+              </div>
+            </div>
+            <button
+              role="switch"
+              aria-checked={pinEnabled}
+              type="button"
+              onClick={() => { setPinEnabled(v => !v); setPinValue('') }}
+              className={`relative shrink-0 rounded-full border transition-colors cursor-pointer`
+                + (pinEnabled ? ' bg-indigo-600 border-indigo-500' : ' bg-slate-700 border-slate-600')}
+              style={{ width: 40, height: 22 }}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200`
+                + (pinEnabled ? ' translate-x-[18px]' : ' translate-x-0')} />
+            </button>
+          </div>
+          {pinEnabled && (
+            <div>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                minLength={4}
+                placeholder="Enter 4–6 digit PIN"
+                value={pinValue}
+                onChange={e => setPinValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-600 text-white
+                           placeholder-slate-500 text-sm font-mono tracking-widest
+                           focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30
+                           transition-colors"
+              />
+              {pinValue.length > 0 && !/^\d{4,6}$/.test(pinValue) && (
+                <p className="text-xs text-red-400 mt-1">PIN must be 4–6 digits</p>
+              )}
+              {/^\d{4,6}$/.test(pinValue) && (
+                <p className="text-xs text-emerald-400 mt-1">Share this PIN with the recipient separately.</p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Recipient */}

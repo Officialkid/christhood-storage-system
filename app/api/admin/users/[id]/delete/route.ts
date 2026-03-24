@@ -7,10 +7,8 @@ import { log } from '@/lib/activityLog'
 
 // ── GET /api/admin/users/[id]/delete ──────────────────────────
 // Returns file counts so the UI can show the impact summary before confirming.
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (session?.user?.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -46,10 +44,8 @@ export async function GET(
 //  3. Null-out ActivityLog.userId entries (preserves audit trail as anonymous)
 //  4. Delete lightweight dependent records (sessions, accounts, etc.)
 //  5. Delete the User record
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (session?.user?.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

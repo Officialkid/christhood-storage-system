@@ -8,10 +8,8 @@ import { prisma }                    from '@/lib/prisma'
  * Marks the MessageRecipient record for the current user + this message as read.
  * [id] = Message.id  (not MessageRecipient.id)
  */
-export async function PATCH(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function PATCH(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

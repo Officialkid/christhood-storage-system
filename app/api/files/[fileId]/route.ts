@@ -14,10 +14,8 @@ import { logger }                    from '@/lib/logger'
 //              can delete other users' files only when status is RAW
 //              cannot delete PUBLISHED files
 //   ADMIN    : can delete any file (extra warning shown in UI for PUBLISHED)
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { fileId: string } }
-) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ fileId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
 

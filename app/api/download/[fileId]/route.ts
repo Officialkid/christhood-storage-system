@@ -14,10 +14,8 @@ const URL_EXPIRY_SECONDS = 15 * 60  // 15 minutes
  * Returns a 15-minute presigned R2 download URL for the requested file.
  * Enforces role-based access and logs every successful download.
  */
-export async function GET(
-  req:     NextRequest,
-  { params }: { params: { fileId: string } },
-) {
+export async function GET(req:     NextRequest, props: { params: Promise<{ fileId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

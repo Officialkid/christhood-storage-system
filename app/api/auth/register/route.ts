@@ -4,9 +4,21 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { sendWelcomeEmail } from '@/lib/email'
 import { logger }           from '@/lib/logger'
+import { checkRegisterRateLimit } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim()
+            ?? req.headers.get('x-real-ip')
+            ?? '127.0.0.1'
+    const rl = await checkRegisterRateLimit(ip)
+    if (rl.limited) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+      )
+    }
+
     const body = await req.json()
     const { username, email, phone, password } = body
 
@@ -38,15 +50,9 @@ export async function POST(req: NextRequest) {
       prisma.user.findFirst({ where: { username } }),
     ])
 
-    if (existingEmail) {
+    if (existingEmail || existingUsername) {
       return NextResponse.json(
-        { error: 'An account with this email already exists.' },
-        { status: 409 }
-      )
-    }
-    if (existingUsername) {
-      return NextResponse.json(
-        { error: 'This username is already taken.' },
+        { error: 'An account with these details already exists.' },
         { status: 409 }
       )
     }

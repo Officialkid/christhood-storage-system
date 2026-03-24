@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { handleApiError } from '@/lib/apiError'
 import { getServerSession } from 'next-auth'
+import bcrypt from 'bcryptjs'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { deleteObject } from '@/lib/r2'
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { id, recipientId, subject, message, files, folderStructure } = body
+  const { id, recipientId, subject, message, files, folderStructure, isPinProtected, pin } = body
 
   if (!id || !recipientId || !subject?.trim() || !Array.isArray(files) || files.length === 0) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -78,6 +79,10 @@ export async function POST(req: NextRequest) {
   const expiresAt = new Date()
   expiresAt.setDate(expiresAt.getDate() + EXPIRY_DAYS)
 
+  // Hash PIN if provided (validate format server-side before hashing)
+  const usePinProtection = Boolean(isPinProtected) && typeof pin === 'string' && /^\d{4,6}$/.test(pin)
+  const pinHash = usePinProtection ? await bcrypt.hash(pin as string, 10) : null
+
   const senderName = session.user.username ?? session.user.name ?? session.user.email ?? 'Admin'
 
   // ── Atomic DB write ────────────────────────────────────────────────────────
@@ -95,6 +100,8 @@ export async function POST(req: NextRequest) {
         r2Prefix:        `transfers/${id}/`,
         totalFiles:      fileCount,
         totalSize:       BigInt(totalBytes),
+        isPinProtected:  usePinProtection,
+        pin:             pinHash,
         expiresAt,
         files: {
           create: incomingFiles.map(f => ({
@@ -141,9 +148,12 @@ export async function POST(req: NextRequest) {
 
     // 3. Web push (respects user preference opt-out)
     sendPushToUser(recipientId, 'TRANSFER_RECEIVED', {
-      title: 'New file transfer',
-      body:  `${senderName}: ${subject.trim()}`,
-      url:   '/transfers/inbox',
+      title:   '📦 New Transfer Received',
+      body:    `${senderName} sent you ${fileCount} file${fileCount !== 1 ? 's' : ''}: "${subject.trim()}"`,
+      url:     '/transfers/inbox',
+      tag:     `transfer-${transferId}`,
+      type:    'TRANSFER_RECEIVED',
+      payload: { transferId, senderName, fileCount, subject: subject.trim() },
     }),
 
     // 4. Email — respect TRANSFER_RECEIVED email preference (default: send)

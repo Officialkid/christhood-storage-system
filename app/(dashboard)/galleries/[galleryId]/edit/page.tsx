@@ -7,11 +7,12 @@ import { GalleryEditorClient } from './GalleryEditorClient'
 
 export const dynamic = 'force-dynamic'
 
-export default async function GalleryEditPage({
-  params,
-}: {
-  params: { galleryId: string }
-}) {
+export default async function GalleryEditPage(
+  props: {
+    params: Promise<{ galleryId: string }>
+  }
+) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session?.user) redirect('/login')
 

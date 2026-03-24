@@ -8,10 +8,8 @@ import { logger }                    from '@/lib/logger'
 
 // DELETE /api/admin/trash/[trashItemId]
 // ADMIN only — immediately purges a trashed file (deletes from R2 + removes DB records)
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { trashItemId: string } },
-) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ trashItemId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session?.user)                return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
   if (session.user.role !== 'ADMIN') return NextResponse.json({ error: 'Forbidden'       }, { status: 403 })

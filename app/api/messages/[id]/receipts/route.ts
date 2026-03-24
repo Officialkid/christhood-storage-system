@@ -13,10 +13,8 @@ const CACHE_TTL_MS = 60_000
  * each recipient's name, role, read status, and readAt timestamp.
  * Cached per messageId for 60 seconds.
  */
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session || session.user.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

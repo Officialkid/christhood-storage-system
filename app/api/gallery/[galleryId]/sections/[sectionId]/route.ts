@@ -25,8 +25,9 @@ async function authorise(galleryId: string, userId: string, role: string) {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { galleryId: string; sectionId: string } },
+  props: { params: Promise<{ galleryId: string; sectionId: string }> }
 ) {
+  const params = await props.params;
   const { galleryId, sectionId } = params
 
   try {
@@ -69,8 +70,9 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { galleryId: string; sectionId: string } },
+  props: { params: Promise<{ galleryId: string; sectionId: string }> }
 ) {
+  const params = await props.params;
   const { galleryId, sectionId } = params
 
   try {

@@ -12,10 +12,8 @@ import { generateAndStoreThumbnail }       from '@/lib/thumbnail'
 // Permissions: uploaders may only trigger for their own files; editors and
 // admins may trigger for any file.
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { fileId: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ fileId: string }> }) {
+  const params = await props.params;
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
   if (!token?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

@@ -25,6 +25,7 @@ export async function GET(_req: NextRequest) {
   return NextResponse.json({
     transfers: transfers.map((t) => ({
       ...t,
+      pin:       undefined, // never expose the bcrypt hash to the client
       totalSize: Number(t.totalSize),
       createdAt: t.createdAt.toISOString(),
       expiresAt: t.expiresAt.toISOString(),

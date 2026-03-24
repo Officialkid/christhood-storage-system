@@ -1,15 +1,16 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState, useCallback } from 'react'
 import {
   Trash2, RotateCcw, Clock, AlertTriangle, Loader2,
   RefreshCw, ShieldAlert, FileImage, FileVideo, Info, XCircle,
+  GalleryHorizontal,
 } from 'lucide-react'
 import { invalidateFileCache } from '@/lib/cache'
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Types
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface TrashedFile {
   id:           string
   originalName: string
@@ -40,9 +41,33 @@ interface PageData {
   pages: number
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+interface GalleryTrashItem {
+  id:              string
+  slug:            string
+  title:           string
+  coverUrl:        string | null
+  status:          string
+  categoryName:    string | null
+  year:            number
+  totalPhotos:     number
+  fileCount:       number
+  deletedAt:       string
+  purgesAt:        string
+  preDeleteStatus: string | null
+  deletedBy:       { id: string; username: string | null; email: string }
+}
+
+interface GalleryTrashData {
+  items: GalleryTrashItem[]
+  total: number
+  page:  number
+  limit: number
+  pages: number
+}
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function daysRemaining(purgeAt: string): number {
   const ms = new Date(purgeAt).getTime() - Date.now()
   return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)))
@@ -83,19 +108,27 @@ function formatSize(bytes: number): string {
   return                         `${(bytes / 1024 ** 3).toFixed(2)} GB`
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Component
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function AdminTrashPage() {
   const [data,         setData]         = useState<PageData | null>(null)
   const [loading,      setLoading]      = useState(true)
   const [fetchError,   setFetchError]   = useState('')
-  const [restoring,    setRestoring]    = useState<string>('')   // trashItemId being restored
-  const [purging,      setPurging]      = useState<string>('')   // trashItemId being purged
+  const [restoring,    setRestoring]    = useState<string>('')
+  const [purging,      setPurging]      = useState<string>('')
   const [page,         setPage]         = useState(1)
-  const LIMIT = 50
+  const [activeTab,    setActiveTab]    = useState<'FILES' | 'GALLERIES'>('FILES')
+  const [gData,        setGData]        = useState<GalleryTrashData | null>(null)
+  const [gLoading,     setGLoading]     = useState(false)
+  const [gError,       setGError]       = useState('')
+  const [gPage,        setGPage]        = useState(1)
+  const [restoringG,   setRestoringG]   = useState('')
+  const [purgingG,     setPurgingG]     = useState('')
+  const LIMIT   = 50
+  const G_LIMIT = 20
 
-  // ── Fetch ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Fetch files â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const fetchTrash = useCallback(async (pg = page) => {
     setLoading(true)
     setFetchError('')
@@ -108,16 +141,35 @@ export default function AdminTrashPage() {
       }
       setData(body as PageData)
     } catch (err) {
-      setFetchError('Network error — could not load trash. Please refresh.')
+      setFetchError('Network error â€” could not load trash. Please refresh.')
       console.error('[AdminTrashPage] fetchTrash error:', err)
     } finally {
       setLoading(false)
     }
   }, [page])
 
-  useEffect(() => { fetchTrash(page) }, [page])
+  // â”€â”€ Fetch galleries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const fetchGalleryTrash = useCallback(async (pg = gPage) => {
+    setGLoading(true)
+    setGError('')
+    try {
+      const res  = await fetch(`/api/admin/gallery-trash?page=${pg}&limit=${G_LIMIT}`)
+      const body = await res.json()
+      if (!res.ok) { setGError(body?.error ?? `Server error ${res.status}`); return }
+      setGData(body as GalleryTrashData)
+    } catch {
+      setGError('Network error â€” could not load gallery trash. Please refresh.')
+    } finally {
+      setGLoading(false)
+    }
+  }, [gPage])
 
-  // ── Restore ───────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (activeTab === 'FILES')     fetchTrash(page)
+    else                           fetchGalleryTrash(gPage)
+  }, [page, gPage, activeTab])
+
+  // â”€â”€ Restore file â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleRestore(trashItemId: string, fileName: string) {
     if (!confirm(`Restore "${fileName}"? It will return to its previous status.`)) return
 
@@ -131,25 +183,19 @@ export default function AdminTrashPage() {
         return
       }
 
-      // Remove item from local state immediately for instant feedback
       setData(prev => prev
-        ? {
-            ...prev,
-            items: prev.items.filter(i => i.id !== trashItemId),
-            total: prev.total - 1,
-          }
+        ? { ...prev, items: prev.items.filter(i => i.id !== trashItemId), total: prev.total - 1 }
         : prev
       )
-      // Bust SWR caches so FolderTree sidebar counts update immediately
       void invalidateFileCache()
     } catch {
-      alert('Network error — please try again.')
+      alert('Network error â€” please try again.')
     } finally {
       setRestoring('')
     }
   }
 
-  // ── Permanent purge ───────────────────────────────────────────────────────
+  // â”€â”€ Permanent purge file â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handlePurge(trashItemId: string, fileName: string) {
     if (!confirm(
       `Permanently delete "${fileName}"?\n\nThis will immediately remove the file from storage. This cannot be undone.`
@@ -166,23 +212,64 @@ export default function AdminTrashPage() {
       }
 
       setData(prev => prev
-        ? {
-            ...prev,
-            items: prev.items.filter(i => i.id !== trashItemId),
-            total: prev.total - 1,
-          }
+        ? { ...prev, items: prev.items.filter(i => i.id !== trashItemId), total: prev.total - 1 }
         : prev
       )
     } catch {
-      alert('Network error — please try again.')
+      alert('Network error â€” please try again.')
     } finally {
       setPurging('')
     }
   }
 
+  // â”€â”€ Restore gallery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  async function handleRestoreGallery(galleryId: string, title: string) {
+    if (!confirm(`Restore "${title}"? The gallery will return to its previous status.`)) return
+
+    setRestoringG(galleryId)
+    try {
+      const res  = await fetch(`/api/gallery/${galleryId}/restore`, { method: 'POST' })
+      const body = await res.json()
+      if (!res.ok) { alert(`Restore failed: ${body.error ?? 'Unknown error'}`); return }
+      setGData(prev => prev
+        ? { ...prev, items: prev.items.filter(i => i.id !== galleryId), total: prev.total - 1 }
+        : prev
+      )
+    } catch {
+      alert('Network error â€” please try again.')
+    } finally {
+      setRestoringG('')
+    }
+  }
+
+  // â”€â”€ Purge gallery immediately â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  async function handlePurgeGallery(galleryId: string, title: string, fileCount: number) {
+    if (!confirm(
+      `Permanently delete "${title}"?\n\nThis will immediately remove all ${fileCount} photo${fileCount !== 1 ? 's' : ''} from storage. This cannot be undone.`
+    )) return
+
+    setPurgingG(galleryId)
+    try {
+      const res  = await fetch(`/api/admin/gallery-trash/${galleryId}`, { method: 'DELETE' })
+      const body = await res.json()
+      if (!res.ok) { alert(`Purge failed: ${body.error ?? 'Unknown error'}`); return }
+      setGData(prev => prev
+        ? { ...prev, items: prev.items.filter(i => i.id !== galleryId), total: prev.total - 1 }
+        : prev
+      )
+    } catch {
+      alert('Network error â€” please try again.')
+    } finally {
+      setPurgingG('')
+    }
+  }
+
+  const isFileLoading    = activeTab === 'FILES'     && loading
+  const isGalleryLoading = activeTab === 'GALLERIES' && gLoading
+
   return (
     <div className="space-y-6">
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-red-600/20 border border-red-600/30 rounded-xl">
@@ -191,222 +278,444 @@ export default function AdminTrashPage() {
           <div>
             <h1 className="text-xl font-bold text-white">Trash</h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Files are permanently purged 30 days after deletion
+              Files and galleries are permanently purged 30 days after deletion
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {data && (
+          {activeTab === 'FILES' && data && (
             <span className="text-xs text-slate-500 bg-slate-800 border border-slate-700
                              px-3 py-1.5 rounded-lg">
               {data.total} file{data.total !== 1 ? 's' : ''} in trash
             </span>
           )}
+          {activeTab === 'GALLERIES' && gData && (
+            <span className="text-xs text-slate-500 bg-slate-800 border border-slate-700
+                             px-3 py-1.5 rounded-lg">
+              {gData.total} {gData.total === 1 ? 'gallery' : 'galleries'} in trash
+            </span>
+          )}
           <button
-            onClick={() => fetchTrash(page)}
+            onClick={() => activeTab === 'FILES' ? fetchTrash(page) : fetchGalleryTrash(gPage)}
             className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
             title="Refresh"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${isFileLoading || isGalleryLoading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* ── Info banner ─────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      <div className="flex gap-1 bg-slate-800/60 border border-slate-700/60 rounded-xl p-1 w-fit">
+        {(['FILES', 'GALLERIES'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
+              ${activeTab === tab
+                ? 'bg-slate-700 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+              }`}
+          >
+            {tab === 'FILES'
+              ? <FileImage         className="w-3.5 h-3.5" />
+              : <GalleryHorizontal className="w-3.5 h-3.5" />
+            }
+            {tab === 'FILES' ? 'Files' : 'Galleries'}
+            {tab === 'FILES' && data && data.total > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-md
+                ${activeTab === 'FILES' ? 'bg-slate-600 text-slate-300' : 'bg-slate-700/60 text-slate-500'}`}>
+                {data.total}
+              </span>
+            )}
+            {tab === 'GALLERIES' && gData && gData.total > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-md
+                ${activeTab === 'GALLERIES' ? 'bg-slate-600 text-slate-300' : 'bg-slate-700/60 text-slate-500'}`}>
+                {gData.total}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* â”€â”€ Info banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex items-start gap-3 bg-amber-500/8 border border-amber-500/20
                       rounded-2xl px-4 py-3 text-sm text-amber-300/80">
         <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
         <span>
-          Only admins can view this page. Deleted files remain recoverable until their purge date.
-          After purge, the R2 object is permanently destroyed — this action cannot be undone.
-          Activity log entries are retained&nbsp;indefinitely regardless of file status.
+          Only admins can view this page. Deleted {activeTab === 'FILES' ? 'files' : 'galleries'} remain
+          recoverable until their purge date. After purge, all R2 objects are permanently
+          destroyed â€” this action cannot be undone.
+          Activity log entries are retained&nbsp;indefinitely regardless of status.
         </span>
       </div>
 
-      {/* ── Content ─────────────────────────────────────────────────────────── */}
-      {loading ? (
-        <div className="flex items-center justify-center py-24 text-slate-500">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" />
-          Loading trash…
-        </div>
-      ) : fetchError ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
-          <XCircle className="w-10 h-10 text-red-500/60" />
-          <p className="text-base font-medium text-red-400">Failed to load trash</p>
-          <p className="text-sm text-slate-500 max-w-sm">{fetchError}</p>
-          <button
-            onClick={() => fetchTrash(page)}
-            className="mt-2 px-4 py-2 rounded-xl text-sm font-medium bg-slate-800
-                       border border-slate-700 text-slate-300 hover:bg-slate-700 transition"
-          >
-            Try again
-          </button>
-        </div>
-      ) : !data || data.items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-slate-600">
-          <Trash2 className="w-12 h-12 mb-4 opacity-20" />
-          <p className="text-base font-medium">Trash is empty</p>
-          <p className="text-sm mt-1">No files have been soft-deleted.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {data.items.map(entry => {
-            const file        = entry.mediaFile
-            const days        = daysRemaining(entry.scheduledPurgeAt)
-            const isUrgent    = days <= 3
-            const isRestoring = restoring === entry.id
-            const isPurging   = purging   === entry.id
-            const isBusy      = isRestoring || isPurging
-
-            return (
-              <div
-                key={entry.id}
-                className={`bg-slate-900/60 border rounded-2xl p-4 transition
-                  ${isUrgent
-                    ? 'border-red-800/40 shadow-sm shadow-red-950/30'
-                    : 'border-slate-800/60'
-                  }`}
+      {/* â•â• FILES TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {activeTab === 'FILES' && (
+        <>
+          {loading ? (
+            <div className="flex items-center justify-center py-24 text-slate-500">
+              <Loader2 className="w-5 h-5 animate-spin mr-2" />
+              Loading trashâ€¦
+            </div>
+          ) : fetchError ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
+              <XCircle className="w-10 h-10 text-red-500/60" />
+              <p className="text-base font-medium text-red-400">Failed to load trash</p>
+              <p className="text-sm text-slate-500 max-w-sm">{fetchError}</p>
+              <button
+                onClick={() => fetchTrash(page)}
+                className="mt-2 px-4 py-2 rounded-xl text-sm font-medium bg-slate-800
+                           border border-slate-700 text-slate-300 hover:bg-slate-700 transition"
               >
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  {/* ── File info ───────────────────────────────────────────── */}
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className={`p-2 rounded-xl shrink-0
-                      ${file.fileType === 'VIDEO'
-                        ? 'bg-violet-500/15 border border-violet-500/20'
-                        : 'bg-sky-500/15 border border-sky-500/20'
+                Try again
+              </button>
+            </div>
+          ) : !data || data.items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 text-slate-600">
+              <Trash2 className="w-12 h-12 mb-4 opacity-20" />
+              <p className="text-base font-medium">Trash is empty</p>
+              <p className="text-sm mt-1">No files have been soft-deleted.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {data.items.map(entry => {
+                const file        = entry.mediaFile
+                const days        = daysRemaining(entry.scheduledPurgeAt)
+                const isUrgent    = days <= 3
+                const isRestoring = restoring === entry.id
+                const isPurging   = purging   === entry.id
+                const isBusy      = isRestoring || isPurging
+
+                return (
+                  <div
+                    key={entry.id}
+                    className={`bg-slate-900/60 border rounded-2xl p-4 transition
+                      ${isUrgent
+                        ? 'border-red-800/40 shadow-sm shadow-red-950/30'
+                        : 'border-slate-800/60'
                       }`}
-                    >
-                      {file.fileType === 'VIDEO'
-                        ? <FileVideo  className="w-4 h-4 text-violet-400" />
-                        : <FileImage  className="w-4 h-4 text-sky-400" />
-                      }
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-white font-medium text-sm truncate">
-                        {file.originalName}
-                      </p>
-                      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
-                        {file.event && (
-                          <span className="text-xs text-indigo-400">
-                            {file.event.name}
-                            {file.subfolder ? ` / ${file.subfolder.label}` : ''}
-                          </span>
-                        )}
-                        <span className="text-xs text-slate-500">{formatSize(file.fileSize)}</span>
-                        <span className="text-xs text-slate-600">
-                          Was: <span className="text-slate-400">{entry.preDeleteStatus}</span>
+                  >
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      {/* â”€â”€ File info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className={`p-2 rounded-xl shrink-0
+                          ${file.fileType === 'VIDEO'
+                            ? 'bg-violet-500/15 border border-violet-500/20'
+                            : 'bg-sky-500/15 border border-sky-500/20'
+                          }`}
+                        >
+                          {file.fileType === 'VIDEO'
+                            ? <FileVideo  className="w-4 h-4 text-violet-400" />
+                            : <FileImage  className="w-4 h-4 text-sky-400" />
+                          }
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-white font-medium text-sm truncate">
+                            {file.originalName}
+                          </p>
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                            {file.event && (
+                              <span className="text-xs text-indigo-400">
+                                {file.event.name}
+                                {file.subfolder ? ` / ${file.subfolder.label}` : ''}
+                              </span>
+                            )}
+                            <span className="text-xs text-slate-500">{formatSize(file.fileSize)}</span>
+                            <span className="text-xs text-slate-600">
+                              Was: <span className="text-slate-400">{entry.preDeleteStatus}</span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* â”€â”€ Right: badges + actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                      <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        <span className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl
+                                          text-xs font-medium border ${urgencyClass(entry.scheduledPurgeAt)}`}>
+                          {isUrgent
+                            ? <AlertTriangle className="w-3.5 h-3.5" />
+                            : <Clock         className="w-3.5 h-3.5" />
+                          }
+                          {purgeLabel(entry.scheduledPurgeAt)}
                         </span>
+
+                        <button
+                          onClick={() => handleRestore(entry.id, file.originalName)}
+                          disabled={isBusy}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
+                                     font-medium bg-emerald-600/20 text-emerald-300 border
+                                     border-emerald-600/30 hover:bg-emerald-600/40 transition
+                                     disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isRestoring
+                            ? <Loader2    className="w-3.5 h-3.5 animate-spin" />
+                            : <RotateCcw  className="w-3.5 h-3.5" />
+                          }
+                          {isRestoring ? 'Restoringâ€¦' : 'Restore'}
+                        </button>
+
+                        <button
+                          onClick={() => handlePurge(entry.id, file.originalName)}
+                          disabled={isBusy}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
+                                     font-medium bg-red-600/20 text-red-400 border
+                                     border-red-600/30 hover:bg-red-600/40 transition
+                                     disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isPurging
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Trash2  className="w-3.5 h-3.5" />
+                          }
+                          {isPurging ? 'Deletingâ€¦' : 'Delete Permanently'}
+                        </button>
                       </div>
                     </div>
+
+                    {/* â”€â”€ Footer: deletion metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                    <div className="mt-3 pt-3 border-t border-slate-800/60
+                                    flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                      <span>
+                        Deleted by{' '}
+                        <span className="text-slate-400">
+                          {entry.deletedBy.username ?? entry.deletedBy.email}
+                        </span>
+                        {' '}on{' '}
+                        <span className="text-slate-500">{formatDate(entry.deletedAt)}</span>
+                      </span>
+                      <span className={isUrgent ? 'text-red-500' : ''}>
+                        Purge scheduled{' '}
+                        <span className={isUrgent ? 'text-red-400 font-medium' : 'text-slate-500'}>
+                          {formatDate(entry.scheduledPurgeAt)}
+                        </span>
+                      </span>
+                    </div>
                   </div>
+                )
+              })}
+            </div>
+          )}
 
-                  {/* ── Right: badges + actions ──────────────────────────────── */}
-                  <div className="flex items-center gap-2 flex-wrap shrink-0">
-                    {/* Purge countdown badge */}
-                    <span className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl
-                                      text-xs font-medium border ${urgencyClass(entry.scheduledPurgeAt)}`}>
-                      {isUrgent
-                        ? <AlertTriangle className="w-3.5 h-3.5" />
-                        : <Clock         className="w-3.5 h-3.5" />
-                      }
-                      {purgeLabel(entry.scheduledPurgeAt)}
-                    </span>
+          {/* â”€â”€ Pagination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {data && data.pages > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1 || loading}
+                className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-800 text-slate-300
+                           border border-slate-700 hover:bg-slate-700
+                           disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                â† Prev
+              </button>
+              <span className="text-xs text-slate-500">
+                Page {data.page} of {data.pages}
+              </span>
+              <button
+                onClick={() => setPage(p => Math.min(data.pages, p + 1))}
+                disabled={page === data.pages || loading}
+                className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-800 text-slate-300
+                           border border-slate-700 hover:bg-slate-700
+                           disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                Next â†’
+              </button>
+            </div>
+          )}
 
-                    {/* Restore button */}
-                    <button
-                      onClick={() => handleRestore(entry.id, file.originalName)}
-                      disabled={isBusy}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
-                                 font-medium bg-emerald-600/20 text-emerald-300 border
-                                 border-emerald-600/30 hover:bg-emerald-600/40 transition
-                                 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isRestoring
-                        ? <Loader2    className="w-3.5 h-3.5 animate-spin" />
-                        : <RotateCcw  className="w-3.5 h-3.5" />
-                      }
-                      {isRestoring ? 'Restoring…' : 'Restore'}
-                    </button>
-
-                    {/* Delete Permanently button */}
-                    <button
-                      onClick={() => handlePurge(entry.id, file.originalName)}
-                      disabled={isBusy}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
-                                 font-medium bg-red-600/20 text-red-400 border
-                                 border-red-600/30 hover:bg-red-600/40 transition
-                                 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isPurging
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <Trash2  className="w-3.5 h-3.5" />
-                      }
-                      {isPurging ? 'Deleting…' : 'Delete Permanently'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* ── Footer: deletion metadata ─────────────────────────────── */}
-                <div className="mt-3 pt-3 border-t border-slate-800/60
-                                flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-                  <span>
-                    Deleted by{' '}
-                    <span className="text-slate-400">
-                      {entry.deletedBy.username ?? entry.deletedBy.email}
-                    </span>
-                    {' '}on{' '}
-                    <span className="text-slate-500">{formatDate(entry.deletedAt)}</span>
-                  </span>
-                  <span className={isUrgent ? 'text-red-500' : ''}>
-                    Purge scheduled{' '}
-                    <span className={isUrgent ? 'text-red-400 font-medium' : 'text-slate-500'}>
-                      {formatDate(entry.scheduledPurgeAt)}
-                    </span>
-                  </span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+          {/* â”€â”€ Cron info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          <div className="flex items-start gap-2 text-xs text-slate-600 pt-2">
+            <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              Automated purge runs daily via{' '}
+              <code className="font-mono text-slate-500">GET /api/cron/purge</code>.
+              Secure with the <code className="font-mono text-slate-500">CRON_SECRET</code> environment variable.
+            </span>
+          </div>
+        </>
       )}
 
-      {/* ── Pagination ──────────────────────────────────────────────────────── */}
-      {data && data.pages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-2">
-          <button
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page === 1 || loading}
-            className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-800 text-slate-300
-                       border border-slate-700 hover:bg-slate-700
-                       disabled:opacity-40 disabled:cursor-not-allowed transition"
-          >
-            ← Prev
-          </button>
-          <span className="text-xs text-slate-500">
-            Page {data.page} of {data.pages}
-          </span>
-          <button
-            onClick={() => setPage(p => Math.min(data.pages, p + 1))}
-            disabled={page === data.pages || loading}
-            className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-800 text-slate-300
-                       border border-slate-700 hover:bg-slate-700
-                       disabled:opacity-40 disabled:cursor-not-allowed transition"
-          >
-            Next →
-          </button>
-        </div>
-      )}
+      {/* â•â• GALLERIES TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {activeTab === 'GALLERIES' && (
+        <>
+          {gLoading ? (
+            <div className="flex items-center justify-center py-24 text-slate-500">
+              <Loader2 className="w-5 h-5 animate-spin mr-2" />
+              Loading gallery trashâ€¦
+            </div>
+          ) : gError ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
+              <XCircle className="w-10 h-10 text-red-500/60" />
+              <p className="text-base font-medium text-red-400">Failed to load gallery trash</p>
+              <p className="text-sm text-slate-500 max-w-sm">{gError}</p>
+              <button
+                onClick={() => fetchGalleryTrash(gPage)}
+                className="mt-2 px-4 py-2 rounded-xl text-sm font-medium bg-slate-800
+                           border border-slate-700 text-slate-300 hover:bg-slate-700 transition"
+              >
+                Try again
+              </button>
+            </div>
+          ) : !gData || gData.items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 text-slate-600">
+              <GalleryHorizontal className="w-12 h-12 mb-4 opacity-20" />
+              <p className="text-base font-medium">Gallery trash is empty</p>
+              <p className="text-sm mt-1">No galleries have been deleted.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {gData.items.map(item => {
+                const days        = daysRemaining(item.purgesAt)
+                const isUrgent    = days <= 3
+                const isRestoring = restoringG === item.id
+                const isPurging   = purgingG   === item.id
+                const isBusy      = isRestoring || isPurging
 
-      {/* ── Cron info for admin reference ────────────────────────────────────── */}
-      <div className="flex items-start gap-2 text-xs text-slate-600 pt-2">
-        <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-        <span>
-          Automated purge runs daily via{' '}
-          <code className="font-mono text-slate-500">GET /api/cron/purge</code>.
-          Secure with the <code className="font-mono text-slate-500">CRON_SECRET</code> environment variable.
-        </span>
-      </div>
+                return (
+                  <div
+                    key={item.id}
+                    className={`bg-slate-900/60 border rounded-2xl p-4 transition
+                      ${isUrgent
+                        ? 'border-red-800/40 shadow-sm shadow-red-950/30'
+                        : 'border-slate-800/60'
+                      }`}
+                  >
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      {/* â”€â”€ Gallery info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                      <div className="flex items-start gap-3 min-w-0">
+                        {/* Cover thumbnail */}
+                        <div className="w-16 h-12 rounded-xl overflow-hidden bg-slate-800 border border-slate-700 shrink-0">
+                          {item.coverUrl
+                            ? <img src={item.coverUrl} alt={item.title} className="w-full h-full object-cover" />
+                            : <div className="w-full h-full flex items-center justify-center">
+                                <GalleryHorizontal className="w-5 h-5 text-slate-600" />
+                              </div>
+                          }
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-white font-medium text-sm truncate">{item.title}</p>
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                            {item.categoryName && (
+                              <span className="text-xs text-indigo-400">{item.categoryName} Â· {item.year}</span>
+                            )}
+                            <span className="text-xs text-slate-500">
+                              {item.fileCount} photo{item.fileCount !== 1 ? 's' : ''}
+                            </span>
+                            {item.preDeleteStatus && (
+                              <span className="text-xs text-slate-600">
+                                Was: <span className="text-slate-400">{item.preDeleteStatus}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* â”€â”€ Right: badges + actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                      <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        <span className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl
+                                          text-xs font-medium border ${urgencyClass(item.purgesAt)}`}>
+                          {isUrgent
+                            ? <AlertTriangle className="w-3.5 h-3.5" />
+                            : <Clock         className="w-3.5 h-3.5" />
+                          }
+                          {purgeLabel(item.purgesAt)}
+                        </span>
+
+                        <button
+                          onClick={() => handleRestoreGallery(item.id, item.title)}
+                          disabled={isBusy}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
+                                     font-medium bg-emerald-600/20 text-emerald-300 border
+                                     border-emerald-600/30 hover:bg-emerald-600/40 transition
+                                     disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isRestoring
+                            ? <Loader2   className="w-3.5 h-3.5 animate-spin" />
+                            : <RotateCcw className="w-3.5 h-3.5" />
+                          }
+                          {isRestoring ? 'Restoringâ€¦' : 'Restore'}
+                        </button>
+
+                        <button
+                          onClick={() => handlePurgeGallery(item.id, item.title, item.fileCount)}
+                          disabled={isBusy}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
+                                     font-medium bg-red-600/20 text-red-400 border
+                                     border-red-600/30 hover:bg-red-600/40 transition
+                                     disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isPurging
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Trash2  className="w-3.5 h-3.5" />
+                          }
+                          {isPurging ? 'Deletingâ€¦' : 'Delete Permanently'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* â”€â”€ Footer: deletion metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                    <div className="mt-3 pt-3 border-t border-slate-800/60
+                                    flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                      <span>
+                        Deleted by{' '}
+                        <span className="text-slate-400">
+                          {item.deletedBy.username ?? item.deletedBy.email}
+                        </span>
+                        {' '}on{' '}
+                        <span className="text-slate-500">{formatDate(item.deletedAt)}</span>
+                      </span>
+                      <span className={isUrgent ? 'text-red-500' : ''}>
+                        Purge scheduled{' '}
+                        <span className={isUrgent ? 'text-red-400 font-medium' : 'text-slate-500'}>
+                          {formatDate(item.purgesAt)}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* â”€â”€ Pagination (galleries) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {gData && gData.pages > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <button
+                onClick={() => setGPage(p => Math.max(1, p - 1))}
+                disabled={gPage === 1 || gLoading}
+                className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-800 text-slate-300
+                           border border-slate-700 hover:bg-slate-700
+                           disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                â† Prev
+              </button>
+              <span className="text-xs text-slate-500">
+                Page {gData.page} of {gData.pages}
+              </span>
+              <button
+                onClick={() => setGPage(p => Math.min(gData.pages, p + 1))}
+                disabled={gPage === gData.pages || gLoading}
+                className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-800 text-slate-300
+                           border border-slate-700 hover:bg-slate-700
+                           disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                Next â†’
+              </button>
+            </div>
+          )}
+
+          {/* â”€â”€ Cron info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          <div className="flex items-start gap-2 text-xs text-slate-600 pt-2">
+            <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              Gallery purge and 7-day warnings run daily at 3â€¯AM via{' '}
+              <code className="font-mono text-slate-500">GET /api/cron/purge-galleries</code>.
+              Warnings are sent to the admin who deleted the gallery.
+            </span>
+          </div>
+        </>
+      )}
     </div>
   )
 }

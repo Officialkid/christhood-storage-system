@@ -52,14 +52,19 @@ export async function uploadToGallery(
   contentType: string,
   metadata?:   Record<string, string>,
 ): Promise<string> {
-  await galleryR2.send(new PutObjectCommand({
-    Bucket:      GALLERY_BUCKET,
-    Key:         key,
-    Body:        body,
-    ContentType: contentType,
-    Metadata:    metadata,
-  }))
-  return `${GALLERY_PUBLIC_URL}/${key}`
+  try {
+    await galleryR2.send(new PutObjectCommand({
+      Bucket:      GALLERY_BUCKET,
+      Key:         key,
+      Body:        body,
+      ContentType: contentType,
+      Metadata:    metadata,
+    }))
+    return `${GALLERY_PUBLIC_URL}/${key}`
+  } catch (err: unknown) {
+    const detail = err instanceof Error ? err.message : String(err)
+    throw new Error(`GALLERY_R2: upload failed for key "${key}" — ${detail}`)
+  }
 }
 
 // ---------------------------------------------------------------------------

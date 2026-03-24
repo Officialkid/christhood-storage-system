@@ -32,9 +32,10 @@ async function handler(req: Request) {
   let where: Record<string, unknown>
 
   if (role === 'ADMIN') {
-    where = {}
+    where = { deletedAt: null }
   } else if (role === 'EDITOR') {
     where = {
+      deletedAt: null,
       OR: [
         { createdById: userId },
         { status: 'PUBLISHED' },
@@ -42,7 +43,7 @@ async function handler(req: Request) {
     }
   } else {
     // UPLOADER or any other role
-    where = { status: 'PUBLISHED' }
+    where = { status: 'PUBLISHED', deletedAt: null }
   }
 
   if (status)       where.status       = status

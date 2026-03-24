@@ -14,10 +14,8 @@ import type { CallerContext }           from '@/lib/assistant/tools/action-tools
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(
-  req:     NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function POST(req:     NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const token = await getToken({ req })
   if (!token || token.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

@@ -9,10 +9,8 @@ import { log } from '@/lib/activityLog'
  * Returns the tags applied to a specific file.
  * Access: any authenticated user.
  */
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { fileId: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ fileId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -33,10 +31,8 @@ export async function GET(
  * Passing an empty array removes all tags.
  * Access: EDITOR and ADMIN only.
  */
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { fileId: string } }
-) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ fileId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useCallback, useRef } from 'react'
-import { X, ChevronLeft, ChevronRight, Download, Share2, Check } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Download, Share2, Check, Copy } from 'lucide-react'
 import { useState } from 'react'
 
 export interface LightboxPhoto {
@@ -27,9 +27,12 @@ interface Props {
 export function Lightbox({
   photos, initialIndex, allowDownload, visitorName, requireName, onClose, onRequestName,
 }: Props) {
-  const [index,       setIndex]       = useState(initialIndex)
-  const [imgLoaded,   setImgLoaded]   = useState(false)
-  const [copied,      setCopied]      = useState(false)
+  const [index,        setIndex]        = useState(initialIndex)
+  const [imgLoaded,    setImgLoaded]    = useState(false)
+  const [copied,       setCopied]       = useState(false)
+  const [supportsShare, setSupportsShare] = useState(false)
+
+  useEffect(() => { setSupportsShare(!!navigator.share) }, [])
   const touchStartX   = useRef<number | null>(null)
   const touchStartY   = useRef<number | null>(null)
   const containerRef  = useRef<HTMLDivElement>(null)
@@ -97,17 +100,22 @@ export function Lightbox({
     window.location.href = url
   }
 
-  async function handleShare() {
+  async function handleNativeShare() {
     const url = `${window.location.origin}/gallery-public/${current.gallerySlug}#photo-${current.id}`
     try {
-      if (navigator.share) {
-        await navigator.share({ title: current.originalName, url })
-      } else {
-        await navigator.clipboard.writeText(url)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
+      await navigator.share({ title: current.originalName, text: `Check out this photo from Christhood`, url })
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        await handleCopyLink()
       }
-    } catch { /* user cancelled share */ }
+    }
+  }
+
+  async function handleCopyLink() {
+    const url = `${window.location.origin}/gallery-public/${current.gallerySlug}#photo-${current.id}`
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   // Tap left/right thirds to navigate
@@ -142,12 +150,21 @@ export function Lightbox({
               <Download className="w-4 h-4" />
             </button>
           )}
+          {supportsShare && (
+            <button
+              onClick={handleNativeShare}
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+              title="Share photo"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+          )}
           <button
-            onClick={handleShare}
+            onClick={handleCopyLink}
             className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
-            title="Share photo"
+            title="Copy photo link"
           >
-            {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4" />}
+            {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
           </button>
           <button
             onClick={onClose}

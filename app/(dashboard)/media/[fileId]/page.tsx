@@ -17,11 +17,12 @@ import { DeleteFileButton } from '@/components/DeleteFileButton'
  * /media/[fileId] — File detail page
  * Shows preview, metadata, status control, version history.
  */
-export default async function FileDetailPage({
-  params,
-}: {
-  params: { fileId: string }
-}) {
+export default async function FileDetailPage(
+  props: {
+    params: Promise<{ fileId: string }>
+  }
+) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session) notFound()
 
@@ -76,7 +77,6 @@ export default async function FileDetailPage({
       >
         ← Back to Media Library
       </Link>
-
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="min-w-0">
@@ -97,7 +97,6 @@ export default async function FileDetailPage({
           )}
         </div>
       </div>
-
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         {/* ── Left column: preview + meta ── */}
         <div className="space-y-5">
@@ -112,11 +111,11 @@ export default async function FileDetailPage({
               />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
+              (<img
                 src={downloadUrl}
                 alt={file.originalName}
                 className="max-h-full max-w-full object-contain"
-              />
+              />)
             )}
           </div>
 
@@ -214,5 +213,5 @@ export default async function FileDetailPage({
         </div>
       </div>
     </div>
-  )
+  );
 }

@@ -100,16 +100,17 @@ export async function POST(req: NextRequest) {
   const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000)
   const link = await prisma.shareLink.create({
     data: {
-      createdById:  session.user.id,
+      createdById:    session.user.id,
       linkType,
-      fileId:       fileId   ?? null,
-      eventId:      eventId  ?? null,
-      subfolderId:  subfolderId ?? null,
-      transferId:   transferId ?? null,
-      title:        title.trim(),
-      message:      message?.trim() || null,
+      fileId:         fileId   ?? null,
+      eventId:        eventId  ?? null,
+      subfolderId:    subfolderId ?? null,
+      transferId:     transferId ?? null,
+      title:          title.trim(),
+      message:        message?.trim() || null,
       pinHash,
-      maxDownloads: maxDownloads ?? null,
+      isPinProtected: !!pin,
+      maxDownloads:   maxDownloads ?? null,
       expiresAt,
     },
   })

@@ -9,9 +9,9 @@ export const metadata = { title: 'New Message — Christhood CMMS' }
 export default async function NewMessagePage() {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) redirect('/login')
-  if (session.user.role !== 'ADMIN') redirect('/dashboard')
 
-  const senderName = session.user.name ?? session.user.username ?? 'Admin'
+  const isAdmin    = session.user.role === 'ADMIN'
+  const senderName = session.user.name ?? session.user.username ?? session.user.email ?? 'User'
 
   return (
     <div>
@@ -22,11 +22,14 @@ export default async function NewMessagePage() {
           <h1 className="text-xl font-bold text-white">Compose Message</h1>
         </div>
         <p className="text-sm text-slate-400">
-          Send a direct message to specific team members or broadcast to an entire role group.
+          {isAdmin
+            ? 'Send a direct message to specific team members or broadcast to an entire role group.'
+            : 'Send a direct message to any team member.'
+          }
         </p>
       </div>
 
-      <MessageCompose senderName={senderName} />
+      <MessageCompose senderName={senderName} isAdmin={isAdmin} />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import {
@@ -47,7 +47,6 @@ function NotifIcon({ type, itemType, priority }: { type?: string; itemType: stri
 export function NotificationPanel({ onClose }: Props) {
   const [items,   setItems]   = useState<NotificationItem[]>([])
   const [loading, setLoading] = useState(true)
-  const panelRef              = useRef<HTMLDivElement>(null)
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -60,17 +59,6 @@ export function NotificationPanel({ onClose }: Props) {
   }, [])
 
   useEffect(() => { fetchNotifications() }, [fetchNotifications])
-
-  // Close on outside click
-  useEffect(() => {
-    function onPointerDown(e: PointerEvent) {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    return () => document.removeEventListener('pointerdown', onPointerDown)
-  }, [onClose])
 
   async function markRead(item: NotificationItem) {
     setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)))
@@ -90,10 +78,9 @@ export function NotificationPanel({ onClose }: Props) {
 
   return (
     <div
-      ref={panelRef}
-      className="absolute right-0 top-full mt-2 w-96 max-h-[520px] flex flex-col
+      className="w-full max-h-[calc(100vh-80px)] flex flex-col
                  bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl shadow-black/40
-                 z-50 overflow-hidden"
+                 overflow-hidden"
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/80 shrink-0">

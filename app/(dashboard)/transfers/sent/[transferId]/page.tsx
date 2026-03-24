@@ -11,13 +11,13 @@ import ShareButton                from '@/components/ShareButton'
 export const metadata: Metadata = { title: 'Transfer Detail — Christhood CMMS' }
 
 interface Props {
-  params: { transferId: string }
+  params: Promise<{ transferId: string }>
 }
 
-export default async function SentTransferDetailPage({ params }: Props) {
+export default async function SentTransferDetailPage(props: Props) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) redirect('/login')
-  if (session.user.role !== 'ADMIN') redirect('/dashboard')
 
   const transfer = await prisma.transfer.findUnique({
     where:   { id: params.transferId },

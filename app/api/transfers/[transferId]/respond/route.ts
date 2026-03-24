@@ -141,10 +141,12 @@ export async function POST(
     .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/respond', transferId, error: (e as Error)?.message, message: '[respond] in-app notif failed' }))
 
   sendPushToUser(transfer.senderId, 'TRANSFER_RESPONDED', {
-    title: 'Response received',
-    body:  notifMsg,
-    url:   notifLink,
-    tag:   `transfer-responded-${transferId}`,
+    title:   '✅ Transfer Response Received',
+    body:    notifMsg,
+    url:     notifLink,
+    tag:     `transfer-responded-${transferId}`,
+    type:    'TRANSFER_RESPONDED',
+    payload: { transferId, recipientName, subject: transfer.subject, fileCount: files.length },
   }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/respond', transferId, error: (e as Error)?.message, message: '[respond] push failed' }))
 
   if (senderEmail) {

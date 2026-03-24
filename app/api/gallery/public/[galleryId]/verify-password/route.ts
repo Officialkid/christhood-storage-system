@@ -3,11 +3,34 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt               from 'bcryptjs'
 import { prisma }           from '@/lib/prisma'
 
-export async function POST(
-  req:     NextRequest,
-  { params }: { params: { galleryId: string } },
-) {
+const MAX_ATTEMPTS = 5
+const LOCKOUT_MS   = 10 * 60 * 1000 // 10 minutes
+
+// In-memory attempt tracker (process-local; sufficient for single-replica deployments)
+// key: `${galleryId}:${clientIp}`   value: { attempts: number; lockedUntil?: number }
+const attemptMap = new Map<string, { attempts: number; lockedUntil?: number }>()
+
+export async function POST(req:     NextRequest, props: { params: Promise<{ galleryId: string }> }) {
+  const params = await props.params;
   const { galleryId } = params
+
+  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0].trim()
+               ?? req.headers.get('x-real-ip')
+               ?? '127.0.0.1'
+  const key = `${galleryId}:${clientIp}`
+  const now = Date.now()
+  const slot = attemptMap.get(key) ?? { attempts: 0 }
+
+  // Check lockout
+  if (slot.lockedUntil && now < slot.lockedUntil) {
+    const retryAfter = Math.ceil((slot.lockedUntil - now) / 1000)
+    return NextResponse.json({ error: 'Too many attempts', retryAfter }, { status: 423 })
+  }
+  // Reset expired lockout
+  if (slot.lockedUntil && now >= slot.lockedUntil) {
+    slot.attempts    = 0
+    slot.lockedUntil = undefined
+  }
 
   // Parse body
   let password = ''
@@ -34,9 +57,23 @@ export async function POST(
   }
 
   const valid = await bcrypt.compare(password, gallery.passwordHash)
+
   if (!valid) {
-    return NextResponse.json({ error: 'Incorrect password' }, { status: 401 })
+    slot.attempts++
+    if (slot.attempts >= MAX_ATTEMPTS) {
+      slot.lockedUntil = now + LOCKOUT_MS
+      slot.attempts    = 0
+    }
+    attemptMap.set(key, slot)
+    const attemptsRemaining = MAX_ATTEMPTS - slot.attempts
+    return NextResponse.json(
+      { error: 'Incorrect password', attemptsRemaining },
+      { status: 401 },
+    )
   }
+
+  // Clear attempt counter on success
+  attemptMap.delete(key)
 
   // Issue a deterministic HMAC token bound to this gallery's ID.
   // Stored as an httpOnly cookie — the server verifies it on each request.

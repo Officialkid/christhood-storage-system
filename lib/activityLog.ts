@@ -51,11 +51,15 @@ export type LogAction =
   | 'TRANSFER_INTEGRITY_FAILURE'
   // Internal messaging
   | 'MESSAGE_SENT'
+  // AI Assistant
+  | 'ISSUE_FLAGGED_TO_ADMIN'
   // Category management
   | 'CATEGORY_UPDATED'
   // External share links
   | 'SHARE_LINK_CREATED'
   | 'SHARE_LINK_REVOKED'
+  // Gallery
+  | 'GALLERY_DELETED' | 'GALLERY_RESTORED' | 'GALLERY_PURGED'
   // Profile & account lifecycle
   | 'PROFILE_UPDATED'
   | 'ACCOUNT_DELETION_REQUESTED'

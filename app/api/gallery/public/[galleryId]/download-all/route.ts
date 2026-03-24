@@ -9,10 +9,8 @@ import { getGalleryPublicUrl } from '@/lib/gallery/gallery-r2'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // 5 min — Cloud Run allows up to the configured timeout
 
-export async function GET(
-  req:     NextRequest,
-  { params }: { params: { galleryId: string } },
-) {
+export async function GET(req:     NextRequest, props: { params: Promise<{ galleryId: string }> }) {
+  const params = await props.params;
   const { galleryId } = params
 
   const gallery = await prisma.publicGallery.findFirst({
@@ -66,41 +64,41 @@ export async function GET(
 
   // Kick off file fetching in an async IIFE — don't await here
   ;(async () => {
-    for (const section of gallery.sections) {
-      if (section.files.length === 0) continue
+      for (const section of gallery.sections) {
+        if (section.files.length === 0) continue
 
-      const sectionDate = section.date
-        ? new Date(section.date).toLocaleDateString('en-GB', {
-            day: '2-digit', month: 'short', year: 'numeric',
-          })
-        : null
+        const sectionDate = section.date
+          ? new Date(section.date).toLocaleDateString('en-GB', {
+              day: '2-digit', month: 'short', year: 'numeric',
+            })
+          : null
 
-      // Folder: "Section Title — 05 Apr 2024/" or just "Section Title/"
-      const folderName = sectionDate
-        ? `${sanitizeFolder(section.title)} — ${sectionDate}`
-        : sanitizeFolder(section.title)
+        // Folder: "Section Title — 05 Apr 2024/" or just "Section Title/"
+        const folderName = sectionDate
+          ? `${sanitizeFolder(section.title)} — ${sectionDate}`
+          : sanitizeFolder(section.title)
 
-      for (const file of section.files) {
-        try {
-          const url = getGalleryPublicUrl(file.originalKey)
-          const res = await fetch(url)
-          if (!res.ok || !res.body) continue
-          // Convert web ReadableStream → Node.js Readable
-          const nodeStream = Readable.fromWeb(res.body as import('stream/web').ReadableStream)
-          archive.append(nodeStream, {
-            name:   sanitizeFilename(file.originalName),
-            prefix: folderName,
-          })
-        } catch (e) {
-          console.warn('[download-all] skipping file', file.id, e)
+        for (const file of section.files) {
+          try {
+            const url = getGalleryPublicUrl(file.originalKey)
+            const res = await fetch(url)
+            if (!res.ok || !res.body) continue
+            // Convert web ReadableStream → Node.js Readable
+            const nodeStream = Readable.fromWeb(res.body as import('stream/web').ReadableStream)
+            archive.append(nodeStream, {
+              name:   sanitizeFilename(file.originalName),
+              prefix: folderName,
+            })
+          } catch (e) {
+            console.warn('[download-all] skipping file', file.id, e)
+          }
         }
       }
-    }
-    await archive.finalize()
-  })().catch((e) => {
-    console.error('[download-all] stream error:', e)
-    passThrough.destroy(e as Error)
-  })
+      await archive.finalize()
+    })().catch((e) => {
+      console.error('[download-all] stream error:', e)
+      passThrough.destroy(e as Error)
+    })
 
   // Record download (fire-and-forget)
   const ua         = req.headers.get('user-agent') ?? ''
@@ -144,9 +142,9 @@ export async function GET(
 }
 
 function sanitizeFilename(name: string): string {
-  return name.replace(/[/\\?%*:|"<>]/g, '_').slice(0, 200)
+  return name.replace(/[/\\?%*:|"<>]/g, '_').slice(0, 200);
 }
 
 function sanitizeFolder(name: string): string {
-  return name.replace(/[/\\?%*:|"<>]/g, '_').replace(/\.+$/, '').slice(0, 100)
+  return name.replace(/[/\\?%*:|"<>]/g, '_').replace(/\.+$/, '').slice(0, 100);
 }

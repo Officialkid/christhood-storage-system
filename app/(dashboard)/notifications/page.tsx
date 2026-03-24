@@ -1,7 +1,28 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Bell, Mail, Smartphone, Folder, Check, Loader2, ArrowLeftRight, AlertCircle } from 'lucide-react'
+import { useRouter }      from 'next/navigation'
+import {
+  Bell, Mail, Smartphone, Folder, Check, Loader2, ArrowLeftRight, AlertCircle,
+  Upload, FileEdit, CheckCircle2, Trash2, RefreshCw, CheckCheck, XCircle,
+  MessageSquare, FolderPlus, Flag, Reply, ExternalLink,
+  Inbox as InboxIcon,
+} from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
+
+// ── Inbox notification item type ──────────────────────────────────────────────
+interface NotificationItem {
+  id:          string
+  itemType:    'notification' | 'message'
+  type?:       string
+  title?:      string
+  message:     string
+  senderName?: string
+  priority?:   'NORMAL' | 'URGENT'
+  link:        string | null
+  read:        boolean
+  createdAt:   string
+}
 
 type NotificationCategory =
   | 'UPLOAD_IN_FOLLOWED_FOLDER'
@@ -114,7 +135,282 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return output
 }
 
-export default function NotificationPreferencesPage() {
+// ── Notification type icon ────────────────────────────────────────────────────
+function NotifTypeIcon({ type, itemType, priority }: {
+  type?: string; itemType: string; priority?: string
+}) {
+  const cls = 'w-4 h-4 shrink-0'
+  if (itemType === 'message') {
+    return priority === 'URGENT'
+      ? <MessageSquare className={`${cls} text-red-400`} />
+      : <MessageSquare className={`${cls} text-indigo-400`} />
+  }
+  switch (type) {
+    case 'FILE_UPLOADED':        return <Upload        className={`${cls} text-emerald-400`} />
+    case 'FILE_STATUS_CHANGED':  return <FileEdit      className={`${cls} text-amber-400`} />
+    case 'FILE_PUBLISHED_ALERT': return <CheckCircle2  className={`${cls} text-emerald-400`} />
+    case 'FILE_DELETED':         return <Trash2        className={`${cls} text-red-400`} />
+    case 'FILE_RESTORED':        return <RefreshCw     className={`${cls} text-teal-400`} />
+    case 'TRANSFER_SENT':
+    case 'TRANSFER_RECEIVED':    return <InboxIcon     className={`${cls} text-violet-400`} />
+    case 'TRANSFER_RESPONDED':   return <Reply         className={`${cls} text-sky-400`} />
+    case 'TRANSFER_COMPLETED':   return <CheckCheck    className={`${cls} text-emerald-400`} />
+    case 'TRANSFER_CANCELLED':   return <XCircle       className={`${cls} text-red-400`} />
+    case 'DIRECT_MESSAGE':       return <MessageSquare className={`${cls} text-blue-400`} />
+    case 'NEW_EVENT_CREATED':    return <FolderPlus    className={`${cls} text-indigo-400`} />
+    case 'ISSUE_FLAGGED':        return <Flag          className={`${cls} text-amber-400`} />
+    default:                     return <Bell          className={`${cls} text-slate-500`} />
+  }
+}
+
+// ── Single notification row ───────────────────────────────────────────────────
+function NotifRow({
+  item, onRead, onDelete,
+}: {
+  item:     NotificationItem
+  onRead:   (id: string, itemType: string) => void
+  onDelete: (id: string) => void
+}) {
+  const router   = useRouter()
+  const isUrgent = item.itemType === 'message' && item.priority === 'URGENT'
+
+  const rowBg = item.read
+    ? 'hover:bg-slate-800/40'
+    : isUrgent
+    ? 'bg-red-950/20 hover:bg-red-950/30 border-l-2 border-l-red-500'
+    : 'bg-indigo-950/20 hover:bg-indigo-950/30 border-l-2 border-l-indigo-500'
+
+  const iconBg = item.itemType === 'message'
+    ? (isUrgent ? 'bg-red-950/60' : 'bg-indigo-950/60')
+    : 'bg-slate-800/60'
+
+  function handleClick() {
+    if (!item.read) onRead(item.id, item.itemType)
+    if (item.link) router.push(item.link)
+  }
+
+  const heading =
+    item.title ||
+    (item.itemType === 'message'
+      ? (isUrgent ? '🔴 Urgent Message' : `Message from ${item.senderName ?? 'Admin'}`)
+      : null)
+
+  return (
+    <div
+      className={`relative flex items-start gap-3 px-4 py-3.5 border-b border-slate-800/60
+                  last:border-0 transition-colors cursor-pointer min-h-[60px] ${rowBg}`}
+      onClick={handleClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && handleClick()}
+    >
+      {!item.read && (
+        <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-indigo-400" />
+      )}
+      <div className={`mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
+        <NotifTypeIcon type={item.type} itemType={item.itemType} priority={item.priority} />
+      </div>
+      <div className="flex-1 min-w-0">
+        {heading && (
+          <p className={`text-xs font-semibold truncate mb-0.5 ${isUrgent ? 'text-red-400' : 'text-indigo-300'}`}>
+            {heading}
+          </p>
+        )}
+        <p className={`text-sm leading-snug ${item.read ? 'text-slate-400' : 'font-medium text-white'}`}>
+          {item.message}
+        </p>
+        <p className="text-xs text-slate-600 mt-1">
+          {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+        </p>
+      </div>
+      <div className="flex items-center gap-1 shrink-0 mt-0.5">
+        {item.link && <ExternalLink className="w-3.5 h-3.5 text-slate-700" />}
+        {item.itemType === 'notification' && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(item.id) }}
+            className="p-1.5 rounded-lg text-slate-700 hover:text-red-400 hover:bg-red-950/30 transition-colors"
+            aria-label="Delete notification"
+            title="Delete"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Inbox section (Unread or All tab) ─────────────────────────────────────────
+function InboxSection({
+  tab, onUnreadCountChange,
+}: {
+  tab:                 'unread' | 'all'
+  onUnreadCountChange: (n: number) => void
+}) {
+  const [items,       setItems]       = useState<NotificationItem[]>([])
+  const [loading,     setLoading]     = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [page,        setPage]        = useState(1)
+  const [hasMore,     setHasMore]     = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [markingAll,  setMarkingAll]  = useState(false)
+  const LIMIT = 30
+
+  const fetchPage = useCallback(async (pg: number) => {
+    if (pg === 1) setLoading(true); else setLoadingMore(true)
+    try {
+      const res    = await fetch(`/api/notifications?tab=${tab}&page=${pg}&limit=${LIMIT}`)
+      const data   = await res.json()
+      const fetched: NotificationItem[] = data.notifications ?? []
+      setItems(prev => pg === 1 ? fetched : [...prev, ...fetched])
+      setHasMore(fetched.length === LIMIT)
+      const cnt = data.unreadCount ?? 0
+      setUnreadCount(cnt)
+      onUnreadCountChange(cnt)
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }, [tab, onUnreadCountChange])
+
+  useEffect(() => { fetchPage(1) }, [fetchPage])
+
+  async function markRead(id: string, itemType: string) {
+    setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+    setUnreadCount(prev => Math.max(0, prev - 1))
+    if (itemType === 'message') {
+      await fetch(`/api/messages/${id}/read`, { method: 'PATCH' }).catch(() => {})
+    } else {
+      await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' }).catch(() => {})
+    }
+    window.dispatchEvent(new CustomEvent('notifications:invalidate'))
+  }
+
+  async function markAllRead() {
+    setMarkingAll(true)
+    try {
+      await fetch('/api/notifications/mark-all-read', { method: 'POST' })
+      setItems(prev => prev.map(n => ({ ...n, read: true })))
+      setUnreadCount(0)
+      onUnreadCountChange(0)
+      window.dispatchEvent(new CustomEvent('notifications:invalidate'))
+    } finally {
+      setMarkingAll(false)
+    }
+  }
+
+  async function deleteItem(id: string) {
+    setItems(prev => prev.filter(n => n.id !== id))
+    await fetch(`/api/notifications/${id}`, { method: 'DELETE' }).catch(() => {})
+  }
+
+  function loadMore() {
+    const next = page + 1
+    setPage(next)
+    fetchPage(next)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-slate-500">
+        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…
+      </div>
+    )
+  }
+
+  const countLabel = tab === 'unread'
+    ? (unreadCount === 0 ? 'No unread notifications' : `${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}`)
+    : (items.length === 0 ? 'No notifications yet' : `${items.length}${hasMore ? '+' : ''} notification${items.length !== 1 ? 's' : ''}`)
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-slate-400">{countLabel}</p>
+        {tab === 'unread' && unreadCount > 0 && (
+          <button
+            onClick={markAllRead}
+            disabled={markingAll}
+            className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300
+                       disabled:opacity-50 transition-colors"
+          >
+            {markingAll
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <CheckCheck className="w-3.5 h-3.5" />}
+            Mark all as read
+          </button>
+        )}
+      </div>
+
+      {items.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20">
+          <Bell className="w-12 h-12 mb-4 text-slate-700" />
+          <p className="text-base font-semibold text-slate-300">
+            {tab === 'unread' ? 'You are all caught up! ✓' : 'No notifications yet.'}
+          </p>
+          {tab === 'unread' && (
+            <p className="text-sm mt-1 text-slate-500">No unread notifications.</p>
+          )}
+        </div>
+      )}
+
+      {items.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+          {items.map(item => (
+            <NotifRow
+              key={`${item.itemType}-${item.id}`}
+              item={item}
+              onRead={markRead}
+              onDelete={deleteItem}
+            />
+          ))}
+        </div>
+      )}
+
+      {hasMore && (
+        <div className="flex justify-center mt-4">
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300
+                       disabled:opacity-50 py-2.5 px-6 rounded-xl bg-slate-800 hover:bg-slate-700
+                       transition-colors"
+          >
+            {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+            Load more
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Tab button ────────────────────────────────────────────────────────────────
+function TabButton({
+  active, onClick, badge, children,
+}: {
+  active: boolean; onClick: () => void; badge?: string; children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm
+                  font-medium transition-colors ${
+        active ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+      }`}
+    >
+      {children}
+      {badge && (
+        <span className="bg-indigo-500 text-white text-[10px] font-bold rounded-full
+                         px-1.5 min-w-[18px] text-center leading-tight py-0.5">
+          {badge}
+        </span>
+      )}
+    </button>
+  )
+}
+
+// ── Settings section (notification preferences) ───────────────────────────────
+function SettingsSection() {
   const [prefs,            setPrefs]            = useState<Record<NotificationCategory, Pref>>({} as never)
   const [followedEventIds, setFollowedEventIds] = useState<string[]>([])
   const [allEvents,        setAllEvents]        = useState<Event[]>([])
@@ -347,14 +643,7 @@ export default function NotificationPreferencesPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-white">Notification Preferences</h1>
-        <p className="mt-1 text-slate-400">
-          Control which notifications you receive, and which event folders you follow.
-        </p>
-      </div>
+    <div className="space-y-8">
 
       {/* ── Browser Push Subscription ───────────────────────────────────── */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
@@ -544,5 +833,48 @@ function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void 
         style={{ margin: '1px' }}
       />
     </button>
+  )
+}
+
+// ── Main notifications page — three tabs ──────────────────────────────────────
+export default function NotificationsPage() {
+  const [tab,         setTab]         = useState<'unread' | 'all' | 'settings'>('unread')
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  const handleCountChange = useCallback((n: number) => setUnreadCount(n), [])
+
+  // Seed badge from the fast unread-count endpoint
+  useEffect(() => {
+    fetch('/api/notifications/unread-count')
+      .then(r => r.json())
+      .then(d => setUnreadCount(d.count ?? 0))
+      .catch(() => {})
+  }, [])
+
+  return (
+    <div className="max-w-2xl">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-white">Notifications</h1>
+        <p className="mt-1 text-slate-400">Your inbox and notification preferences.</p>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-1 mb-6 bg-slate-800/50 p-1 rounded-xl">
+        <TabButton
+          active={tab === 'unread'}
+          onClick={() => setTab('unread')}
+          badge={unreadCount > 0 ? (unreadCount > 99 ? '99+' : String(unreadCount)) : undefined}
+        >
+          Unread
+        </TabButton>
+        <TabButton active={tab === 'all'} onClick={() => setTab('all')}>All</TabButton>
+        <TabButton active={tab === 'settings'} onClick={() => setTab('settings')}>Settings</TabButton>
+      </div>
+
+      {tab === 'settings'
+        ? <SettingsSection />
+        : <InboxSection tab={tab} key={tab} onUnreadCountChange={handleCountChange} />
+      }
+    </div>
   )
 }

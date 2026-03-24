@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link          from 'next/link'
 import {
   ArrowLeft, Globe, Archive, Copy, Check, ExternalLink, Eye,
-  EyeOff, Loader2, Calendar, Tag, Image as ImageIcon,
+  EyeOff, Loader2, Calendar, Tag, Image as ImageIcon, Share2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 
@@ -54,13 +54,16 @@ export function ReviewClient({
 }) {
   const router = useRouter()
   const [gallery,    setGallery]    = useState(initial)
-  const [publishing, setPublishing] = useState(false)
-  const [archiving,  setArchiving]  = useState(false)
-  const [published,  setPublished]  = useState(false)
-  const [copied,     setCopied]     = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
+  const [publishing,   setPublishing]   = useState(false)
+  const [archiving,    setArchiving]     = useState(false)
+  const [published,    setPublished]     = useState(false)
+  const [copied,       setCopied]        = useState(false)
+  const [showConfirm,  setShowConfirm]   = useState(false)
+  const [supportsShare, setSupportsShare] = useState(false)
 
   const publicUrl = `https://gallery.cmmschristhood.org/${gallery.slug}`
+
+  useEffect(() => { setSupportsShare(!!navigator.share) }, [])
 
   async function publishGallery() {
     setPublishing(true)
@@ -94,6 +97,23 @@ export function ReviewClient({
     await navigator.clipboard.writeText(publicUrl).catch(() => {})
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  async function handleShare() {
+    const shareData = {
+      title: gallery.title,
+      text:  `Check out these photos from Christhood: ${gallery.title}`,
+      url:   publicUrl,
+    }
+    try {
+      await navigator.share(shareData)
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        await navigator.clipboard.writeText(publicUrl).catch(() => {})
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    }
   }
 
   const isPublished     = gallery.status === 'PUBLISHED'
@@ -137,12 +157,15 @@ export function ReviewClient({
                     className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition-colors">
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
-            <a href={`https://wa.me/?text=${encodeURIComponent(`Check out our gallery: ${publicUrl}`)}`}
-               target="_blank" rel="noreferrer"
-               className="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5
-                          rounded-lg transition-colors whitespace-nowrap">
-              Share to WhatsApp
-            </a>
+            {supportsShare && (
+              <button
+                onClick={handleShare}
+                className="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5
+                           rounded-lg transition-colors whitespace-nowrap"
+              >
+                Share ↗
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -222,7 +245,16 @@ export function ReviewClient({
                 </Button>
               )}
               {isPublished && (
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                  {supportsShare && (
+                    <button onClick={handleShare}
+                            className="flex-1 flex items-center justify-center gap-2 py-2
+                                       bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300
+                                       hover:text-white transition-colors">
+                      <Share2 className="w-4 h-4" />
+                      Share ↗
+                    </button>
+                  )}
                   <button onClick={copyLink}
                           className="flex-1 flex items-center justify-center gap-2 py-2
                                      bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300

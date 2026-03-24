@@ -4,7 +4,7 @@ import Link from 'next/link'
 import {
   Inbox,
   Clock, CheckCircle2, RefreshCcw, Archive, AlertCircle,
-  User2,
+  User2, Lock,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -21,6 +21,7 @@ interface TransferItem {
   totalSize: number
   expiresAt: Date | string
   createdAt: Date | string
+  isPinProtected?: boolean
   sender: { id: string; username: string | null; name: string | null; email: string | null }
 }
 
@@ -75,6 +76,9 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2 mb-0.5">
             <span className={`text-sm font-semibold truncate ${isPending ? 'text-white' : 'text-slate-200'}`}>
+              {transfer.isPinProtected && (
+                <Lock className="inline w-3 h-3 text-amber-400 mr-1 -mt-0.5" />
+              )}
               {transfer.subject}
             </span>
             <span className="text-xs text-slate-500 shrink-0">

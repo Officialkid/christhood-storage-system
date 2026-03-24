@@ -8,9 +8,10 @@ import type { Metadata }  from 'next'
 
 export const dynamic = 'force-dynamic'
 
-interface Props { params: { slug: string } }
+interface Props { params: Promise<{ slug: string }> }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata(props: Props): Promise<Metadata> {
+  const params = await props.params;
   const gallery = await prisma.publicGallery.findUnique({
     where: { slug: params.slug, status: 'PUBLISHED' },
     select: { title: true, description: true, coverImageKey: true },
@@ -34,7 +35,8 @@ function buildGalleryToken(galleryId: string): string {
     .digest('hex')
 }
 
-export default async function GallerySlugPage({ params }: Props) {
+export default async function GallerySlugPage(props: Props) {
+  const params = await props.params;
   const gallery = await prisma.publicGallery.findUnique({
     where: { slug: params.slug, status: 'PUBLISHED' },
     include: {
@@ -54,7 +56,7 @@ export default async function GallerySlugPage({ params }: Props) {
   // ── Password verification ──────────────────────────────────────────────────
   let passwordVerified = !gallery.isPasswordProtected
   if (gallery.isPasswordProtected) {
-    const jar   = cookies()
+    const jar   = await cookies()
     const token = jar.get(`g_${gallery.id}`)?.value
     const expected = buildGalleryToken(gallery.id)
     passwordVerified = token === expected

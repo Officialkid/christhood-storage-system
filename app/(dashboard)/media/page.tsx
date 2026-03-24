@@ -12,11 +12,12 @@ const FILTER_STATUSES = [
   { value: 'ARCHIVED',            label: 'Archived'  },
 ] as const
 
-export default async function MediaPage({
-  searchParams
-}: {
-  searchParams: { page?: string; type?: string; eventId?: string; status?: string; tags?: string }
-}) {
+export default async function MediaPage(
+  props: {
+    searchParams: Promise<{ page?: string; type?: string; eventId?: string; status?: string; tags?: string }>
+  }
+) {
+  const searchParams = await props.searchParams;
   const page     = Math.max(1, parseInt(searchParams.page ?? '1'))
   const limit    = 24
   const type     = searchParams.type    as any ?? undefined

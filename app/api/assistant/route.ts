@@ -220,7 +220,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 6. Build system prompt ─────────────────────────────────────────────────
-  const systemPrompt = buildSystemPrompt({ currentPage: page, userName, userRole })
+  const systemPrompt = buildSystemPrompt({ currentPage: page, userName, userRole: userRole as 'ADMIN' | 'EDITOR' | 'UPLOADER' })
 
   // ── 7. Prepare Gemini history and current user message ────────────────────
   const geminiHistory = convertToGeminiHistory(cappedMessages)

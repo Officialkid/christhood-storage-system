@@ -24,6 +24,7 @@ import {
   createInAppNotification,
   notifyDirectMessage,
   notifyFileRestored,
+  sendPushToUser,
 }                                             from '@/lib/notifications'
 import { OFFICIAL_CATEGORY_NAMES }                     from '@/lib/hierarchyConstants'
 import { recordActionExecuted, recordActionCancelled } from '@/lib/assistant/tool-telemetry'
@@ -33,6 +34,19 @@ import {
   failActionLog,
 }                                             from '@/lib/assistant/safety/preservation'
 import type { AppRole }                       from '@/types'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTML escaping — prevents injection in admin alert emails
+// ─────────────────────────────────────────────────────────────────────────────
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\n/g, '<br>')
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared types
@@ -900,7 +914,7 @@ async function executeFlagIssue(
     },
   })
 
-  // In-app + push notifications
+  // In-app + push notifications (message-level — creates DIRECT_MESSAGE bell entry)
   notifyDirectMessage({
     messageId:    message.id,
     senderName:   `Zara (on behalf of ${args.issuerName})`,
@@ -908,6 +922,46 @@ async function executeFlagIssue(
     priority:     args.urgency,
     recipientIds: admins.map(a => a.id),
   }).catch(() => {})
+
+  // ── Explicit per-admin ISSUE_FLAGGED notification + guaranteed push ──────
+  const urgencyLabel   = args.urgency === 'URGENT' ? '🔴 URGENT' : '⚠️'
+  const issueTypeLabel = args.issueType
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase()) // e.g. ACCESS_REQUEST → Access Request
+
+  // Fetch active admins (with name) for the notification loop
+  const adminUsers = await prisma.user.findMany({
+    where:  { role: 'ADMIN', isActive: true },
+    select: { id: true, name: true },
+  })
+
+  for (const admin of adminUsers) {
+    // In-app notification — ISSUE_FLAGGED type surfaces in the bell panel
+    await createInAppNotification(
+      admin.id,
+      `${issueTypeLabel}: ${args.description}`,
+      '/communications',
+      'ISSUE_FLAGGED',
+      `${urgencyLabel} Issue flagged by ${args.issuerName}`,
+    )
+
+    // Push notification — requireInteraction keeps it on screen until dismissed (URGENT only)
+    await sendPushToUser(admin.id, 'DIRECT_MESSAGE', {
+      title:              `${urgencyLabel} Issue Flagged`,
+      body:               `${args.issuerName}: ${args.description.slice(0, 100)}`,
+      url:                '/communications',
+      tag:                `issue-flagged-${message.id}`,
+      type:               'DIRECT_MESSAGE',
+      requireInteraction: args.urgency === 'URGENT',
+      payload: {
+        messageId:  message.id,
+        senderName: `Zara (on behalf of ${args.issuerName})`,
+        subject:    `${urgencyLabel} ${issueTypeLabel}: ${args.issuerName} needs help`,
+        priority:   args.urgency,
+      },
+    })
+  }
 
   // Email each admin if URGENT
   if (args.urgency === 'URGENT') {
@@ -920,20 +974,20 @@ async function executeFlagIssue(
         subject: `🔴 URGENT — ${subject}`,
         html:
           `<p><strong>An urgent issue was flagged via the Christhood CMMS AI Assistant.</strong></p>` +
-          `<p><strong>From:</strong> ${args.issuerName}</p>` +
-          `<p><strong>Type:</strong> ${args.issueType}</p>` +
-          `<p><strong>Description:</strong><br>${args.description.replace(/\n/g, '<br>')}</p>` +
+          `<p><strong>From:</strong> ${escapeHtml(args.issuerName)}</p>` +
+          `<p><strong>Type:</strong> ${escapeHtml(args.issueType)}</p>` +
+          `<p><strong>Description:</strong><br>${escapeHtml(args.description)}</p>` +
           `<p><a href="${link}" style="color:#6366f1;">View in CMMS →</a></p>`,
       }).catch(() => {})
     }
   }
 
   // Log
-  await log('ISSUE_FLAGGED_TO_ADMIN' as never, caller.userId, {
+  await log('ISSUE_FLAGGED_TO_ADMIN', caller.userId, {
     metadata: {
       issueType:   args.issueType,
       urgency:     args.urgency,
-      description: args.description,
+      description: args.description.slice(0, 100),
       actor:       'ZARA_AI',
       messageId:   message.id,
     },

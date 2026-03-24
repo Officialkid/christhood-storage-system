@@ -25,10 +25,8 @@ const PREVIEW_EXPIRY_SECONDS = 60 * 60  // 1 hour
  *   }
  * }
  */
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { fileId: string } },
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ fileId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -15,18 +15,20 @@ export async function GET(req: NextRequest) {
 
   const userId = session.user.id
   const { searchParams } = new URL(req.url)
-  const page  = Math.max(1, parseInt(searchParams.get('page')  ?? '1'))
-  const limit = Math.min(50, parseInt(searchParams.get('limit') ?? '20'))
+  const page       = Math.max(1, parseInt(searchParams.get('page')  ?? '1'))
+  const limit      = Math.min(50, parseInt(searchParams.get('limit') ?? '20'))
+  const tab        = searchParams.get('tab') ?? 'all'
+  const readFilter = tab === 'unread' ? { read: false as const } : {}
 
   const [rawNotifications, rawMessages, notifUnread, msgUnread, notifTotal] = await Promise.all([
     prisma.notification.findMany({
-      where:   { userId },
+      where:   { userId, ...readFilter },
       orderBy: { createdAt: 'desc' },
       take:    limit,
       skip:    (page - 1) * limit,
     }),
     prisma.messageRecipient.findMany({
-      where:   { recipientId: userId },
+      where:   { recipientId: userId, ...readFilter },
       include: {
         message: {
           select: {

@@ -5,12 +5,13 @@ import { prisma } from '@/lib/prisma'
 
 /**
  * GET /api/users/search?q=<query>
- * Admin-only. Returns up to 10 users matching the query by name/username/email.
+ * Any authenticated user. Returns up to 10 users matching the query by
+ * name/username/email, excluding the current user.
  */
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 
   const q = req.nextUrl.searchParams.get('q')?.trim() ?? ''
@@ -18,6 +19,7 @@ export async function GET(req: NextRequest) {
 
   const users = await prisma.user.findMany({
     where: {
+      id: { not: session.user.id },   // never return yourself
       OR: [
         { username: { contains: q, mode: 'insensitive' } },
         { name:     { contains: q, mode: 'insensitive' } },

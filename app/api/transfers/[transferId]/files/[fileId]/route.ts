@@ -30,10 +30,11 @@ export async function GET(
     return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
   }
 
-  const isRecipient = transfer.recipientId === session.user.id
-  const isAdmin     = session.user.role === 'ADMIN'
-  if (!isRecipient && !isAdmin) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (transfer.recipientId !== session.user.id) {
+    return NextResponse.json(
+      { error: 'This transfer is private. Only the recipient may access its files.' },
+      { status: 403 },
+    )
   }
 
   const file = await prisma.transferFile.findFirst({

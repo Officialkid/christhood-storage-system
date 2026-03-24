@@ -15,12 +15,18 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
 }
 
 export interface PushPayload {
-  title:   string
-  body:    string
-  icon?:   string
-  badge?:  string
-  url?:    string
-  tag?:    string
+  title:              string
+  body:               string
+  icon?:              string
+  badge?:             string
+  url?:               string
+  tag?:               string
+  /** Typed event name — SW uses this to pick the rich notification template. */
+  type?:              string
+  /** Structured data matching the SW template for `type`. */
+  payload?:           Record<string, unknown>
+  /** If true, the notification stays on screen until the user dismisses it (URGENT alerts). */
+  requireInteraction?: boolean
 }
 
 export interface StoredSubscription {

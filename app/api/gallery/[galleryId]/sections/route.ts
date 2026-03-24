@@ -10,10 +10,8 @@ import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { logger }                    from '@/lib/logger'
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { galleryId: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ galleryId: string }> }) {
+  const params = await props.params;
   const { galleryId } = params
 
   try {

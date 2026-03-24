@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Share2, X, Copy, Check, Loader2, Lock, RefreshCw, Link as LinkIcon } from 'lucide-react'
 
 interface Props {
@@ -40,10 +40,13 @@ export default function ShareLinkDialog({
   const [pin,          setPin]          = useState(generatePin)
   const [maxEnabled,   setMaxEnabled]   = useState(false)
   const [maxDownloads, setMaxDownloads] = useState('')
-  const [generating,   setGenerating]   = useState(false)
-  const [error,        setError]        = useState<string | null>(null)
-  const [result,       setResult]       = useState<{ url: string; pin?: string; expiresAt: string } | null>(null)
-  const [copied,       setCopied]       = useState(false)
+  const [generating,    setGenerating]    = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
+  const [result,        setResult]        = useState<{ url: string; pin?: string; expiresAt: string } | null>(null)
+  const [copied,        setCopied]        = useState(false)
+  const [supportsShare, setSupportsShare] = useState(false)
+
+  useEffect(() => { setSupportsShare(!!navigator.share) }, [])
 
   const effectiveHours = expiryMode === 'custom'
     ? Math.max(1, Math.min(8760, Number(customHours) || 24))
@@ -85,6 +88,22 @@ export default function ShareLinkDialog({
     setTimeout(() => setCopied(false), 2000)
   }
 
+  async function handleShare() {
+    if (!result) return
+    const shareData = {
+      title: defaultTitle,
+      text:  `Here is a shared link from the Christhood CMMS: ${defaultTitle}`,
+      url:   result.url,
+    }
+    try {
+      await navigator.share(shareData)
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        await copyUrl()
+      }
+    }
+  }
+
   // ─── Result screen ────────────────────────────────────────────────────────
   if (result) {
     return (
@@ -95,14 +114,26 @@ export default function ShareLinkDialog({
             <p className="text-xs text-emerald-300 leading-relaxed break-all">{result.url}</p>
           </div>
 
-          <button
-            onClick={copyUrl}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl
-                       bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition"
-          >
-            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            {copied ? 'Copied!' : 'Copy link'}
-          </button>
+          <div className="flex gap-2">
+            {supportsShare && (
+              <button
+                onClick={handleShare}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl
+                           bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium transition"
+              >
+                <Share2 className="w-4 h-4" />
+                Share ↗
+              </button>
+            )}
+            <button
+              onClick={copyUrl}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl
+                         bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition"
+            >
+              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              {copied ? 'Copied!' : 'Copy link'}
+            </button>
+          </div>
 
           {result.pin && (
             <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3">

@@ -11,10 +11,8 @@ import { prisma }                     from '@/lib/prisma'
 import { logger }                     from '@/lib/logger'
 import { createInAppNotification }    from '@/lib/notifications'
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { galleryId: string } },
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ galleryId: string }> }) {
+  const params = await props.params;
   const { galleryId } = params
 
   try {

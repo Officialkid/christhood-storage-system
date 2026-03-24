@@ -123,7 +123,7 @@ function TransferStatusPill({ status }: { status: string }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function MessageCompose({ senderName }: { senderName: string }) {
+export function MessageCompose({ senderName, isAdmin }: { senderName: string; isAdmin: boolean }) {
   const router = useRouter()
 
   // ── Form state ─────────────────────────────────────────────────────────────
@@ -268,7 +268,10 @@ export function MessageCompose({ senderName }: { senderName: string }) {
       if (d.subject)       setSubject(d.subject)
       if (d.body)          setBody(d.body)
       if (d.priority)      setPriority(d.priority as Priority)
-      if (d.recipientMode) setRecipientMode(d.recipientMode as RecipientMode)
+      // Only restore broadcast mode if the current user is an Admin
+      if (d.recipientMode) setRecipientMode(
+        d.recipientMode === 'broadcast' && !isAdmin ? 'specific' : d.recipientMode as RecipientMode
+      )
       if (d.broadcastRole) setBroadcastRole(d.broadcastRole as BroadcastRole)
       if (d.selectedUsers) setSelectedUsers(d.selectedUsers as SearchUser[])
     } catch { /* corrupt draft → ignore */ }
@@ -466,15 +469,18 @@ export function MessageCompose({ senderName }: { senderName: string }) {
             >
               <Users className="w-4 h-4" /> Specific Users
             </button>
-            <button
-              onClick={() => setRecipientMode('broadcast')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all
-                ${recipientMode === 'broadcast'
-                  ? 'bg-violet-600/30 border border-violet-500/50 text-violet-300'
-                  : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              <Radio className="w-4 h-4" /> Broadcast to Role
-            </button>
+            {/* Broadcast to a role group is Admin-only */}
+            {isAdmin && (
+              <button
+                onClick={() => setRecipientMode('broadcast')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all
+                  ${recipientMode === 'broadcast'
+                    ? 'bg-violet-600/30 border border-violet-500/50 text-violet-300'
+                    : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                <Radio className="w-4 h-4" /> Broadcast to Role
+              </button>
+            )}
           </div>
 
           {recipientMode === 'specific' ? (

@@ -10,14 +10,14 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession }          from 'next-auth'
+import bcrypt                        from 'bcryptjs'
 import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { logger }                    from '@/lib/logger'
+import { log }                       from '@/lib/activityLog'
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { galleryId: string } },
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ galleryId: string }> }) {
+  const params = await props.params;
   const { galleryId } = params
 
   try {
@@ -69,10 +69,8 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { galleryId: string } },
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ galleryId: string }> }) {
+  const params = await props.params;
   const { galleryId } = params
 
   try {
@@ -129,9 +127,8 @@ export async function PATCH(
     if (requireNameForDownload !== undefined) data.requireNameForDownload = Boolean(requireNameForDownload)
     if (isPasswordProtected !== undefined)   data.isPasswordProtected    = Boolean(isPasswordProtected)
     if (password !== undefined && password !== null) {
-      // In production this should be hashed; store as bcrypt hash
-      // For now store as-is (the client should only send this when changing the password)
-      data.passwordHash = password
+      // Hash the password before storing — never persist plaintext credentials
+      data.passwordHash = await bcrypt.hash(String(password).slice(0, 100), 10)
     }
     if (isPasswordProtected === false) data.passwordHash = null
 
@@ -156,6 +153,93 @@ export async function PATCH(
       route:     `/api/gallery/${galleryId}`,
       error:     err instanceof Error ? err.message : String(err),
       message:   'Unexpected error updating gallery',
+    })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/gallery/[galleryId]
+// Soft-deletes a gallery: sets status=DELETED, deletedAt/By, purgesAt (+30d),
+// and preDeleteStatus so it can be fully restored.
+//   ADMIN  → can trash any non-deleted/purged gallery
+//   EDITOR → can only trash their own DRAFT galleries
+// ─────────────────────────────────────────────────────────────────────────────
+export async function DELETE(req: NextRequest, props: { params: Promise<{ galleryId: string }> }) {
+  const params = await props.params;
+  const { galleryId } = params
+
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+
+    const { role, id: userId } = session.user
+    if (role !== 'EDITOR' && role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const gallery = await prisma.publicGallery.findUnique({
+      where:  { id: galleryId },
+      select: { id: true, title: true, status: true, createdById: true },
+    })
+
+    if (!gallery) return NextResponse.json({ error: 'Gallery not found' }, { status: 404 })
+    if (gallery.status === 'DELETED' || gallery.status === 'PURGED') {
+      return NextResponse.json({ error: 'Gallery is already deleted' }, { status: 409 })
+    }
+
+    // EDITOR: only own DRAFT galleries
+    if (role === 'EDITOR') {
+      if (gallery.createdById !== userId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      if (gallery.status !== 'DRAFT') {
+        return NextResponse.json(
+          { error: 'Editors can only delete DRAFT galleries' },
+          { status: 409 },
+        )
+      }
+    }
+
+    const now      = new Date()
+    const purgesAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+
+    await prisma.publicGallery.update({
+      where: { id: galleryId },
+      data:  {
+        status:          'DELETED',
+        deletedAt:       now,
+        deletedById:     userId,
+        purgesAt,
+        preDeleteStatus: gallery.status,
+      },
+    })
+
+    await log('GALLERY_DELETED', userId, {
+      metadata: {
+        galleryId,
+        galleryTitle: gallery.title,
+        purgesAt:     purgesAt.toISOString(),
+        preStatus:    gallery.status,
+      },
+    })
+
+    logger.info('GALLERY_DELETED', {
+      userId,
+      userRole: role,
+      route:    `/api/gallery/${galleryId}`,
+      message:  `Gallery "${gallery.title}" moved to trash — purges ${purgesAt.toISOString()}`,
+      metadata: { galleryId, purgesAt: purgesAt.toISOString() },
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    logger.error('GALLERY_DELETE_ERROR', {
+      userId:   undefined,
+      userRole: undefined,
+      route:    `/api/gallery/${galleryId}`,
+      error:    err instanceof Error ? err.message : String(err),
+      message:  'Unexpected error deleting gallery',
     })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

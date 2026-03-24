@@ -7,23 +7,23 @@ import { deliverMessage }            from '@/lib/messageDelivery'
 
 /**
  * POST /api/messages
- * Admin-only. Creates a Message record + MessageRecipient rows,
- * fires in-app / push notifications, and (for URGENT) sends email immediately.
+ * Any authenticated user can send a message to individual recipients.
+ * Broadcast to a role group (broadcastRole) is restricted to Admins.
  *
  * Body shape:
  * {
  *   subject:              string              (max 150)
  *   body:                 string              (max 2000)
  *   priority:             'NORMAL' | 'URGENT'
- *   broadcastRole?:       'UPLOADER' | 'EDITOR' | 'ALL'
+ *   broadcastRole?:       'UPLOADER' | 'EDITOR' | 'ALL'  — Admin only
  *   recipientIds?:        string[]            (mutually exclusive with broadcastRole)
  *   attachmentTransferId?: string
  * }
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 
   const data = await req.json()
@@ -57,6 +57,14 @@ export async function POST(req: NextRequest) {
   const hasRecipients = Array.isArray(recipientIds) && recipientIds.length > 0
   if (!hasBroadcast && !hasRecipients) {
     return NextResponse.json({ error: 'At least one recipient is required' }, { status: 400 })
+  }
+
+  // Broadcast to a role group is Admin-only
+  if (hasBroadcast && session.user.role !== 'ADMIN') {
+    return NextResponse.json(
+      { error: 'Only admins can broadcast to role groups. You can message individual users.' },
+      { status: 403 }
+    )
   }
 
   // ── Resolve target user IDs ──────────────────────────────────────────────

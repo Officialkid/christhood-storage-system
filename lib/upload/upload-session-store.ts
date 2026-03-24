@@ -56,6 +56,28 @@ export interface UploadSession {
   lastProgressAt: string   // ISO timestamp
 }
 
+// ────────────────────────── Serial write queue (prevents IDB race conditions) ──
+//
+// `updateSession` does a read-then-write.  With 4 parallel multipart chunks all
+// calling onPartDone at roughly the same time — plus the NetworkError handler
+// calling updateSession({ status:'paused' }) concurrently — each caller can read
+// a stale snapshot and then clobber the other's write.  The loser's write
+// (whichever IDB put resolves last) wins, potentially discarding all completed
+// parts and causing a full re-upload on resume.
+//
+// Solution: funnel every write through a single promise chain.  Each new write
+// waits for the previous write to complete before it starts its read, so the
+// read always sees the latest committed state.
+
+let _writeQueue: Promise<void> = Promise.resolve()
+
+function enqueueWrite(fn: () => Promise<void>): Promise<void> {
+  // Always chain off the tail; errors in fn must NOT break the queue chain.
+  const next = _writeQueue.then(fn).catch(() => {})
+  _writeQueue = next
+  return next
+}
+
 // ─────────────────────────────────────────────────────────────── DB helpers ───
 
 let _db: IDBDatabase | null = null
@@ -106,10 +128,10 @@ export function sessionIdFor(file: File): string {
   return `${encodeURIComponent(file.name)}_${file.size}_${file.lastModified}`
 }
 
-/** Persist (create or overwrite) a session record. */
-export async function saveSession(session: UploadSession): Promise<void> {
+/** Persist (create or overwrite) a session record. Serialised through the write queue. */
+export function saveSession(session: UploadSession): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await idbOp<any>(s => s.put(session), 'readwrite')
+  return enqueueWrite(() => idbOp<any>(s => s.put(session), 'readwrite'))
 }
 
 /** Load a session by its stable file fingerprint. Returns `undefined` if not found. */
@@ -121,17 +143,23 @@ export function getSession(sessionId: string): Promise<UploadSession | undefined
  * Merge a partial update into an existing session.
  * Automatically updates `lastProgressAt` to now.
  * No-ops silently if the session is not found.
+ *
+ * Serialised through the write queue — see the queue comment above for why
+ * this is essential when onPartDone and NetworkError fire concurrently.
  */
-export async function updateSession(
+export function updateSession(
   sessionId: string,
   patch: Partial<Pick<UploadSession, 'completedParts' | 'failedChunks' | 'status' | 'lastProgressAt'>>,
 ): Promise<void> {
-  const existing = await getSession(sessionId)
-  if (!existing) return
-  await saveSession({
-    ...existing,
-    ...patch,
-    lastProgressAt: new Date().toISOString(),
+  return enqueueWrite(async () => {
+    const existing = await getSession(sessionId)
+    if (!existing) return
+    // Write directly via idbOp to avoid re-entering the queue through saveSession.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await idbOp<any>(
+      s => s.put({ ...existing, ...patch, lastProgressAt: new Date().toISOString() }),
+      'readwrite',
+    )
   })
 }
 

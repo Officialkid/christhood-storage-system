@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Link                                           from 'next/link'
 import { Bell }                                       from 'lucide-react'
-import { NotificationPanel }                          from './NotificationPanel'
 
 // Convert base64url → Uint8Array (required for PushManager.subscribe)
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -14,11 +14,22 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return output
 }
 
+/** Plays a subtle two-tone chime. Falls back gracefully if autoplay is blocked. */
+function playNotificationChime() {
+  try {
+    const audio = new Audio('/sounds/notification.wav')
+    audio.volume = 0.6
+    audio.play().catch(() => {})
+  } catch {
+    // Audio API not available — silently ignore
+  }
+}
+
 export function NotificationBell() {
-  const [open,        setOpen]        = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [pushEnabled, setPushEnabled] = useState(false)
-  const wrapperRef                    = useRef<HTMLDivElement>(null)
+  // Track previous count so we can detect new arrivals and play a chime
+  const prevCountRef = useRef<number | null>(null)
 
   // ── Poll unread count every 30 s ──────────────────────────────────────────
   const refreshCount = useCallback(async () => {
@@ -35,7 +46,15 @@ export function NotificationBell() {
     return () => clearInterval(id)
   }, [refreshCount])
 
-  // Refresh immediately when a message is marked read from the inbox
+  // ── Play chime when a new notification arrives ────────────────────────────
+  useEffect(() => {
+    if (prevCountRef.current !== null && unreadCount > prevCountRef.current) {
+      playNotificationChime()
+    }
+    prevCountRef.current = unreadCount
+  }, [unreadCount])
+
+  // ── Refresh badge from the notifications page or message inbox ───────────
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ unreadCount?: number }>).detail
@@ -45,20 +64,15 @@ export function NotificationBell() {
         refreshCount()
       }
     }
-    window.addEventListener('messagemarkedread', handler)
-    return () => window.removeEventListener('messagemarkedread', handler)
+    window.addEventListener('messagemarkedread',       handler)
+    window.addEventListener('notifications:invalidate', () => refreshCount())
+    return () => {
+      window.removeEventListener('messagemarkedread',       handler)
+      window.removeEventListener('notifications:invalidate', () => refreshCount())
+    }
   }, [refreshCount])
 
-  // Reset unread indicator when panel is opened
-  useEffect(() => {
-    if (open) {
-      // Delay the reset slightly so the badge is visible as the panel opens
-      const t = setTimeout(() => setUnreadCount(0), 1500)
-      return () => clearTimeout(t)
-    }
-  }, [open])
-
-  // ── Register Service Worker + attempt push subscription ──────────────────
+  // ── Register Service Worker + restore push state ─────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return
 
@@ -66,7 +80,6 @@ export function NotificationBell() {
       console.warn('[push] SW registration failed:', err)
     })
 
-    // Restore push state
     navigator.serviceWorker.ready.then(async (reg) => {
       const existing = await reg.pushManager.getSubscription()
       if (existing) setPushEnabled(true)
@@ -79,13 +92,9 @@ export function NotificationBell() {
       alert('Push notifications are not supported in this browser.')
       return
     }
-
     try {
       const permission = await Notification.requestPermission()
-      if (permission !== 'granted') {
-        alert('Notification permission denied.')
-        return
-      }
+      if (permission !== 'granted') { alert('Notification permission denied.'); return }
 
       const keyRes = await fetch('/api/push/vapid-key')
       if (!keyRes.ok) { alert('Push notifications are not configured on this server.'); return }
@@ -96,7 +105,6 @@ export function NotificationBell() {
         userVisibleOnly:      true,
         applicationServerKey: urlBase64ToUint8Array(publicKey).buffer as ArrayBuffer,
       })
-
       const subJson = sub.toJSON()
       await fetch('/api/push/subscribe', {
         method:  'POST',
@@ -106,7 +114,6 @@ export function NotificationBell() {
           keys:     { p256dh: subJson.keys?.p256dh ?? '', auth: subJson.keys?.auth ?? '' },
         }),
       })
-
       setPushEnabled(true)
     } catch (err) {
       console.error('[push] Subscribe failed:', err)
@@ -133,16 +140,13 @@ export function NotificationBell() {
   }
 
   return (
-    <div ref={wrapperRef} data-tour="notification-bell" className="relative">
-      {/* Bell button */}
-      <button
-        onClick={() => setOpen((v) => !v)}
+    <div data-tour="notification-bell" className="relative">
+      {/* Bell — navigates to /notifications inbox */}
+      <Link
+        href="/notifications"
         aria-label="Notifications"
-        className={`relative p-2 rounded-xl transition-colors ${
-          open
-            ? 'bg-slate-700 text-white'
-            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-        }`}
+        className="relative p-2 rounded-xl transition-colors text-slate-400
+                   hover:bg-slate-800 hover:text-white block"
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
@@ -151,18 +155,15 @@ export function NotificationBell() {
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
-      </button>
+      </Link>
 
-      {/* Push toggle below the bell (small) */}
+      {/* Push toggle dot */}
       <button
         onClick={pushEnabled ? disablePush : enablePush}
         title={pushEnabled ? 'Disable push notifications' : 'Enable push notifications'}
         className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full
                     transition-colors ${pushEnabled ? 'bg-green-400' : 'bg-slate-600'}`}
       />
-
-      {/* Panel */}
-      {open && <NotificationPanel onClose={() => setOpen(false)} />}
     </div>
   )
 }

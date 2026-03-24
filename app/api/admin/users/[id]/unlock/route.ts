@@ -18,10 +18,8 @@ import { prisma }                     from '@/lib/prisma'
 import { log }                        from '@/lib/activityLog'
 import { handleApiError }             from '@/lib/apiError'
 
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (session?.user?.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

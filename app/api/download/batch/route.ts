@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
     where: {
       eventId,
       subfolderId: subfolderId ?? null,
+      status: { notIn: ['DELETED', 'PURGED'] },
     },
     select: {
       id:           true,

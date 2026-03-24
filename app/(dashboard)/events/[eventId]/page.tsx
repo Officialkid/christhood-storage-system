@@ -15,11 +15,13 @@ import ShareButton             from '@/components/ShareButton'
 export const dynamic = 'force-dynamic'
 
 interface Props {
-  params:      { eventId: string }
-  searchParams: { subfolder?: string }
+  params: Promise<{ eventId: string }>
+  searchParams: Promise<{ subfolder?: string }>
 }
 
-export default async function EventDetailPage({ params, searchParams }: Props) {
+export default async function EventDetailPage(props: Props) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const { eventId }    = params
   const subfolderId    = searchParams.subfolder
 

@@ -17,8 +17,9 @@ import { deleteFromGallery }         from '@/lib/gallery/gallery-r2'
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { galleryId: string; fileId: string } },
+  props: { params: Promise<{ galleryId: string; fileId: string }> }
 ) {
+  const params = await props.params;
   const { galleryId, fileId } = params
 
   try {
@@ -100,8 +101,9 @@ export async function DELETE(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { galleryId: string; fileId: string } },
+  props: { params: Promise<{ galleryId: string; fileId: string }> }
 ) {
+  const params = await props.params;
   const { galleryId, fileId } = params
 
   try {

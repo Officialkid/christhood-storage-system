@@ -43,11 +43,12 @@ export async function GET(
     return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
   }
 
-  // Access check — recipient or admin only
-  const isRecipient = transfer.recipientId === session.user.id
-  const isAdmin     = session.user.role === 'ADMIN'
-  if (!isRecipient && !isAdmin) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // Access check — recipient only (transfers are private)
+  if (transfer.recipientId !== session.user.id) {
+    return NextResponse.json(
+      { error: 'This transfer is private. Only the recipient may download it.' },
+      { status: 403 },
+    )
   }
 
   // Block downloads for cancelled / purged transfers

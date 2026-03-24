@@ -15,10 +15,8 @@ import { log } from '@/lib/activityLog'
  *  2. Updates MediaFile.r2Key → the new key (and optionally name / size).
  *  3. Logs VERSION_UPLOADED.
  */
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { fileId: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ fileId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

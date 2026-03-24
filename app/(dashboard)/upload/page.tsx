@@ -4,10 +4,11 @@ import type { DestinationInfo, EventOption } from '@/components/UploadZone'
 import { Upload }           from 'lucide-react'
 
 interface Props {
-  searchParams: { eventId?: string; subfolderId?: string }
+  searchParams: Promise<{ eventId?: string; subfolderId?: string }>
 }
 
-export default async function UploadPage({ searchParams }: Props) {
+export default async function UploadPage(props: Props) {
+  const searchParams = await props.searchParams;
   const { eventId, subfolderId } = searchParams
 
   // ── Pre-filled destination ─────────────────────────────────────────────────

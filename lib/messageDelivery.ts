@@ -47,10 +47,17 @@ export async function deliverMessage(messageId: string): Promise<void> {
     const msgLink    = `${APP_URL}/messages/inbox/${messageId}`
 
     const pushPayload: PushPayload = {
-      title: isUrgent ? '🔴 Urgent Message' : '📬 New Message',
-      body:  `${senderName}: ${message.subject}`,
-      url:   msgLink,
-      tag:   `message-${messageId}`,
+      title:   isUrgent ? '🚨 URGENT: Message from ' + senderName : '💬 Message from ' + senderName,
+      body:    message.subject,
+      url:     msgLink,
+      tag:     `message-${messageId}`,
+      type:    'DIRECT_MESSAGE',
+      payload: {
+        messageId,
+        senderName,
+        subject:  message.subject,
+        priority: message.priority,
+      },
     }
 
     await Promise.all(

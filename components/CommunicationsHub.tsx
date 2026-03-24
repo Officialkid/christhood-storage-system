@@ -22,14 +22,15 @@ type MessageSubTab   = 'inbox' | 'sent'
 
 // Structurally compatible with TransferInbox's internal TransferItem type
 interface ReceivedTransferItem {
-  id:         string
-  subject:    string
-  message:    string | null
-  status:     'PENDING' | 'DOWNLOADED' | 'RESPONDED' | 'COMPLETED' | 'EXPIRED'
-  totalFiles: number
-  totalSize:  number
-  expiresAt:  string
-  createdAt:  string
+  id:             string
+  subject:        string
+  message:        string | null
+  status:         'PENDING' | 'DOWNLOADED' | 'RESPONDED' | 'COMPLETED' | 'EXPIRED'
+  totalFiles:     number
+  totalSize:      number
+  expiresAt:      string
+  createdAt:      string
+  isPinProtected: boolean
   sender: { id: string; username: string | null; name: string | null; email: string | null }
 }
 
@@ -47,7 +48,7 @@ export function CommunicationsHub({ initialTab, isAdmin, canSendTransfer }: Prop
 
   const [activeTab,      setActiveTab]      = useState<MainTab>(initialTab)
   const [transferSubTab, setTransferSubTab] = useState<TransferSubTab>('inbox')
-  const [msgSubTab,      setMsgSubTab]      = useState<MessageSubTab>(isAdmin ? 'sent' : 'inbox')
+  const [msgSubTab,      setMsgSubTab]      = useState<MessageSubTab>('inbox')
 
   // â”€â”€ Shared unread counts via the centralised hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // baseTitle is null here â€” the Sidebar instance owns the document.title update
@@ -155,8 +156,8 @@ export function CommunicationsHub({ initialTab, isAdmin, canSendTransfer }: Prop
           </TabBtn>
         </div>
 
-        {/* Action button — transfers: ADMIN+EDITOR; messages: ADMIN only */}
-        {(activeTab === 'transfers' ? canSendTransfer : isAdmin) && (
+        {/* Action button — transfers: ADMIN+EDITOR; messages: all roles */}
+        {(activeTab === 'transfers' ? canSendTransfer : true) && (
           <Link
             href={activeTab === 'transfers' ? '/transfers/new' : '/messages/new'}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl
@@ -203,7 +204,6 @@ export function CommunicationsHub({ initialTab, isAdmin, canSendTransfer }: Prop
 
         ) : (
           <MessageTabContent
-            isAdmin={isAdmin}
             subTab={msgSubTab}
             setSubTab={setMsgSubTab}
             messagesBadge={messagesBadge}
@@ -271,10 +271,9 @@ function TransferTabContent({
 // â”€â”€â”€ Messages tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function MessageTabContent({
-  isAdmin, subTab, setSubTab,
+  subTab, setSubTab,
   messagesBadge, hasUrgent, fillClass,
 }: {
-  isAdmin:       boolean
   subTab:        MessageSubTab
   setSubTab:     (s: MessageSubTab) => void
   messagesBadge: number
@@ -283,27 +282,26 @@ function MessageTabContent({
 }) {
   return (
     <>
-      {isAdmin && (
-        <div className="shrink-0 flex items-center gap-0.5
-                        px-3 py-2 border-b border-slate-800/50 bg-slate-900">
-          <SubTabBtn
-            active={subTab === 'inbox'}
-            onClick={() => setSubTab('inbox')}
-            label="Inbox"
-            badge={subTab !== 'inbox' ? messagesBadge : 0}
-            urgent={subTab !== 'inbox' ? hasUrgent : false}
-          />
-          <SubTabBtn
-            active={subTab === 'sent'}
-            onClick={() => setSubTab('sent')}
-            label="Sent"
-          />
-        </div>
-      )}
+      {/* All roles see Inbox + Sent sub-tabs */}
+      <div className="shrink-0 flex items-center gap-0.5
+                      px-3 py-2 border-b border-slate-800/50 bg-slate-900">
+        <SubTabBtn
+          active={subTab === 'inbox'}
+          onClick={() => setSubTab('inbox')}
+          label="Inbox"
+          badge={subTab !== 'inbox' ? messagesBadge : 0}
+          urgent={subTab !== 'inbox' ? hasUrgent : false}
+        />
+        <SubTabBtn
+          active={subTab === 'sent'}
+          onClick={() => setSubTab('sent')}
+          label="Sent"
+        />
+      </div>
 
       {/* Split-pane message component fills all remaining height */}
       <div className="flex-1 overflow-hidden min-h-0">
-        {(!isAdmin || subTab === 'inbox') ? (
+        {subTab === 'inbox' ? (
           <MessageInbox className={fillClass} />
         ) : (
           <SentMessages className={fillClass} />

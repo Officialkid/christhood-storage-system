@@ -15,7 +15,7 @@ import { processAndUploadImage }                     from '@/lib/gallery/image-p
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
 
 const ALLOWED_MIME_TYPES = new Set([
-  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif',
   'image/heic', 'image/heif',
   'image/x-raw', 'image/x-adobe-dng', 'image/x-canon-cr2', 'image/x-canon-cr3',
   'image/x-nikon-nef', 'image/x-sony-arw', 'image/x-olympus-orf',
@@ -23,11 +23,10 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/x-fuji-raf',
 ])
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { galleryId: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ galleryId: string }> }) {
+  const params = await props.params;
   const { galleryId } = params
+  let fileName: string | undefined // hoisted so the catch block can include it in diagnostics
 
   try {
     const session = await getServerSession(authOptions)
@@ -76,6 +75,7 @@ export async function POST(
     }
 
     const originalFilename = (file as File).name ?? `upload-${Date.now()}`
+    fileName = originalFilename // capture for error logging
 
     // Validate sectionId belongs to this gallery
     if (sectionId) {
@@ -154,14 +154,37 @@ export async function POST(
       },
       { status: 201 },
     )
-  } catch (err) {
-    logger.error('GALLERY_UPLOAD_ERROR', {
-      userId:    undefined,
-      userRole:  undefined,
-      route:     `/api/gallery/${galleryId}/upload`,
-      error:     err instanceof Error ? err.message : String(err),
-      message:   'Unexpected error during gallery upload',
+  } catch (err: any) {
+    console.error('GALLERY_UPLOAD_ERROR:', {
+      message: err?.message,
+      code:    err?.code,
+      galleryId,
+      fileName,
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    logger.error('GALLERY_UPLOAD_ERROR', {
+      userId:   undefined,
+      userRole: undefined,
+      route:    `/api/gallery/${galleryId}/upload`,
+      error:    err instanceof Error ? err.message : String(err),
+      message:  'Unexpected error during gallery upload',
+      metadata: { galleryId, fileName, code: err?.code },
+    })
+
+    if (err?.message?.includes('GALLERY_R2')) {
+      return NextResponse.json(
+        { error: 'Gallery storage is not configured. Contact your admin.' },
+        { status: 503 },
+      )
+    }
+    if (err?.code?.startsWith('P2')) {
+      return NextResponse.json(
+        { error: 'Database error: ' + err.message },
+        { status: 500 },
+      )
+    }
+    return NextResponse.json(
+      { error: 'Upload failed: ' + (err instanceof Error ? err.message : String(err)) },
+      { status: 500 },
+    )
   }
 }

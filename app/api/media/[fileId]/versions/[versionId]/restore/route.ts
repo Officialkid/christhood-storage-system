@@ -17,8 +17,9 @@ import { log } from '@/lib/activityLog'
  */
 export async function POST(
   _req: NextRequest,
-  { params }: { params: { fileId: string; versionId: string } }
+  props: { params: Promise<{ fileId: string; versionId: string }> }
 ) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

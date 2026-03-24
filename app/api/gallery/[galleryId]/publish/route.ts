@@ -13,10 +13,8 @@ import { createInAppNotification }    from '@/lib/notifications'
 
 const GALLERY_PUBLIC_BASE = 'https://gallery.cmmschristhood.org'
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { galleryId: string } },
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ galleryId: string }> }) {
+  const params = await props.params;
   const { galleryId } = params
 
   try {

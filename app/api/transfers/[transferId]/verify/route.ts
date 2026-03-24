@@ -49,11 +49,12 @@ export async function GET(
     return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
   }
 
-  // Access: recipient or admin
-  const isRecipient = transfer.recipientId === session.user.id
-  const isAdmin     = session.user.role === 'ADMIN'
-  if (!isRecipient && !isAdmin) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // Access: recipient only (transfers are private)
+  if (transfer.recipientId !== session.user.id) {
+    return NextResponse.json(
+      { error: 'This transfer is private. Only the recipient may verify it.' },
+      { status: 403 },
+    )
   }
 
   // ── Helper: verify one file ──────────────────────────────────────────────

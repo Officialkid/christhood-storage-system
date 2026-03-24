@@ -9,7 +9,7 @@ import {
   ArrowLeft, Save, Eye, EyeOff, Trash2, Plus, Upload, Loader2,
   Check, ChevronDown, ChevronRight, SendHorizonal, Globe,
   Lock, Download, UserCheck, Image as ImageIcon, Pencil,
-  GalleryHorizontal,
+  GalleryHorizontal, CheckCircle2, Copy,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 
@@ -446,11 +446,15 @@ export function GalleryEditorClient({ gallery: initial, userRole, userId }: Prop
   const [, startTransition] = useTransition()
 
   // Settings state
-  const [gallery,     setGallery]     = useState(initial)
-  const [saving,      setSaving]      = useState(false)
-  const [saveStatus,  setSaveStatus]  = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [submitting,  setSubmitting]  = useState(false)
-  const [publishing,  setPublishing]  = useState(false)
+  const [gallery,        setGallery]        = useState(initial)
+  const [saving,         setSaving]         = useState(false)
+  const [saveStatus,     setSaveStatus]     = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [submitting,        setSubmitting]        = useState(false)
+  const [publishing,        setPublishing]        = useState(false)
+  const [showPublishDialog, setShowPublishDialog] = useState(false)
+  const [publishSuccessUrl, setPublishSuccessUrl] = useState<string | null>(null)
+  const [passwordInput,     setPasswordInput]     = useState('')
+  const [showPwdInput,      setShowPwdInput]      = useState(false)
 
   // Section state (local optimistic copy)
   const [sections,  setSections]  = useState<GallerySection[]>(initial.sections)
@@ -570,14 +574,18 @@ export function GalleryEditorClient({ gallery: initial, userRole, userId }: Prop
     } finally { setSubmitting(false) }
   }
 
-  async function publishNow() {
-    if (!confirm('Publish this gallery now? It will immediately be visible at the public URL.')) return
+  function publishNow() {
+    setShowPublishDialog(true)
+  }
+
+  async function doPublish() {
+    setShowPublishDialog(false)
     setPublishing(true)
     try {
       const res = await fetch(`/api/gallery/${gallery.id}/publish`, { method: 'PATCH' })
       if (res.ok) {
         setGallery(g => ({ ...g, status: 'PUBLISHED' }))
-        // Stay on the editor so sections and photos can be added right away
+        setPublishSuccessUrl(`https://gallery.cmmschristhood.org/${gallery.slug}`)
       } else {
         const d = await res.json().catch(() => ({}))
         alert(d.error ?? 'Failed to publish gallery')
@@ -750,13 +758,54 @@ export function GalleryEditorClient({ gallery: initial, userRole, userId }: Prop
             />
 
             {/* Password protection */}
-            <Toggle
-              icon={<Lock className="w-4 h-4" />}
-              label="Password protection"
-              description="Require a password to view"
-              checked={gallery.isPasswordProtected}
-              onChange={v => scheduleSave({ isPasswordProtected: v })}
-            />
+            <div className="space-y-3">
+              <Toggle
+                icon={<Lock className="w-4 h-4" />}
+                label="Password protection"
+                description="Require a password to view"
+                checked={gallery.isPasswordProtected}
+                onChange={v => {
+                  if (!v) {
+                    // Disable: clear hash on the server and hide input
+                    setShowPwdInput(false)
+                    setPasswordInput('')
+                    setGallery(g => ({ ...g, isPasswordProtected: false }))
+                    doSave({ isPasswordProtected: false, password: null })
+                  } else {
+                    setShowPwdInput(true)
+                    setGallery(g => ({ ...g, isPasswordProtected: true }))
+                  }
+                }}
+              />
+              {(gallery.isPasswordProtected || showPwdInput) && (
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder={gallery.isPasswordProtected ? 'Set new password…' : 'Enter password…'}
+                    value={passwordInput}
+                    onChange={e => setPasswordInput(e.target.value)}
+                    className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2
+                               text-sm text-white placeholder-slate-600 focus:outline-none
+                               focus:border-indigo-500 transition-colors"
+                  />
+                  <button
+                    disabled={!passwordInput.trim()}
+                    onClick={() => {
+                      if (!passwordInput.trim()) return
+                      setGallery(g => ({ ...g, isPasswordProtected: true }))
+                      doSave({ isPasswordProtected: true, password: passwordInput.trim() })
+                      setPasswordInput('')
+                      setShowPwdInput(false)
+                    }}
+                    className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm
+                               font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Save password"
+                  >
+                    Save
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -827,42 +876,100 @@ export function GalleryEditorClient({ gallery: initial, userRole, userId }: Prop
 
       {/* ── Status bar ──────────────────────────────────────────────────────── */}
       <div className="sticky bottom-0 z-30 flex flex-wrap items-center justify-between gap-3
-                      px-4 sm:px-6 py-3 bg-slate-950/95 backdrop-blur-sm
+                      px-4 sm:px-6 py-4 bg-slate-950/95 backdrop-blur-sm
                       border-t border-slate-800/70 mt-auto">
         <div className="text-sm text-slate-400">
-          {isDraft         && 'Draft — not yet visible to the public'}
-          {isPendingReview && 'Pending Review — waiting for admin approval'}
-          {isPublished     && (
-            <a href={`https://gallery.cmmschristhood.org/${gallery.slug}`}
-               target="_blank" rel="noreferrer"
-               className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition-colors">
-              <Globe className="w-4 h-4" />
-              gallery.cmmschristhood.org/{gallery.slug}
-            </a>
+          {publishSuccessUrl ? (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" /> Gallery published!
+              </span>
+              <a href={publishSuccessUrl} target="_blank" rel="noreferrer"
+                 className="text-xs text-indigo-400 hover:underline">
+                {publishSuccessUrl.replace('https://', '')}
+              </a>
+            </div>
+          ) : (
+            <>
+              {isDraft         && 'Draft — not yet visible to the public'}
+              {isPendingReview && 'Pending Review — waiting for admin approval'}
+              {isPublished     && (
+                <a href={`https://gallery.cmmschristhood.org/${gallery.slug}`}
+                   target="_blank" rel="noreferrer"
+                   className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition-colors">
+                  <Globe className="w-4 h-4" />
+                  gallery.cmmschristhood.org/{gallery.slug}
+                </a>
+              )}
+            </>
           )}
         </div>
 
         <div className="flex items-center gap-2">
+          {publishSuccessUrl && (
+            <button
+              onClick={() => navigator.clipboard.writeText(publishSuccessUrl).catch(() => {})}
+              className="flex items-center gap-1.5 text-sm text-slate-300 hover:text-white
+                         bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl transition-colors"
+            >
+              <Copy className="w-4 h-4" /> Copy link
+            </button>
+          )}
           {isDraft && userRole === 'EDITOR' && (
-            <Button variant="secondary" size="sm"
+            <Button variant="secondary" size="md"
                     onClick={submitForReview} disabled={submitting}
-                    className="flex items-center gap-1.5">
+                    className="flex items-center gap-2">
               {submitting
-                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Submitting…</>
-                : <><SendHorizonal className="w-3.5 h-3.5" /> Submit for Review</>}
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</>
+                : <><SendHorizonal className="w-4 h-4" /> Submit for Review</>}
             </Button>
           )}
           {(isDraft || isPendingReview) && userRole === 'ADMIN' && (
-            <Button variant="primary" size="sm"
+            <Button variant="primary" size="md"
                     onClick={publishNow} disabled={publishing}
-                    className="flex items-center gap-1.5 !bg-emerald-700 hover:!bg-emerald-600">
+                    className="flex items-center gap-2 !bg-emerald-600 hover:!bg-emerald-500">
               {publishing
-                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Publishing…</>
-                : <><Globe className="w-3.5 h-3.5" /> Publish Now</>}
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Publishing…</>
+                : <><CheckCircle2 className="w-4 h-4" /> Publish Now</>}
             </Button>
           )}
         </div>
       </div>
+
+      {/* Publish confirmation dialog */}
+      {showPublishDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPublishDialog(false)} />
+          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-emerald-500/10 shrink-0 mt-0.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-white">Publish this gallery?</h2>
+                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  &ldquo;{gallery.title}&rdquo; &middot; {gallery.totalPhotos} photo{gallery.totalPhotos !== 1 ? 's' : ''}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Anyone with the link can view it after publishing.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" className="flex-1" onClick={() => setShowPublishDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary" size="sm"
+                className="flex-1 flex items-center justify-center gap-1.5 !bg-emerald-600 hover:!bg-emerald-500"
+                onClick={doPublish}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" /> Publish
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

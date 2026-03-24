@@ -128,6 +128,30 @@ function formatEta(bytesLeft: number, bps: number): string {
 
 function isVideo(file: File) { return file.type.startsWith('video/') }
 
+/**
+ * Resolve a reliable MIME type from the browser-supplied file.type and the
+ * file extension. Browsers on iOS often return an empty string for .mov and
+ * some .mp4 files, which causes the server to reject the upload with 415.
+ * This must produce the same value that will be sent as the PUT Content-Type
+ * header, because R2 validates the signature against that header exactly.
+ */
+function resolveMimeType(fileName: string, browserType: string): string {
+  if (browserType && browserType.includes('/') && browserType !== 'application/octet-stream') {
+    return browserType
+  }
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
+  const map: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+    gif: 'image/gif',  webp: 'image/webp', heic: 'image/heic',
+    heif: 'image/heif', tiff: 'image/tiff', tif: 'image/tiff',
+    raw: 'image/x-raw', cr2: 'image/x-canon-cr2', nef: 'image/x-nikon-nef',
+    mp4: 'video/mp4',  mov: 'video/quicktime',   avi: 'video/x-msvideo',
+    mkv: 'video/x-matroska', webm: 'video/webm', '3gp': 'video/3gpp',
+    m4v: 'video/x-m4v',      wmv: 'video/x-ms-wmv',
+  }
+  return map[ext] ?? browserType ?? 'application/octet-stream'
+}
+
 // ──────────────────────────── Sub-components ─────────────────────────────────
 function FileRow({
   uf, onRemove, onRetry,
@@ -298,6 +322,14 @@ export function UploadZone({ defaultDestination, events }: Props) {
   const [dupCheckEntries, setDupCheckEntries] = useState<DuplicateEntry[] | null>(null)
   const dupCheckResolveRef = useRef<((r: DuplicateResolution[]) => void) | null>(null)
 
+  // iOS device detection (set on mount, drives the keep-open banner)
+  const [isIOS, setIsIOS] = useState(false)
+
+  // In-app SPA navigation guard: holds pending URL when user tries to navigate mid-upload
+  const [navGuard, setNavGuard] = useState<{ url: string } | null>(null)
+  // Stores the proceed-with-navigation callback so "Leave anyway" can execute it
+  const navProceedRef = useRef<(() => void) | null>(null)
+
   // Keep destination state in sync with the prop (for SSR-hydrated page)
   useEffect(() => {
     if (defaultDestination) setDestination(defaultDestination)
@@ -337,11 +369,17 @@ export function UploadZone({ defaultDestination, events }: Props) {
     return () => window.removeEventListener('beforeunload', handler)
   }, [filesState])
 
+  // ── iOS detection (client-only) ───────────────────────────────────────────
+  useEffect(() => {
+    setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent) && !('MSStream' in window))
+  }, [])
+
   // ── Register per-upload Background Sync tags when app is backgrounded ──────
   // On Android Chrome, Background Sync fires even if the PWA is not visible,
   // so we register a per-upload tag each time the user switches away. The SW
   // will then either message the (re-opened) window or show a "tap to resume"
   // notification when there is no window to message.
+  // Tags use the R2 uploadId so the SW can look up the right session.
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) return
@@ -349,20 +387,67 @@ export function UploadZone({ defaultDestination, events }: Props) {
         ['pending', 'starting', 'uploading', 'completing', 'paused'].includes(f.status),
       )
       if (active.length === 0) return
-      navigator.serviceWorker?.ready.then(reg => {
-        // Generic tag (also handles offline-queue drain)
-        ;(reg as unknown as { sync?: { register(tag: string): Promise<void> } }).sync
-          ?.register('resume-upload').catch(() => {})
-        // Per-upload tags so Background Sync can target individual sessions
-        active.forEach(f => {
-          const tag = `resume-upload-${f.sessionId ?? f.uid}`;
-          (reg as unknown as { sync?: { register(tag: string): Promise<void> } }).sync
-            ?.register(tag).catch(() => {})
-        })
-      }).catch(() => {})
+      void (async () => {
+        try {
+          const reg = await navigator.serviceWorker?.ready
+          if (!reg) return
+          const syncReg = (reg as unknown as { sync?: { register(tag: string): Promise<void> } }).sync
+          if (!syncReg) return
+          // Generic tag (also handles offline-queue drain)
+          syncReg.register('resume-upload').catch(() => {})
+          // Per-upload tags — resolve uploadId from IDB so the SW can look up the session
+          for (const f of active) {
+            let tag: string
+            if (f.sessionId) {
+              const session = await getSession(f.sessionId).catch(() => null)
+              tag = session ? `resume-upload-${session.uploadId}` : `resume-upload-${f.uid}`
+            } else {
+              tag = `resume-upload-${f.uid}`
+            }
+            syncReg.register(tag).catch(() => {})
+          }
+        } catch { /* SW not ready or not supported */ }
+      })()
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
+
+  // ── In-app SPA navigation guard ─────────────────────────────────────────────
+  // Patches window.history.pushState while the component is mounted so that any
+  // Next.js Link / router.push navigation is intercepted when uploads are active.
+  // Shows a custom dialog; "Leave anyway" re-fires the original navigation.
+  useEffect(() => {
+    const originalPushState = window.history.pushState.bind(window.history)
+
+    const guardedPush: typeof window.history.pushState = function (state, unused, url) {
+      if (
+        filesRef.current.some(f =>
+          ['pending', 'starting', 'uploading', 'completing'].includes(f.status),
+        )
+      ) {
+        const rawUrl = typeof url === 'string' ? url : (url?.toString() ?? '')
+        // Only intercept actual page changes, not same-path query/hash updates
+        try {
+          const target = new URL(rawUrl, window.location.origin)
+          if (target.pathname === window.location.pathname) {
+            originalPushState(state, unused, url)
+            return
+          }
+        } catch {
+          // Malformed URL — let it through
+          originalPushState(state, unused, url)
+          return
+        }
+        navProceedRef.current = () => originalPushState(state, unused, url)
+        setNavGuard({ url: rawUrl })
+        return
+      }
+      originalPushState(state, unused, url)
+    }
+
+    window.history.pushState = guardedPush
+    return () => { window.history.pushState = originalPushState }
   }, [])
 
   // ── SW message: drain offline queue / resume uploads ──────────────────────
@@ -577,6 +662,19 @@ export function UploadZone({ defaultDestination, events }: Props) {
     dupCheckResolveRef.current = null
   }
 
+  // ── Navigation guard handlers ───────────────────────────────────────────────
+  function handleNavStay() {
+    setNavGuard(null)
+    navProceedRef.current = null
+  }
+
+  function handleNavLeave() {
+    const proceed = navProceedRef.current
+    navProceedRef.current = null
+    setNavGuard(null)
+    proceed?.()
+  }
+
   // ── Drain offline queue ─────────────────────────────────────────────────────
   // Called when the device comes back online. Retrieves all queued items from
   // IndexedDB, adds them to the UI as pending files, and kicks off an upload.
@@ -630,7 +728,10 @@ export function UploadZone({ defaultDestination, events }: Props) {
     if (!destination) return
 
     const { file }    = uf
-    const contentType = file.type || 'application/octet-stream'
+    // Resolve MIME type from file extension when file.type is empty (common on iOS
+    // for .mov and some .mp4 files). This value is sent to the presign API AND used
+    // as the PUT Content-Type header — they must be identical for R2 to accept the upload.
+    const contentType = resolveMimeType(file.name, file.type)
     const isMultipart = file.size >= MULTIPART_THRESHOLD
 
     updateFile(uid, { status: 'starting' })
@@ -658,7 +759,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
         // ── SIMPLE PATH ────────────────────────────────────────────────────────
         let effectiveFilename = file.name
         let uploadForce       = false
-        let presignData: { uploadUrl: string; r2Key: string } | null = null
+        let presignData: { uploadUrl: string; r2Key: string; mimeType?: string } | null = null
 
         {
           const firstRes = await fetch('/api/upload/presign', {
@@ -728,12 +829,16 @@ export function UploadZone({ defaultDestination, events }: Props) {
           }
         }
 
-        const { uploadUrl, r2Key } = presignData!
+        const { uploadUrl, r2Key, mimeType: resolvedMimeType } = presignData!
+        // Use the server-echoed mimeType for the PUT Content-Type header.
+        // R2 validates that it matches the Content-Type embedded in the presigned
+        // URL signature — using the server-returned value guarantees an exact match.
+        const putContentType = resolvedMimeType ?? contentType
 
         updateFile(uid, { status: 'uploading', mode: 'simple' })
 
         const startedAt = Date.now()
-        await xhrPut(uploadUrl, file, contentType, pct => {
+        await xhrPut(uploadUrl, file, putContentType, pct => {
           const bytesLoaded = Math.round((pct / 100) * file.size)
           const elapsed     = (Date.now() - startedAt) / 1000
           const speed       = elapsed > 0.3 ? Math.round(bytesLoaded / elapsed) : undefined
@@ -748,7 +853,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
           body:    JSON.stringify({
             r2Key,
             originalName: effectiveFilename,
-            contentType,
+            contentType:  putContentType,
             fileSize:     file.size,
             eventId:      destination.eventId,
             subfolderId:  destination.subfolderId,
@@ -996,9 +1101,9 @@ export function UploadZone({ defaultDestination, events }: Props) {
       }))
 
     // ── Latency probe — one tiny request decides the chunk size for this whole batch ────
-    // Fast WiFi (≤50 ms) → 20 MB chunks (fewer round-trips, max throughput).
-    // Normal (51–300 ms) → 10 MB chunks (balanced).
-    // Slow (> 300 ms) → 5 MB chunks (minimum R2 allows; shorter recovery on drop).
+    // Fast WiFi (< 100 ms) → 20 MB chunks (fewer round-trips, max throughput).
+    // Normal (100–299 ms) → 10 MB chunks (balanced).
+    // Slow (≥ 300 ms) → 5 MB chunks (minimum R2 allows; shorter recovery on drop).
     try {
       const t0 = Date.now()
       await fetch('/api/ping', { cache: 'no-store' })
@@ -1190,8 +1295,22 @@ export function UploadZone({ defaultDestination, events }: Props) {
         </div>
       )}
 
-      {/* ── iOS / no Background Sync warning ────────────────────────────────── */}
-      {isUploading && typeof window !== 'undefined' && !('sync' in (window.ServiceWorkerRegistration?.prototype ?? {})) && (
+      {/* ── iOS keep-page-open tip ───────────────────────────────────────────── */}
+      {isIOS && isUploading && (
+        <div className="flex items-start gap-3 bg-sky-950/60 border border-sky-800/50
+                        rounded-xl px-4 py-3">
+          <span className="text-lg leading-none mt-0.5" aria-hidden>📱</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-sky-300">iPhone tip: Keep this page open</p>
+            <p className="text-xs text-sky-600 mt-0.5">
+              Switching apps will pause your upload — your progress is saved and you can resume where you left off.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Non-iOS / no Background Sync warning ────────────────────────────── */}
+      {!isIOS && isUploading && typeof window !== 'undefined' && !('sync' in (window.ServiceWorkerRegistration?.prototype ?? {})) && (
         <div className="flex items-center gap-3 bg-amber-950/60 border border-amber-800/50
                         rounded-xl px-4 py-3">
           <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
@@ -1575,6 +1694,43 @@ export function UploadZone({ defaultDestination, events }: Props) {
           onResolve={handleDupCheckResolve}
           onCancel={handleDupCheckCancel}
         />
+      )}
+
+      {/* ── In-app navigation guard dialog ─────────────────────────────── */}
+      {navGuard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-6 space-y-4">
+            <div className="space-y-1">
+              <p className="text-base font-semibold text-white">⚠️  Upload in progress</p>
+              <p className="text-sm text-slate-400">
+                {(() => {
+                  const c = filesState.filter(f =>
+                    ['pending', 'starting', 'uploading', 'completing'].includes(f.status)
+                  ).length
+                  return c === 1 ? 'You have 1 file uploading.' : `You have ${c} files uploading.`
+                })()}
+                {' '}Your progress is saved — you can come back and resume from where you left off.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={handleNavStay}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white
+                           bg-indigo-600 hover:bg-indigo-500 transition"
+              >
+                Stay on page
+              </button>
+              <button
+                onClick={handleNavLeave}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-slate-400
+                           hover:text-white bg-slate-800 hover:bg-slate-700
+                           border border-slate-700 hover:border-slate-600 transition"
+              >
+                Leave anyway
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Duplicate-file resolution dialog ─────────────────────────── */}

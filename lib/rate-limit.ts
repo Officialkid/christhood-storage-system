@@ -22,7 +22,9 @@ const isConfigured = Boolean(
   process.env.UPSTASH_REDIS_REST_TOKEN
 )
 
-let ipLimiter: Ratelimit | null = null
+let ipLimiter:       Ratelimit | null = null
+let registerLimiter: Ratelimit | null = null
+let forgotLimiter:   Ratelimit | null = null
 
 if (isConfigured) {
   const redis = new Redis({
@@ -35,6 +37,20 @@ if (isConfigured) {
     // 5 attempts allowed in any rolling 15-minute window
     limiter:   Ratelimit.slidingWindow(5, '15 m'),
     prefix:    'christhood:rl:login:ip',
+    analytics: false,
+  })
+
+  registerLimiter = new Ratelimit({
+    redis,
+    limiter:   Ratelimit.slidingWindow(3, '15 m'),
+    prefix:    'christhood:rl:register:ip',
+    analytics: false,
+  })
+
+  forgotLimiter = new Ratelimit({
+    redis,
+    limiter:   Ratelimit.slidingWindow(3, '15 m'),
+    prefix:    'christhood:rl:forgot:ip',
     analytics: false,
   })
 }
@@ -67,4 +83,31 @@ export async function checkIpRateLimit(ip: string): Promise<RateLimitResult> {
   }
 
   return { limited: false, retryAfter: 0 }
+}
+
+async function checkLimiter(
+  limiter: Ratelimit | null,
+  ip: string,
+): Promise<RateLimitResult> {
+  if (!limiter) return { limited: false, retryAfter: 0 }
+  try {
+    const { success, reset } = await limiter.limit(ip)
+    if (!success) {
+      return {
+        limited:    true,
+        retryAfter: Math.max(1, Math.ceil((reset - Date.now()) / 1000)),
+      }
+    }
+  } catch (err) {
+    console.warn('[rate-limit] Upstash call failed, allowing request through:', err)
+  }
+  return { limited: false, retryAfter: 0 }
+}
+
+export function checkRegisterRateLimit(ip: string): Promise<RateLimitResult> {
+  return checkLimiter(registerLimiter, ip)
+}
+
+export function checkForgotPasswordRateLimit(ip: string): Promise<RateLimitResult> {
+  return checkLimiter(forgotLimiter, ip)
 }

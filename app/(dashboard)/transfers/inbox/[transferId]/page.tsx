@@ -34,14 +34,14 @@ export default async function TransferInboxDetailPage({
 
   if (!transfer) notFound()
 
-  // Only the recipient (or admin) may view this page
-  const isRecipient = transfer.recipientId === session.user.id
-  const isAdmin     = session.user.role === 'ADMIN'
-  if (!isRecipient && !isAdmin) redirect('/transfers/inbox')
+  // Only the recipient may view this page (transfers are private)
+  if (transfer.recipientId !== session.user.id) redirect('/transfers/inbox')
 
   // Serialise BigInts and Dates so the client component receives plain JSON
   const serialised = {
     ...transfer,
+    isPinProtected: transfer.isPinProtected,
+    pin:            undefined, // never send the hash to the client
     expiresAt: transfer.expiresAt.toISOString(),
     createdAt: transfer.createdAt.toISOString(),
     totalSize: Number(transfer.totalSize),

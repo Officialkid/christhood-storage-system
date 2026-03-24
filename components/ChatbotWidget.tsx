@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { MessageCircle, X, Send, Bot, WifiOff, Zap, Loader2 } from 'lucide-react'
-import { SUGGESTED_QUESTIONS, type ChipDef } from '@/lib/assistant/system-prompt'
+import { SUGGESTED_QUESTIONS } from '@/lib/assistant/system-prompt'
 import {
   type ActionWarning,
   ActionRiskLevel,
@@ -41,7 +41,7 @@ const WELCOME_MESSAGE: Message = {
 }
 
 // Prefix-based chip lookup: exact match first, then /segment prefix, then default.
-function getChipsForPath(pathname: string): ChipDef[] {
+function getChipsForPath(pathname: string): string[] {
   if (SUGGESTED_QUESTIONS[pathname]) return SUGGESTED_QUESTIONS[pathname]
   const prefix = '/' + pathname.split('/')[1]
   if (SUGGESTED_QUESTIONS[prefix]) return SUGGESTED_QUESTIONS[prefix]
@@ -99,7 +99,7 @@ export default function ChatbotWidget() {
   const [showPrivacyNotice, setShowPrivacyNotice] = useState(false)
   // Chips are seeded from the current path and update on navigation,
   // but only while the conversation is still on the welcome message.
-  const [chips, setChips] = useState<ChipDef[]>(() => getChipsForPath(''))
+  const [chips, setChips] = useState<string[]>(() => getChipsForPath(''))
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef       = useRef<HTMLInputElement>(null)
@@ -762,14 +762,12 @@ export default function ChatbotWidget() {
                 <div className="mt-3 flex flex-wrap gap-2 pl-8">
                   {chips.map(chip => (
                     <button
-                      key={chip.text}
-                      onClick={() => sendMessage(chip.text)}
+                      key={chip}
+                      onClick={() => sendMessage(chip)}
                       disabled={isStreaming}
                       className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left"
                     >
-                      {chip.kind === 'tool'   && <span aria-hidden="true">🔍</span>}
-                      {chip.kind === 'action' && <span aria-hidden="true">⚡</span>}
-                      {chip.text}
+                      {chip}
                     </button>
                   ))}
                 </div>

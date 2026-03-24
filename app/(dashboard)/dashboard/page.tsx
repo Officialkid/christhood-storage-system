@@ -12,7 +12,7 @@ export default async function DashboardPage() {
   // Fetch initial data server-side so the page arrives pre-populated (no flash).
   let initialData: any = null
   try {
-    const reqHeaders = headers()
+    const reqHeaders = await headers()
     const cookie     = reqHeaders.get('cookie') ?? ''
     const origin     = process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
     const res = await fetch(`${origin}/api/dashboard`, {

@@ -26,6 +26,7 @@ export type NotificationCategory =
   | 'TRANSFER_COMPLETED'
   | 'TRANSFER_CANCELLED'
   | 'DIRECT_MESSAGE'
+  | 'GALLERY_PURGE_WARNING'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // createInAppNotification
@@ -168,16 +169,37 @@ export async function notifyUploadInFollowedFolder(opts: {
     const allRecipientIds = [...staffIds, ...followerOnlyIds]
     if (allRecipientIds.length === 0) return
 
-    const message  = `New file uploaded to "${opts.eventName}": ${opts.fileName}`
-    const link     = `${APP_URL}/media/${opts.fileId}`
+    const message    = `New file uploaded to "${opts.eventName}": ${opts.fileName}`
+    const link       = `${APP_URL}/media/${opts.fileId}`
     const notifTitle = 'New Upload'
+
+    // Fetch uploader details upfront (used for both push payload and email below)
+    const uploader     = await prisma.user.findUnique({
+      where:  { id: opts.uploaderId },
+      select: { username: true, name: true, email: true },
+    })
+    const uploaderName = uploader?.username ?? uploader?.name ?? uploader?.email ?? 'Someone'
 
     // In-app + push for ALL recipients
     await notifyManyUsers(
       allRecipientIds,
       'UPLOAD_IN_FOLLOWED_FOLDER',
       message,
-      { title: notifTitle, body: message, url: link, tag: `upload-${opts.eventId}` },
+      {
+        title:   notifTitle,
+        body:    message,
+        url:     link,
+        tag:     `upload-${opts.eventId}`,
+        type:    'FILE_UPLOADED',
+        payload: {
+          eventId:      opts.eventId,
+          eventName:    opts.eventName,
+          fileName:     opts.fileName,
+          fileId:       opts.fileId,
+          uploaderName,
+          fileCount:    1,
+        },
+      },
       link,
       'FILE_UPLOADED',
       notifTitle,
@@ -186,13 +208,7 @@ export async function notifyUploadInFollowedFolder(opts: {
     // ── 3. Email only to staff who have email enabled for this category ───────
     // Defer email import to avoid circular dependency at module init
     const { sendFileUploadedEmail } = await import('./email')
-
-    // Fetch uploader name for the email
-    const uploader = await prisma.user.findUnique({
-      where:  { id: opts.uploaderId },
-      select: { username: true, name: true, email: true },
-    })
-    const uploaderName = uploader?.username ?? uploader?.name ?? uploader?.email ?? 'Someone'
+    // uploaderName already resolved above
 
     const emailRecipients: string[] = []
     for (const u of staff) {
@@ -252,7 +268,14 @@ export async function notifyFileStatusChanged(opts: {
       staffIds,
       'FILE_STATUS_CHANGED',
       message,
-      { title: 'File Status Updated', body: message, url: link, tag: `status-${opts.fileId}` },
+      {
+        title:   'File Status Updated',
+        body:    message,
+        url:     link,
+        tag:     `status-${opts.fileId}`,
+        type:    'FILE_STATUS_CHANGED',
+        payload: { fileId: opts.fileId, fileName: opts.fileName, newStatus: opts.newStatus },
+      },
       link,
       'FILE_STATUS_CHANGED',
       'File Status Updated',
@@ -269,10 +292,12 @@ export async function notifyFileStatusChanged(opts: {
         'Your File Was Updated',
       )
       await sendPushToUser(opts.uploaderId, 'FILE_STATUS_CHANGED', {
-        title: 'Your File Was Updated',
-        body:  uploaderMessage,
-        url:   link,
-        tag:   `status-${opts.fileId}`,
+        title:   'Your File Was Updated',
+        body:    uploaderMessage,
+        url:     link,
+        tag:     `status-${opts.fileId}`,
+        type:    'FILE_STATUS_CHANGED',
+        payload: { fileId: opts.fileId, fileName: opts.fileName, newStatus: opts.newStatus },
       })
 
       // Email the uploader about their file's status change
@@ -418,7 +443,14 @@ export async function notifyFilePublished(opts: {
       ids,
       'FILE_PUBLISHED_ALERT',
       message,
-      { title: 'File Published', body: message, url: link, tag: `published-${opts.fileId}` },
+      {
+        title:   'File Published',
+        body:    message,
+        url:     link,
+        tag:     `published-${opts.fileId}`,
+        type:    'FILE_PUBLISHED',
+        payload: { fileId: opts.fileId, fileName: opts.fileName },
+      },
       link,
       'FILE_PUBLISHED_ALERT',
       'File Published',
@@ -450,7 +482,19 @@ export async function notifyDirectMessage(opts: {
       opts.recipientIds,
       'DIRECT_MESSAGE',
       msgText,
-      { title, body: msgText, url: link, tag: `message-${opts.messageId}` },
+      {
+        title:   title,
+        body:    msgText,
+        url:     link,
+        tag:     `message-${opts.messageId}`,
+        type:    'DIRECT_MESSAGE',
+        payload: {
+          messageId:  opts.messageId,
+          senderName: opts.senderName,
+          subject:    opts.subject,
+          priority:   opts.priority,
+        },
+      },
       link,
       'DIRECT_MESSAGE',
       title,

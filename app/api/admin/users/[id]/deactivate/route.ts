@@ -8,10 +8,8 @@ import { log } from '@/lib/activityLog'
 // ── POST /api/admin/users/[id]/deactivate ──────────────────────
 // Body: { action: 'deactivate' | 'reactivate' }
 // Deactivating forces an immediate logout by destroying all active sessions.
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession(authOptions)
   if (session?.user?.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

@@ -52,6 +52,7 @@ interface TransferDetailData {
   totalSize: number
   expiresAt: string
   createdAt: string
+  isPinProtected: boolean
   sender: { id: string; username: string | null; name: string | null; email: string | null }
   files: TransferFileItem[]
   response: TransferResponseData | null
@@ -733,10 +734,105 @@ function ResponseSection({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PinGate — shown before content when transfer.isPinProtected = true
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PinGate({ transferId, onVerified }: { transferId: string; onVerified: () => void }) {
+  const [pin,        setPin]        = useState('')
+  const [status,     setStatus]     = useState<'idle' | 'checking' | 'wrong' | 'locked'>('idle')
+  const [remaining,  setRemaining]  = useState<number | null>(null)
+  const [retryAfter, setRetryAfter] = useState<number | null>(null)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!/^\d{4,6}$/.test(pin)) return
+    setStatus('checking')
+    try {
+      const res = await fetch(`/api/transfers/${transferId}/verify-pin`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ pin }),
+      })
+      if (res.status === 423) {
+        const d = await res.json().catch(() => ({})) as { retryAfter?: number }
+        setRetryAfter(d.retryAfter ?? 600)
+        setStatus('locked')
+        return
+      }
+      const d = await res.json().catch(() => ({})) as { valid?: boolean; attemptsRemaining?: number }
+      if (d.valid) { onVerified(); return }
+      setRemaining(d.attemptsRemaining ?? null)
+      setStatus('wrong')
+      setPin('')
+    } catch {
+      setStatus('wrong')
+      setPin('')
+    }
+  }
+
+  return (
+    <div className="max-w-sm mx-auto mt-16 px-4">
+      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8 text-center space-y-5">
+        <div className="flex justify-center">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 border border-indigo-600/30 flex items-center justify-center">
+            <Lock className="w-7 h-7 text-indigo-400" />
+          </div>
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-white mb-1">PIN protected</h2>
+          <p className="text-sm text-slate-400">Enter the PIN to access this transfer</p>
+        </div>
+
+        {status === 'locked' ? (
+          <div className="rounded-xl bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-300">
+            Too many attempts. Try again in {retryAfter ? `${Math.ceil(retryAfter / 60)} minute${retryAfter >= 120 ? 's' : ''}` : 'a few minutes'}.
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              placeholder="Enter PIN"
+              value={pin}
+              onChange={e => { setPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setStatus('idle') }}
+              className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white text-center
+                         text-xl font-mono tracking-[0.4em] placeholder-slate-600 placeholder:tracking-normal
+                         focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30
+                         transition-colors"
+              autoFocus
+            />
+            {status === 'wrong' && (
+              <p className="text-sm text-red-400">
+                Incorrect PIN.{remaining !== null && remaining > 0 ? ` ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.` : ''}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={!/^\d{4,6}$/.test(pin) || status === 'checking'}
+              className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm
+                         disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            >
+              {status === 'checking' ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Checking…</>
+              ) : (
+                'Unlock Transfer'
+              )}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Export: TransferDetailView
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function TransferDetailView({ transfer }: { transfer: TransferDetailData }) {
+  const [pinVerified,    setPinVerified]    = useState(!transfer.isPinProtected)
   const [currentStatus,  setCurrentStatus]  = useState<TransferStatus>(transfer.status)
   const [existingResp,   setExistingResp]   = useState<TransferResponseData | null>(transfer.response)
   const [downloadingZip, setDownloadingZip] = useState(false)
@@ -745,6 +841,10 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
   const [verifyDone,     setVerifyDone]     = useState(false)
   const [verifyFailed,   setVerifyFailed]   = useState(false)
   const [integrityMap,   setIntegrityMap]   = useState<Record<string, boolean | null>>({})
+
+  if (!pinVerified) {
+    return <PinGate transferId={transfer.id} onVerified={() => setPinVerified(true)} />
+  }
 
   const { label, cls, Icon } = STATUS_META[currentStatus]
   const senderName = transfer.sender.username ?? transfer.sender.name ?? transfer.sender.email ?? 'Admin'
