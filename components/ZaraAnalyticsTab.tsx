@@ -312,7 +312,7 @@ export default function ZaraAnalyticsTab() {
           <p className="text-sm text-slate-600 py-8 text-center">No sessions recorded in this period.</p>
         ) : (
           <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height={224}>
               <LineChart data={usageOverTime} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                 <XAxis
@@ -526,7 +526,7 @@ export default function ZaraAnalyticsTab() {
                 </div>
               )}
               <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={192}>
                   <LineChart data={errorRate} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                     <XAxis

@@ -127,7 +127,8 @@ async function cacheFirst(request) {
   if (cached) return cached
   try {
     const response = await fetch(request)
-    if (response.ok) {
+    // Do not cache partial responses (206) — Cache API rejects them
+    if (response.ok && response.status !== 206) {
       const cache = await caches.open(CACHE_NAME)
       cache.put(request, response.clone())
     }
@@ -140,7 +141,8 @@ async function cacheFirst(request) {
 async function networkFirstWithOfflineFallback(request) {
   try {
     const response = await fetch(request)
-    if (response.ok) {
+    // Do not cache partial responses (206) — Cache API rejects them
+    if (response.ok && response.status !== 206) {
       const cache = await caches.open(CACHE_NAME)
       cache.put(request, response.clone())
     }
@@ -157,7 +159,8 @@ async function staleWhileRevalidate(request) {
   const cached = await cache.match(request)
 
   const fetchPromise = fetch(request).then(response => {
-    if (response.ok) cache.put(request, response.clone())
+    // Do not cache partial responses (206) — Cache API rejects them
+    if (response.ok && response.status !== 206) cache.put(request, response.clone())
     return response
   }).catch(() => null)
 

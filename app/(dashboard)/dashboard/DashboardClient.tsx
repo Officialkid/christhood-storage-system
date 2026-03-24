@@ -484,7 +484,7 @@ function StorageOverview({ storage }: { storage: Storage }) {
       <div className="flex flex-col sm:flex-row gap-6 items-start">
         {/* Donut chart */}
         <div className="shrink-0 w-32 h-32">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height={128}>
             <PieChart>
               <Pie data={chartData} cx="50%" cy="50%" innerRadius="60%" outerRadius="80%"
                    dataKey="value" paddingAngle={2}>

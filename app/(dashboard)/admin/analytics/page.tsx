@@ -340,7 +340,7 @@ export default function AnalyticsPage() {
         {/* Upload activity — monthly bar chart (takes 2/3) */}
         <Section title="Upload activity — last 13 months">
           <div className="col-span-2 h-56">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={224}>
               <BarChart data={monthly} margin={{ top: 4, right: 4, left: -20, bottom: 0 }} barSize={14}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                 <XAxis
@@ -407,7 +407,7 @@ export default function AnalyticsPage() {
         {/* Status breakdown */}
         <Section title="Files by status">
           <div className="h-52">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={208}>
               <BarChart
                 data={statusBars}
                 layout="vertical"
@@ -444,7 +444,7 @@ export default function AnalyticsPage() {
         {/* Storage by year */}
         <Section title="Storage by year">
           <div className="h-52">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={208}>
               <BarChart data={yearBars} margin={{ top: 4, right: 4, left: -16, bottom: 0 }} barSize={28}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                 <XAxis
@@ -476,7 +476,7 @@ export default function AnalyticsPage() {
       {/* ── Storage by category ───────────────────────────────────────────── */}
       <Section title="Storage by event category">
         <div className="h-56">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height={224}>
             <BarChart data={catBars} margin={{ top: 4, right: 4, left: -8, bottom: 28 }} barSize={18}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
               <XAxis
@@ -514,7 +514,7 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Section title="Top uploaders by storage">
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={256}>
               <BarChart
                 data={topUploaders}
                 layout="vertical"

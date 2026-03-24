@@ -1,12 +1,17 @@
 /**
  * GALLERY R2 CLIENT
  *
- * Uses GALLERY_R2_* environment variables — completely separate from the
- * CMMS R2 client (lib/r2.ts) which uses CLOUDFLARE_R2_* variables.
+ * Auth credentials fall back to CLOUDFLARE_R2_* when GALLERY_R2_* are not set,
+ * so you can reuse the same R2 account for galleries without duplicating secrets.
  *
- * ⚠️  NEVER import this file in CMMS routes.
- * ⚠️  NEVER import lib/r2.ts in gallery routes.
- * The two systems are independent and must never be mixed.
+ * REQUIRED env vars (no fallback — must be explicitly configured):
+ *   GALLERY_R2_BUCKET_NAME   — name of the gallery R2 bucket
+ *   GALLERY_R2_PUBLIC_URL    — public CDN base URL, e.g. https://gallery.r2.yourdomain.com
+ *
+ * OPTIONAL env vars (fall back to CLOUDFLARE_R2_* if absent):
+ *   GALLERY_R2_ACCOUNT_ID    — Cloudflare account ID
+ *   GALLERY_R2_ACCESS_KEY_ID — R2 API token key ID
+ *   GALLERY_R2_SECRET_ACCESS_KEY — R2 API token secret
  *
  * R2 key structure:
  *   galleries/[gallerySlug]/sections/[sectionId]/thumbnail/[filename]  — small preview ~30KB
@@ -23,20 +28,45 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 // ---------------------------------------------------------------------------
-// Client — instantiated once at module load
+// Config — with fallback to main CLOUDFLARE_R2_* credentials
 // ---------------------------------------------------------------------------
 
-const galleryR2 = new S3Client({
-  region: 'auto',
-  endpoint: `https://${process.env.GALLERY_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  credentials: {
-    accessKeyId:     process.env.GALLERY_R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.GALLERY_R2_SECRET_ACCESS_KEY!,
-  },
-})
+const accountId  = process.env.GALLERY_R2_ACCOUNT_ID    ?? process.env.CLOUDFLARE_R2_ACCOUNT_ID
+const accessKey  = process.env.GALLERY_R2_ACCESS_KEY_ID ?? process.env.CLOUDFLARE_R2_ACCESS_KEY_ID
+const secretKey  = process.env.GALLERY_R2_SECRET_ACCESS_KEY ?? process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY
 
-const GALLERY_BUCKET     = process.env.GALLERY_R2_BUCKET_NAME!
-const GALLERY_PUBLIC_URL = process.env.GALLERY_R2_PUBLIC_URL!
+const GALLERY_BUCKET     = process.env.GALLERY_R2_BUCKET_NAME
+const GALLERY_PUBLIC_URL = process.env.GALLERY_R2_PUBLIC_URL
+
+// Guard: fail fast with a meaningful error at call-time (not at module load)
+// so the rest of the app still boots even if gallery storage isn't configured.
+function assertConfigured(): void {
+  if (!GALLERY_BUCKET || !GALLERY_PUBLIC_URL || !accountId || !accessKey || !secretKey) {
+    throw new Error(
+      'GALLERY_R2: storage is not fully configured. ' +
+      'Set GALLERY_R2_BUCKET_NAME, GALLERY_R2_PUBLIC_URL, and either ' +
+      'GALLERY_R2_ACCESS_KEY_ID / GALLERY_R2_SECRET_ACCESS_KEY / GALLERY_R2_ACCOUNT_ID ' +
+      '(or let them fall back to CLOUDFLARE_R2_* equivalents).'
+    )
+  }
+}
+
+// Client — created lazily so module-load doesn't fail when env vars are absent
+let _client: S3Client | null = null
+function getClient(): S3Client {
+  assertConfigured()
+  if (!_client) {
+    _client = new S3Client({
+      region:   'auto',
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId:     accessKey!,
+        secretAccessKey: secretKey!,
+      },
+    })
+  }
+  return _client
+}
 
 // ---------------------------------------------------------------------------
 // Upload
@@ -52,9 +82,10 @@ export async function uploadToGallery(
   contentType: string,
   metadata?:   Record<string, string>,
 ): Promise<string> {
+  assertConfigured()
   try {
-    await galleryR2.send(new PutObjectCommand({
-      Bucket:      GALLERY_BUCKET,
+    await getClient().send(new PutObjectCommand({
+      Bucket:      GALLERY_BUCKET!,
       Key:         key,
       Body:        body,
       ContentType: contentType,
@@ -76,6 +107,7 @@ export async function uploadToGallery(
  * No signing required because the gallery bucket is publicly readable.
  */
 export function getGalleryPublicUrl(key: string): string {
+  if (!GALLERY_PUBLIC_URL) throw new Error('GALLERY_R2: GALLERY_R2_PUBLIC_URL is not set')
   return `${GALLERY_PUBLIC_URL}/${key}`
 }
 
@@ -85,8 +117,9 @@ export function getGalleryPublicUrl(key: string): string {
 
 /** Permanently remove an object from the gallery bucket. */
 export async function deleteFromGallery(key: string): Promise<void> {
-  await galleryR2.send(new DeleteObjectCommand({
-    Bucket: GALLERY_BUCKET,
+  assertConfigured()
+  await getClient().send(new DeleteObjectCommand({
+    Bucket: GALLERY_BUCKET!,
     Key:    key,
   }))
 }
@@ -104,10 +137,11 @@ export async function getGalleryUploadUrl(
   contentType: string,
   expiresIn =  3600,
 ): Promise<string> {
+  assertConfigured()
   return getSignedUrl(
-    galleryR2,
+    getClient(),
     new PutObjectCommand({
-      Bucket:      GALLERY_BUCKET,
+      Bucket:      GALLERY_BUCKET!,
       Key:         key,
       ContentType: contentType,
     }),
