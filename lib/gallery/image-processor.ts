@@ -102,33 +102,61 @@ export async function processGalleryImage(
   sourceBuffer: Buffer,
   mimeType:     string,
 ): Promise<ProcessedImage> {
-  // Read metadata without decoding the full image
-  const metadata = await sharp(sourceBuffer).metadata()
+  let metadata: Awaited<ReturnType<ReturnType<typeof sharp>['metadata']>>
+  try {
+    // Read metadata without decoding the full image
+    metadata = await sharp(sourceBuffer).metadata()
+  } catch (sharpError: any) {
+    console.error('SHARP_PROCESSING_ERROR', {
+      message:  sharpError.message,
+      fileSize: sourceBuffer.length,
+      mimeType,
+    })
+    throw new Error(`Sharp failed to read image metadata: ${sharpError.message}`)
+  }
+
   const { width, height, format } = metadata
 
   if (!width || !height) {
     throw new Error('Could not read image dimensions — file may be corrupt or unsupported')
   }
 
-  // THUMBNAIL: 400 px wide, JPEG quality 75, progressive
-  // Used in the photo grid — loads fast on mobile connections
-  const thumbnailBuffer = await sharp(sourceBuffer)
-    .resize(400, undefined, {
-      withoutEnlargement: true, // never upscale a small image
-      fit: 'inside',
-    })
-    .jpeg({ quality: 75, progressive: true })
-    .toBuffer()
+  let thumbnailBuffer: Buffer
+  let previewBuffer: Buffer
 
-  // PREVIEW: 1200 px wide, JPEG quality 90, progressive
-  // Used in the lightbox — high enough quality for screen viewing
-  const previewBuffer = await sharp(sourceBuffer)
-    .resize(1200, undefined, {
-      withoutEnlargement: true,
-      fit: 'inside',
+  try {
+    // THUMBNAIL: 400 px wide, JPEG quality 75, progressive
+    // Used in the photo grid — loads fast on mobile connections
+    thumbnailBuffer = await sharp(sourceBuffer)
+      .resize(400, undefined, {
+        withoutEnlargement: true, // never upscale a small image
+        fit: 'inside',
+      })
+      .jpeg({ quality: 75, progressive: true })
+      .toBuffer()
+
+    // PREVIEW: 1200 px wide, JPEG quality 90, progressive
+    // Used in the lightbox — high enough quality for screen viewing
+    previewBuffer = await sharp(sourceBuffer)
+      .resize(1200, undefined, {
+        withoutEnlargement: true,
+        fit: 'inside',
+      })
+      .jpeg({ quality: 90, progressive: true })
+      .toBuffer()
+  } catch (sharpError: any) {
+    console.error('SHARP_PROCESSING_ERROR', {
+      message:  sharpError.message,
+      fileSize: sourceBuffer.length,
+      mimeType,
+      width,
+      height,
     })
-    .jpeg({ quality: 90, progressive: true })
-    .toBuffer()
+    // Fall back: serve the original as both thumbnail and preview rather than
+    // refusing the upload entirely. Thumbnails will be missing but the file is safe.
+    thumbnailBuffer = Buffer.from(sourceBuffer)
+    previewBuffer   = Buffer.from(sourceBuffer)
+  }
 
   // ORIGINAL: zero processing — exact copy of the source bytes
   // Buffer.from() allocates a new buffer; the source is not mutated.

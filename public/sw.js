@@ -10,7 +10,7 @@
  */
 
 // â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const CACHE_NAME    = 'cmms-v7'
+const CACHE_NAME    = 'cmms-v8'
 const OFFLINE_URL   = '/offline'
 
 // App-shell routes to pre-cache on install
@@ -22,7 +22,6 @@ const PRECACHE_URLS = [
   '/offline',
   '/manifest.json',
   '/icons/icon-192.svg',
-  '/icons/icon-192x192.png',
   '/icons/icon-512.svg',
 ]
 
@@ -58,6 +57,10 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
   if (url.origin !== self.location.origin) return
   if (url.pathname.startsWith('/_next/webpack-hmr')) return
+
+  // Never intercept Range requests (video/audio streaming) — they return 206
+  // Partial Content which the Cache API explicitly rejects.
+  if (request.headers.has('range')) return
 
   // â”€â”€ 1. Static immutable assets â†’ cache-first â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (
@@ -250,8 +253,8 @@ async function handleResumeSync() {
   const count = sessions.length
   await self.registration.showNotification('Uploads paused â¸', {
     body:  `${count} file${count !== 1 ? 's' : ''} waiting â€” tap to resume`,
-    icon:  '/icons/icon-192x192.png',
-    badge: '/icons/icon-192x192.png',
+    icon:  '/icons/icon-192.svg',
+    badge: '/icons/icon-192.svg',
     tag:   'cmms-upload-resume',
     data:  { url: '/upload' },
   }).catch(() => {})
@@ -284,8 +287,8 @@ async function backgroundResumeUpload(uploadId) {
     : 0
   await self.registration.showNotification('Upload complete âœ…', {
     body:  `${session.fileName} Â· ${pct}% complete â€” tap to resume`,
-    icon:  '/icons/icon-192x192.png',
-    badge: '/icons/icon-192x192.png',
+    icon:  '/icons/icon-192.svg',
+    badge: '/icons/icon-192.svg',
     tag:   `cmms-upload-resume-${uploadId}`,
     data:  { url: '/upload' },
   }).catch(() => {})
@@ -305,8 +308,8 @@ async function notifyClientsToSync() {
   const count = sessions.length
   await self.registration.showNotification('Upload queue ready â˜ï¸', {
     body:  `${count} file${count !== 1 ? 's' : ''} ready to upload â€” tap to continue`,
-    icon:  '/icons/icon-192x192.png',
-    badge: '/icons/icon-192x192.png',
+    icon:  '/icons/icon-192.svg',
+    badge: '/icons/icon-192.svg',
     tag:   'cmms-upload-resume',
     data:  { url: '/upload' },
   }).catch(() => {})
@@ -324,8 +327,8 @@ self.addEventListener('message', (event) => {
       : `${active} of ${total} files Â· ${pct}%`
     self.registration.showNotification('CMMS Upload in progress', {
       body,
-      icon:   '/icons/icon-192x192.png',
-      badge:  '/icons/icon-192x192.png',
+      icon:   '/icons/icon-192.svg',
+      badge:  '/icons/icon-192.svg',
       tag:    tag ?? 'cmms-upload-progress',
       silent: true,
       data:   { url: '/upload' },
@@ -336,8 +339,8 @@ self.addEventListener('message', (event) => {
     const { total, tag } = data
     self.registration.showNotification('Upload complete âœ…', {
       body:  `${total} file${total !== 1 ? 's' : ''} uploaded successfully`,
-      icon:  '/icons/icon-192x192.png',
-      badge: '/icons/icon-192x192.png',
+      icon:  '/icons/icon-192.svg',
+      badge: '/icons/icon-192.svg',
       tag:   tag ?? 'cmms-upload-progress',
       data:  { url: '/media' },
     }).catch(() => {})
@@ -347,8 +350,8 @@ self.addEventListener('message', (event) => {
     const { failedCount, tag } = data
     self.registration.showNotification('Upload failed âŒ', {
       body:  `${failedCount} file${failedCount !== 1 ? 's' : ''} failed â€” tap to retry`,
-      icon:  '/icons/icon-192x192.png',
-      badge: '/icons/icon-192x192.png',
+      icon:  '/icons/icon-192.svg',
+      badge: '/icons/icon-192.svg',
       tag:   tag ?? 'cmms-upload-progress',
       data:  { url: '/upload' },
     }).catch(() => {})
@@ -368,7 +371,7 @@ self.addEventListener('push', (event) => {
   let data = {}
   try { data = event.data.json() } catch { return }
 
-  const ICON  = '/icons/icon-192x192.png'
+  const ICON  = '/icons/icon-192.svg'
   const BADGE = '/icons/badge-72x72.png'
 
   /**
