@@ -19,9 +19,9 @@ import { getPresignedDownloadUrl }   from '@/lib/r2'
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { token: string } },
+  { params }: { params: Promise<{ token: string }> },
 ) {
-  const { token } = params
+  const { token } = await params
 
   const record = await prisma.publicShareUpload.findUnique({
     where: { token },

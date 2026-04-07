@@ -5,10 +5,11 @@ export const metadata: Metadata = {
   title: 'Shared File',
 }
 
-export default function PublicShareViewPage({
+export default async function PublicShareViewPage({
   params,
 }: {
-  params: { token: string }
+  params: Promise<{ token: string }>
 }) {
-  return <PublicShareViewClient token={params.token} />
+  const { token } = await params
+  return <PublicShareViewClient token={token} />
 }
