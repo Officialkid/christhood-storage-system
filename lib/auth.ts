@@ -172,11 +172,12 @@ export const authOptions: NextAuthOptions = {
         })
 
         return {
-          id:       user.id,
-          name:     user.username ?? user.name ?? user.email,
-          email:    user.email,
-          username: user.username,
-          role:     user.role,
+          id:                user.id,
+          name:              user.username ?? user.name ?? user.email,
+          email:             user.email,
+          username:          user.username,
+          role:              user.role,
+          requiresTwoFactor: user.twoFactorEnabled,
         }
       },
     }),
@@ -185,17 +186,19 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user, account, trigger }) {
       if (user) {
-        token.id       = user.id
-        token.role     = ((user as { role?: string }).role ?? 'UPLOADER') as import('@/types').AppRole
-        token.username = (user as { username?: string }).username ?? null
+        token.id                = user.id
+        token.role              = ((user as { role?: string }).role ?? 'UPLOADER') as import('@/types').AppRole
+        token.username          = (user as { username?: string }).username ?? null
+        token.requiresTwoFactor = (user as { requiresTwoFactor?: boolean }).requiresTwoFactor ?? false
       }
       // On Google sign-in, fetch fresh role from DB (may differ from default)
       if (account?.provider === 'google' && token.sub) {
         const dbUser = await prisma.user.findUnique({ where: { id: token.sub } })
         if (dbUser) {
-          token.id       = dbUser.id
-          token.role     = dbUser.role
-          token.username = dbUser.username ?? null
+          token.id                = dbUser.id
+          token.role              = dbUser.role
+          token.username          = dbUser.username ?? null
+          token.requiresTwoFactor = dbUser.twoFactorEnabled
         }
       }
       // Re-read from DB when session is explicitly updated (e.g. after username change)
@@ -213,9 +216,10 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id       = token.id       as string
-        session.user.role     = token.role as import('@/types').AppRole
-        session.user.username = token.username as string | null
+        session.user.id                = token.id       as string
+        session.user.role              = token.role as import('@/types').AppRole
+        session.user.username          = token.username as string | null
+        session.user.requiresTwoFactor = token.requiresTwoFactor ?? false
       }
       return session
     },

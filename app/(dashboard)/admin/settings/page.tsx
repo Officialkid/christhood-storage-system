@@ -683,10 +683,25 @@ export default function AdminSettingsPage() {
                 </div>
               </SectionCard>
 
-              <SectionCard icon={<ShieldCheck className="w-4 h-4 text-amber-400" />} title="Two-Factor Authentication" desc="">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-medium">Coming Soon</span>
-                  <p className="text-xs text-slate-400">TOTP-based 2FA will be available in a future update.</p>
+              <SectionCard icon={<ShieldCheck className="w-4 h-4 text-amber-400" />} title="Two-Factor Authentication" desc="TOTP (app-based) 2FA is available for all users.">
+                <div className="space-y-3">
+                  <p className="text-sm text-slate-300">
+                    Users can enable 2FA from their{' '}
+                    <a href="/dashboard/profile" className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
+                      Profile Settings
+                    </a>
+                    . Once enabled, they will be prompted to verify with their authenticator app at each sign-in.
+                  </p>
+                  <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700">
+                      <ShieldCheck className="w-3.5 h-3.5 text-green-400" />
+                      TOTP (Google Authenticator, Authy, etc.)
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700">
+                      <ShieldCheck className="w-3.5 h-3.5 text-green-400" />
+                      10 one-time backup codes
+                    </span>
+                  </div>
                 </div>
               </SectionCard>
 

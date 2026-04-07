@@ -5,7 +5,7 @@ import { useSession }  from 'next-auth/react'
 import {
   User, RefreshCw, CheckCircle, Loader2, Pencil, X, Check, ShieldCheck,
   CheckCircle2, XCircle, Download, Trash2, AlertTriangle, Archive,
-  UserX, AlertOctagon,
+  UserX, AlertOctagon, KeyRound, Eye, EyeOff, Copy, ShieldOff,
 } from 'lucide-react'
 
 // ─── Inline editable field ───────────────────────────────────────────────────
@@ -198,6 +198,388 @@ function UsernameField({
             <Pencil className="w-3.5 h-3.5" />
           </button>
         </dd>
+      )}
+    </div>
+  )
+}
+
+// ─── Two-Factor Authentication ────────────────────────────────────────────────
+type TfaState = 'idle' | 'setup' | 'backup' | 'disable'
+
+function TwoFactorSection() {
+  /* local 2FA enabled state, fetched from the server on mount */
+  const [enabled,   setEnabled]   = useState<boolean | null>(null)
+  const [phase,     setPhase]     = useState<TfaState>('idle')
+
+  /* setup wizard */
+  const [qrUrl,     setQrUrl]     = useState('')
+  const [secret,    setSecret]    = useState('')
+  const [token,     setToken]     = useState('')
+  const [backups,   setBackups]   = useState<string[]>([])
+  const [copied,    setCopied]    = useState(false)
+
+  /* disable form */
+  const [disablePw,  setDisablePw]  = useState('')
+  const [disableCode, setDisableCode] = useState('')
+  const [showDisPw,  setShowDisPw]  = useState(false)
+
+  /* backup regenerate */
+  const [regenToken, setRegenToken] = useState('')
+  const [newBackups, setNewBackups] = useState<string[]>([])
+
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
+
+  /* fetch current 2FA status */
+  useEffect(() => {
+    fetch('/api/user/2fa-status')
+      .then(r => r.json())
+      .then(d => setEnabled(!!d.twoFactorEnabled))
+      .catch(() => setEnabled(false))
+  }, [])
+
+  function reset() {
+    setPhase('idle'); setError(''); setToken(''); setQrUrl(''); setSecret('')
+    setBackups([]); setDisablePw(''); setDisableCode(''); setRegenToken(''); setNewBackups([])
+  }
+
+  async function startSetup() {
+    setLoading(true); setError('')
+    try {
+      const res  = await fetch('/api/auth/2fa/setup', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Setup failed')
+      setSecret(data.secret); setQrUrl(data.qrCodeUrl); setPhase('setup')
+    } catch (e: any) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+
+  async function enableTotp() {
+    setLoading(true); setError('')
+    try {
+      const res  = await fetch('/api/auth/2fa/enable', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ secret, token }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Enable failed')
+      setBackups(data.backupCodes); setEnabled(true); setPhase('backup')
+    } catch (e: any) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+
+  async function disable2fa() {
+    setLoading(true); setError('')
+    try {
+      const res  = await fetch('/api/auth/2fa/disable', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ password: disablePw, code: disableCode }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Disable failed')
+      setEnabled(false); reset()
+    } catch (e: any) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+
+  async function regenerateBackup() {
+    setLoading(true); setError('')
+    try {
+      const res  = await fetch('/api/auth/2fa/backup-codes/regenerate', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ token: regenToken }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Regenerate failed')
+      setNewBackups(data.backupCodes)
+    } catch (e: any) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+
+  function copySecret() {
+    navigator.clipboard.writeText(secret)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  /* ── Render ──────────────────────────────────────────────────────────── */
+  return (
+    <div className="bg-slate-900 border border-slate-800/60 rounded-2xl p-6 space-y-5">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="w-4 h-4 text-slate-400" />
+        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
+          Two-Factor Authentication
+        </h2>
+        {enabled === true && (
+          <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium
+                           text-green-300 bg-green-600/15 border border-green-500/30
+                           rounded-full px-2.5 py-0.5">
+            <CheckCircle2 className="w-3 h-3" /> Enabled
+          </span>
+        )}
+        {enabled === false && (
+          <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium
+                           text-slate-400 bg-slate-800/60 border border-slate-700/40
+                           rounded-full px-2.5 py-0.5">
+            Off
+          </span>
+        )}
+      </div>
+
+      {error && (
+        <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30
+                        rounded-lg px-4 py-3">
+          {error}
+        </div>
+      )}
+
+      {/* ── Idle: show enable / disable / regen options ─────────────────── */}
+      {phase === 'idle' && enabled === false && (
+        <div>
+          <p className="text-sm text-slate-400 mb-4">
+            Add an extra layer of security. You will need your authenticator app
+            (Google Authenticator, Authy, etc.) each time you sign in.
+          </p>
+          <button
+            onClick={startSetup}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500
+                       disabled:opacity-50 text-white text-sm font-medium transition"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+            Set up two-factor authentication
+          </button>
+        </div>
+      )}
+
+      {phase === 'idle' && enabled === true && (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-400">
+            Your account is protected with TOTP-based two-factor authentication.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => { setPhase('backup'); setError('') }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700
+                         border border-slate-700/60 text-sm text-white transition"
+            >
+              <KeyRound className="w-4 h-4 text-indigo-400" />
+              Regenerate backup codes
+            </button>
+            <button
+              onClick={() => { setPhase('disable'); setError('') }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/50
+                         border border-red-500/30 text-sm text-red-300 transition"
+            >
+              <ShieldOff className="w-4 h-4" />
+              Disable 2FA
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Setup wizard ────────────────────────────────────────────────── */}
+      {phase === 'setup' && (
+        <div className="space-y-5">
+          <p className="text-sm text-slate-300">
+            Scan this QR code with your authenticator app, then enter the 6-digit code below.
+          </p>
+          {qrUrl && (
+            <div className="flex justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qrUrl} alt="QR code" className="rounded-xl w-40 h-40 border border-slate-700" />
+            </div>
+          )}
+          <div>
+            <p className="text-xs text-slate-400 mb-1">
+              Can't scan? Enter this code manually in your authenticator app:
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-xs bg-slate-800 border border-slate-700 rounded-lg
+                               px-3 py-2 text-indigo-300 break-all font-mono">
+                {secret}
+              </code>
+              <button
+                type="button"
+                onClick={copySecret}
+                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700
+                           text-slate-400 hover:text-white transition"
+              >
+                {copied ? <CheckCircle className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">
+              6-digit verification code
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={token}
+              onChange={e => setToken(e.target.value)}
+              placeholder="000000"
+              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl
+                         px-4 py-3 text-sm text-white placeholder-slate-500 tracking-widest text-center
+                         focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={enableTotp}
+              disabled={loading || token.length < 6}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500
+                         disabled:opacity-50 text-white text-sm font-medium transition"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              Verify &amp; enable
+            </button>
+            <button onClick={reset}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Backup codes shown after enabling ──────────────────────────── */}
+      {phase === 'backup' && backups.length > 0 && (
+        <div className="space-y-4">
+          <div className="rounded-xl bg-amber-950/30 border border-amber-500/30 px-4 py-3">
+            <p className="text-sm font-medium text-amber-300 mb-1">Save these backup codes!</p>
+            <p className="text-xs text-amber-200/70">
+              Each code can only be used once. Store them somewhere safe — they will not be shown again.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {backups.map(c => (
+              <code key={c} className="text-xs font-mono bg-slate-800 border border-slate-700
+                                        rounded-lg px-3 py-2 text-white text-center">{c}</code>
+            ))}
+          </div>
+          <button
+            onClick={reset}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500
+                       text-white text-sm font-medium transition"
+          >
+            <CheckCircle className="w-4 h-4" /> Done — I've saved my codes
+          </button>
+        </div>
+      )}
+
+      {/* ── Regenerate backup codes ─────────────────────────────────────── */}
+      {phase === 'backup' && backups.length === 0 && (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-300">
+            Enter your current authenticator code to generate 10 new backup codes.
+            All existing backup codes will be invalidated.
+          </p>
+          {newBackups.length === 0 ? (
+            <>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={regenToken}
+                onChange={e => setRegenToken(e.target.value)}
+                placeholder="6-digit code"
+                className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl
+                           px-4 py-3 text-sm text-white placeholder-slate-500 tracking-widest text-center
+                           focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition"
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={regenerateBackup}
+                  disabled={loading || regenToken.length < 6}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500
+                             disabled:opacity-50 text-white text-sm font-medium transition"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                  Generate new codes
+                </button>
+                <button onClick={reset}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition">
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded-xl bg-amber-950/30 border border-amber-500/30 px-4 py-3">
+                <p className="text-sm font-medium text-amber-300 mb-1">New backup codes</p>
+                <p className="text-xs text-amber-200/70">Save these now — they won't be shown again.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {newBackups.map(c => (
+                  <code key={c} className="text-xs font-mono bg-slate-800 border border-slate-700
+                                            rounded-lg px-3 py-2 text-white text-center">{c}</code>
+                ))}
+              </div>
+              <button
+                onClick={reset}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600
+                           hover:bg-indigo-500 text-white text-sm font-medium transition"
+              >
+                <CheckCircle className="w-4 h-4" /> Done
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Disable 2FA ────────────────────────────────────────────────── */}
+      {phase === 'disable' && (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-300">
+            Confirm your password and authenticator code (or a backup code) to disable 2FA.
+          </p>
+          <div className="relative">
+            <input
+              type={showDisPw ? 'text' : 'password'}
+              value={disablePw}
+              onChange={e => setDisablePw(e.target.value)}
+              placeholder="Current password"
+              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl
+                         px-4 pr-11 py-3 text-sm text-white placeholder-slate-500
+                         focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition"
+            />
+            <button
+              type="button"
+              onClick={() => setShowDisPw(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition"
+            >
+              {showDisPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          <input
+            type="text"
+            value={disableCode}
+            onChange={e => setDisableCode(e.target.value)}
+            placeholder="6-digit code or backup code"
+            className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl
+                       px-4 py-3 text-sm text-white placeholder-slate-500 tracking-widest text-center
+                       focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition"
+          />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={disable2fa}
+              disabled={loading || !disablePw || !disableCode}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-700/90 hover:bg-red-700
+                         disabled:opacity-50 text-white text-sm font-medium transition"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldOff className="w-4 h-4" />}
+              Disable 2FA
+            </button>
+            <button onClick={reset}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition">
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -425,6 +807,9 @@ export default function ProfilePage() {
           {restarted ? 'Tour restarted!' : 'Restart Onboarding Tour'}
         </button>
       </div>
+
+      {/* ── Two-Factor Authentication ─────────────────────────────────── */}
+      <TwoFactorSection />
 
       {/* ── Your Data & Privacy ───────────────────────────────────────────── */}
       <div className="bg-slate-900 border border-slate-800/60 rounded-2xl p-6 space-y-6">

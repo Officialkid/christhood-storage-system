@@ -144,6 +144,11 @@ model User {
   galleriesCreated   PublicGallery[] @relation("GalleryCreatedBy")
   galleriesPublished PublicGallery[] @relation("GalleryPublishedBy")
   galleriesDeleted   PublicGallery[] @relation("GalleryDeletedBy")
+
+  // ── Two-Factor Authentication (TOTP) ─────────────────────────────────────
+  twoFactorEnabled     Boolean  @default(false)
+  twoFactorSecret      String?  // AES-encrypted TOTP secret
+  twoFactorBackupCodes String[] // bcrypt-hashed backup codes (each used once)
 }
 
 // ─────────────────────────────────────────────

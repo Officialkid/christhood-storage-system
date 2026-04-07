@@ -117,7 +117,7 @@ function extractIp(req: NextRequest): string {
 // /gallery-public/* and /api/gallery/public/* are the public gallery — no auth.
 // All of these still go through the CRLF guard above.
 const AUTH_PASSTHROUGH_RE =
-  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|gallery-public(?:\/|$)|share(?:\/|$)|public-share(?:\/|$)|api\/auth|api\/health|api\/assistant\/health|api\/cron|api\/gallery\/public(?:\/|$)|api\/share(?:\/|$)|api\/public-share(?:\/|$))\b/
+  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|2fa|gallery-public(?:\/|$)|share(?:\/|$)|public-share(?:\/|$)|api\/auth|api\/health|api\/assistant\/health|api\/cron|api\/gallery\/public(?:\/|$)|api\/share(?:\/|$)|api\/public-share(?:\/|$))\b/
 
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl
@@ -233,7 +233,27 @@ export async function middleware(req: NextRequest) {
 
     const role = token.role as string | undefined
 
-    // ── Admin-only paths ──────────────────────────────
+    // ── 2FA gate ─────────────────────────────────────────────────────────────
+    // If the JWT says requiresTwoFactor=true AND there is no valid 2fa_verified
+    // cookie, hold the user on the /2fa challenge page.
+    if (token.requiresTwoFactor) {
+      const verifiedCookie = req.cookies.get('2fa_verified')?.value
+      const is2faPage      = pathname === '/2fa'
+      const is2faApi       = pathname.startsWith('/api/auth/2fa/')
+
+      if (!verifiedCookie && !is2faPage && !is2faApi) {
+        if (pathname.startsWith('/api/')) {
+          return applySecurityHeaders(
+            NextResponse.json({ error: 'Two-factor authentication required' }, { status: 403 }),
+            pathname,
+          )
+        }
+        return applySecurityHeaders(
+          NextResponse.redirect(new URL('/2fa', req.url)),
+          pathname,
+        )
+      }
+    }
     const isAdminPath =
       pathname.startsWith('/admin') ||
       pathname.startsWith('/api/admin')

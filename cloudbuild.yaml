@@ -85,7 +85,8 @@ steps:
         VAPID_PRIVATE_KEY=VAPID_PRIVATE_KEY:latest,
         VAPID_SUBJECT=VAPID_SUBJECT:latest,
         CRON_SECRET=CRON_SECRET:latest,
-        GEMINI_API_KEY=GEMINI_API_KEY:latest
+        GEMINI_API_KEY=GEMINI_API_KEY:latest,
+        TOTP_ENCRYPTION_KEY=TOTP_ENCRYPTION_KEY:latest
 
 # Artifact Registry images produced by this build
 images:
