@@ -6,6 +6,11 @@ import bcrypt              from 'bcryptjs'
 import { prisma }          from './prisma'
 import { log }             from './activityLog'
 import { logger }          from './logger'
+import { sendNewUserPendingEmail } from './email'
+import { createInAppNotification } from './notifications'
+
+// 30-day persistent session (cookie maxAge must be set explicitly when overriding cookies config)
+const SESSION_MAX_AGE = 60 * 60 * 24 * 30
 
 // ── Progressive delay (Layer 2): slow down repeated failures before hard lockout ──
 // Uses the per-user consecutive failure count already stored in the DB.
@@ -22,7 +27,7 @@ export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: {
     strategy:  'jwt',
-    maxAge:    60 * 60 * 24 * 30,                                         // 30 days
+    maxAge:    SESSION_MAX_AGE,
     updateAge: 60 * 60 * 24,                                              // refresh token once per day
   },
   secret: process.env.NEXTAUTH_SECRET,
@@ -55,6 +60,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: 'lax' as const,
         path:     '/',
         secure:   process.env.NODE_ENV === 'production',
+        maxAge:   SESSION_MAX_AGE,
       },
     },
     callbackUrl: {
@@ -66,6 +72,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: 'lax' as const,
         path:     '/',
         secure:   process.env.NODE_ENV === 'production',
+        maxAge:   SESSION_MAX_AGE,
       },
     },
     csrfToken: {
@@ -178,6 +185,7 @@ export const authOptions: NextAuthOptions = {
           username:          user.username,
           role:              user.role,
           requiresTwoFactor: user.twoFactorEnabled,
+          isActive:          user.isActive,
         }
       },
     }),
@@ -190,6 +198,7 @@ export const authOptions: NextAuthOptions = {
         token.role              = ((user as { role?: string }).role ?? 'UPLOADER') as import('@/types').AppRole
         token.username          = (user as { username?: string }).username ?? null
         token.requiresTwoFactor = (user as { requiresTwoFactor?: boolean }).requiresTwoFactor ?? false
+        token.isActive          = (user as { isActive?: boolean }).isActive ?? true
       }
       // On Google sign-in, fetch fresh role from DB (may differ from default)
       if (account?.provider === 'google' && token.sub) {
@@ -199,6 +208,7 @@ export const authOptions: NextAuthOptions = {
           token.role              = dbUser.role
           token.username          = dbUser.username ?? null
           token.requiresTwoFactor = dbUser.twoFactorEnabled
+          token.isActive          = dbUser.isActive
         }
       }
       // Re-read from DB when session is explicitly updated (e.g. after username change)
@@ -220,18 +230,55 @@ export const authOptions: NextAuthOptions = {
         session.user.role              = token.role as import('@/types').AppRole
         session.user.username          = token.username as string | null
         session.user.requiresTwoFactor = token.requiresTwoFactor ?? false
+        session.user.isActive          = token.isActive ?? true
       }
       return session
     },
   },
 
   events: {
-    // Auto-assign a username for Google OAuth sign-ups
+    // Auto-assign username and require admin approval for new Google OAuth sign-ups
     async createUser({ user }) {
       if (!user.email) return
       const base     = user.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '')
       const username = `${base}_${Math.random().toString(36).slice(2, 6)}`
-      await prisma.user.update({ where: { id: user.id }, data: { username } })
+      // Set inactive (pending admin approval) — same flow as self-registration
+      await prisma.user.update({ where: { id: user.id }, data: { username, isActive: false } })
+
+      // Notify all admins (fire-and-forget)
+      try {
+        const appUrl     = process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
+        const approveUrl = `${appUrl}/admin/users`
+        const admins     = await prisma.user.findMany({
+          where:  { role: 'ADMIN', isActive: true },
+          select: { id: true, email: true },
+        })
+        for (const admin of admins) {
+          createInAppNotification(
+            admin.id,
+            `New user "${username}" (via Google) has registered and is awaiting your approval.`,
+            '/admin/users',
+            'NEW_USER_PENDING',
+            'New sign-up pending approval',
+          ).catch(() => {})
+          sendNewUserPendingEmail({
+            adminEmail:  admin.email,
+            newUsername: username,
+            newEmail:    user.email!,
+            approveUrl,
+          }).catch(e => logger.warn('OAUTH_REGISTER_EMAIL_FAILED', {
+            route:   'createUser event',
+            error:   (e as Error)?.message,
+            message: 'sendNewUserPendingEmail failed for Google OAuth user',
+          }))
+        }
+      } catch (e) {
+        logger.warn('OAUTH_REGISTER_NOTIFY_FAILED', {
+          route:   'createUser event',
+          error:   (e as Error)?.message,
+          message: 'Admin notification failed for new Google OAuth user',
+        })
+      }
     },
   },
 }

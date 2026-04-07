@@ -11,6 +11,7 @@ function LoginInner() {
   const searchParams  = useSearchParams()
   const callbackUrl   = searchParams.get('callbackUrl') ?? '/dashboard'
   const isSwitching   = searchParams.get('switched') === '1'
+  const isPending     = searchParams.get('reason') === 'pending'
 
   const [identifier, setIdentifier] = useState('')
   const [password,   setPassword]   = useState('')
@@ -128,6 +129,16 @@ function LoginInner() {
                           bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-3">
             <RefreshCcw className="w-4 h-4 shrink-0" />
             Sign in with a different account below.
+          </div>
+        )}
+        {isPending && (
+          <div className="mb-4 flex items-start gap-2 text-sm text-indigo-300
+                          bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-3">
+            <Hourglass className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              Your account is <strong className="text-white">pending admin approval</strong>.
+              You will receive an email once an admin has reviewed your request.
+            </span>
           </div>
         )}
         {/* Card */}

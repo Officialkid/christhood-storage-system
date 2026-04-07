@@ -3,6 +3,8 @@ import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/notifications/unread-count
  * Returns the combined count of unread system notifications + unread messages.

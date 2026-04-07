@@ -14,7 +14,7 @@ const FILTER_STATUSES = [
 
 export default async function MediaPage(
   props: {
-    searchParams: Promise<{ page?: string; type?: string; eventId?: string; status?: string; tags?: string }>
+    searchParams: Promise<{ page?: string; type?: string; eventId?: string; status?: string; tags?: string; sort?: string }>
   }
 ) {
   const searchParams = await props.searchParams;
@@ -23,6 +23,7 @@ export default async function MediaPage(
   const type     = searchParams.type    as any ?? undefined
   const eventId  = searchParams.eventId ?? undefined
   const status   = searchParams.status  ?? undefined
+  const sort     = searchParams.sort    ?? 'newest'
   // tags param is comma-separated tag IDs: ?tags=id1,id2
   const tagIds   = searchParams.tags
     ? searchParams.tags.split(',').filter(Boolean)
@@ -50,7 +51,7 @@ export default async function MediaPage(
         event:    { select: { id: true, name: true } },
         tags:     { orderBy: { name: 'asc' } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: sort === 'oldest' ? 'asc' : 'desc' },
       skip:  (page - 1) * limit,
       take:  limit,
     }),
@@ -83,6 +84,7 @@ export default async function MediaPage(
     if (type)           params.type    = type
     if (eventId)        params.eventId = eventId
     if (status)         params.status  = status
+    if (sort !== 'newest') params.sort = sort
     if (tagIds.length)  params.tags    = tagIds.join(',')
     Object.assign(params, overrides)
     const clean = Object.fromEntries(
@@ -106,6 +108,24 @@ export default async function MediaPage(
         <div>
           <h1 className="text-3xl font-bold text-white">Media Library</h1>
           <p className="mt-1 text-slate-400">{total} item{total !== 1 ? 's' : ''}</p>
+        </div>
+        {/* Sort toggle */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500">Sort:</span>
+          <a
+            href={qs({ sort: undefined, page: undefined })}
+            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors
+              ${sort !== 'oldest' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+          >
+            Newest first
+          </a>
+          <a
+            href={qs({ sort: 'oldest', page: undefined })}
+            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors
+              ${sort === 'oldest' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+          >
+            Oldest first
+          </a>
         </div>
       </div>
 

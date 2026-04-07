@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   Trash2, RotateCcw, Clock, AlertTriangle, Loader2,
   RefreshCw, ShieldAlert, FileImage, FileVideo, Info, XCircle,
-  GalleryHorizontal,
+  GalleryHorizontal, ArrowUpDown,
 } from 'lucide-react'
 import { invalidateFileCache } from '@/lib/cache'
 
@@ -125,15 +125,18 @@ export default function AdminTrashPage() {
   const [gPage,        setGPage]        = useState(1)
   const [restoringG,   setRestoringG]   = useState('')
   const [purgingG,     setPurgingG]     = useState('')
+  // sort: files sort by purge date or deletion date; galleries likewise
+  const [fileSort,  setFileSort]  = useState<'purge_asc' | 'purge_desc' | 'deleted_asc' | 'deleted_desc'>('purge_asc')
+  const [galSort,   setGalSort]   = useState<'deleted_desc' | 'deleted_asc' | 'purge_asc' | 'purge_desc'>('deleted_desc')
   const LIMIT   = 50
   const G_LIMIT = 20
 
   // â”€â”€ Fetch files â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const fetchTrash = useCallback(async (pg = page) => {
+  const fetchTrash = useCallback(async (pg = page, sort = fileSort) => {
     setLoading(true)
     setFetchError('')
     try {
-      const res = await fetch(`/api/admin/trash?page=${pg}&limit=${LIMIT}`)
+      const res = await fetch(`/api/admin/trash?page=${pg}&limit=${LIMIT}&sort=${sort}`)
       const body = await res.json()
       if (!res.ok) {
         setFetchError(body?.error ?? `Server error ${res.status}`)
@@ -141,33 +144,33 @@ export default function AdminTrashPage() {
       }
       setData(body as PageData)
     } catch (err) {
-      setFetchError('Network error â€” could not load trash. Please refresh.')
+      setFetchError('Network error — could not load trash. Please refresh.')
       console.error('[AdminTrashPage] fetchTrash error:', err)
     } finally {
       setLoading(false)
     }
-  }, [page])
+  }, [page, fileSort])
 
   // â”€â”€ Fetch galleries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const fetchGalleryTrash = useCallback(async (pg = gPage) => {
+  const fetchGalleryTrash = useCallback(async (pg = gPage, sort = galSort) => {
     setGLoading(true)
     setGError('')
     try {
-      const res  = await fetch(`/api/admin/gallery-trash?page=${pg}&limit=${G_LIMIT}`)
+      const res  = await fetch(`/api/admin/gallery-trash?page=${pg}&limit=${G_LIMIT}&sort=${sort}`)
       const body = await res.json()
       if (!res.ok) { setGError(body?.error ?? `Server error ${res.status}`); return }
       setGData(body as GalleryTrashData)
     } catch {
-      setGError('Network error â€” could not load gallery trash. Please refresh.')
+      setGError('Network error — could not load gallery trash. Please refresh.')
     } finally {
       setGLoading(false)
     }
-  }, [gPage])
+  }, [gPage, galSort])
 
   useEffect(() => {
-    if (activeTab === 'FILES')     fetchTrash(page)
-    else                           fetchGalleryTrash(gPage)
-  }, [page, gPage, activeTab])
+    if (activeTab === 'FILES')     fetchTrash(page, fileSort)
+    else                           fetchGalleryTrash(gPage, galSort)
+  }, [page, gPage, activeTab, fileSort, galSort])
 
   // â”€â”€ Restore file â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleRestore(trashItemId: string, fileName: string) {
@@ -296,8 +299,41 @@ export default function AdminTrashPage() {
               {gData.total} {gData.total === 1 ? 'gallery' : 'galleries'} in trash
             </span>
           )}
+
+          {/* Sort control */}
+          <div className="flex items-center gap-1.5">
+            <ArrowUpDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            {activeTab === 'FILES' ? (
+              <select
+                value={fileSort}
+                onChange={e => { setFileSort(e.target.value as typeof fileSort); setPage(1) }}
+                className="text-xs bg-slate-800 border border-slate-700 text-slate-300
+                           rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1
+                           focus:ring-indigo-500/60 cursor-pointer"
+              >
+                <option value="purge_asc">Purge date ↑</option>
+                <option value="purge_desc">Purge date ↓</option>
+                <option value="deleted_asc">Deleted date ↑</option>
+                <option value="deleted_desc">Deleted date ↓</option>
+              </select>
+            ) : (
+              <select
+                value={galSort}
+                onChange={e => { setGalSort(e.target.value as typeof galSort); setGPage(1) }}
+                className="text-xs bg-slate-800 border border-slate-700 text-slate-300
+                           rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1
+                           focus:ring-indigo-500/60 cursor-pointer"
+              >
+                <option value="deleted_desc">Deleted date ↓</option>
+                <option value="deleted_asc">Deleted date ↑</option>
+                <option value="purge_asc">Purge date ↑</option>
+                <option value="purge_desc">Purge date ↓</option>
+              </select>
+            )}
+          </div>
+
           <button
-            onClick={() => activeTab === 'FILES' ? fetchTrash(page) : fetchGalleryTrash(gPage)}
+            onClick={() => activeTab === 'FILES' ? fetchTrash(page, fileSort) : fetchGalleryTrash(gPage, galSort)}
             className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
             title="Refresh"
           >

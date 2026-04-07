@@ -23,11 +23,19 @@ export async function GET(req: NextRequest) {
     const page  = Math.max(1, parseInt(searchParams.get('page')  ?? '1',  10))
     const limit = Math.min(50, parseInt(searchParams.get('limit') ?? '20', 10))
     const skip  = (page - 1) * limit
+    const sort  = searchParams.get('sort') ?? 'deleted_desc'
+
+    // Map sort param to Prisma orderBy
+    const orderBy: Record<string, 'asc' | 'desc'> =
+      sort === 'deleted_asc'  ? { deletedAt: 'asc' }  :
+      sort === 'purge_asc'    ? { purgesAt:  'asc' }  :
+      sort === 'purge_desc'   ? { purgesAt:  'desc' } :
+                                { deletedAt: 'desc' }  // default: newest deleted first
 
     const [galleries, total] = await prisma.$transaction([
       prisma.publicGallery.findMany({
         where:   { status: 'DELETED' },
-        orderBy: { deletedAt: 'desc' },
+        orderBy,
         skip,
         take:    limit,
         select: {

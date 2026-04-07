@@ -11,6 +11,7 @@ declare module 'next-auth' {
       image?:              string | null
       role:                AppRole
       requiresTwoFactor?:  boolean
+      isActive?:           boolean
     }
   }
 
@@ -19,6 +20,7 @@ declare module 'next-auth' {
     username?:          string | null
     role:               AppRole
     requiresTwoFactor?: boolean
+    isActive?:          boolean
   }
 }
 
@@ -28,5 +30,6 @@ declare module 'next-auth/jwt' {
     username?:          string | null
     role:               AppRole
     requiresTwoFactor?: boolean
+    isActive?:          boolean
   }
 }

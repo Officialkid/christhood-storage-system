@@ -18,13 +18,21 @@ export async function GET(req: NextRequest) {
   const page  = Math.max(1, parseInt(searchParams.get('page')  ?? '1',  10))
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10)))
   const skip  = (page - 1) * limit
+  const sort  = searchParams.get('sort') ?? 'purge_asc'
+
+  // Map sort param to Prisma orderBy
+  const orderBy: Record<string, 'asc' | 'desc'> =
+    sort === 'purge_desc'    ? { scheduledPurgeAt: 'desc' } :
+    sort === 'deleted_asc'   ? { deletedAt: 'asc' }        :
+    sort === 'deleted_desc'  ? { deletedAt: 'desc' }       :
+                               { scheduledPurgeAt: 'asc' }  // default: soonest to expire first
 
   try {
     const [items, total] = await Promise.all([
       prisma.trashItem.findMany({
         skip,
         take:    limit,
-        orderBy: { scheduledPurgeAt: 'asc' }, // soonest to expire first
+        orderBy,
         include: {
           deletedBy: { select: { id: true, username: true, email: true } },
           mediaFile: {

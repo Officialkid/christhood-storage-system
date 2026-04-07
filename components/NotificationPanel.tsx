@@ -72,6 +72,8 @@ export function NotificationPanel({ onClose }: Props) {
   async function markAllRead() {
     setItems((prev) => prev.map((n) => ({ ...n, read: true })))
     await fetch('/api/notifications/mark-all-read', { method: 'POST' })
+    // Tell the bell badge to re-fetch its count immediately
+    window.dispatchEvent(new Event('notifications:invalidate'))
   }
 
   const unread = items.filter((n) => !n.read).length

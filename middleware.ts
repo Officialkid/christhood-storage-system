@@ -233,6 +233,21 @@ export async function middleware(req: NextRequest) {
 
     const role = token.role as string | undefined
 
+    // ── Inactive / pending-approval gate ─────────────────────────────────────
+    // token.isActive is false for users pending admin approval or deactivated.
+    // Block all dashboard/API access; redirect pages to login with a reason code.
+    if (token.isActive === false) {
+      if (pathname.startsWith('/api/')) {
+        return applySecurityHeaders(
+          NextResponse.json({ error: 'Account inactive or pending approval' }, { status: 403 }),
+          pathname,
+        )
+      }
+      const loginUrl = new URL('/login', req.url)
+      loginUrl.searchParams.set('reason', 'pending')
+      return applySecurityHeaders(NextResponse.redirect(loginUrl), pathname)
+    }
+
     // ── 2FA gate ─────────────────────────────────────────────────────────────
     // If the JWT says requiresTwoFactor=true AND there is no valid 2fa_verified
     // cookie, hold the user on the /2fa challenge page.
