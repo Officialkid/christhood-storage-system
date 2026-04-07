@@ -4,19 +4,20 @@ import { useState, Suspense } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { User, Lock, Eye, EyeOff, LogIn, Loader2, ShieldAlert, Clock } from 'lucide-react'
+import { User, Lock, Eye, EyeOff, LogIn, Loader2, ShieldAlert, Clock, RefreshCcw, Hourglass } from 'lucide-react'
 
 function LoginInner() {
   const router        = useRouter()
   const searchParams  = useSearchParams()
   const callbackUrl   = searchParams.get('callbackUrl') ?? '/dashboard'
+  const isSwitching   = searchParams.get('switched') === '1'
 
   const [identifier, setIdentifier] = useState('')
   const [password,   setPassword]   = useState('')
   const [showPw,     setShowPw]     = useState(false)
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState('')
-  const [errorType,  setErrorType]  = useState<'generic' | 'rateLimit' | 'locked' | 'hint'>('generic')
+  const [errorType,  setErrorType]  = useState<'generic' | 'rateLimit' | 'locked' | 'hint' | 'pending'>('generic')
   const [failCount,  setFailCount]  = useState(0)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -50,13 +51,20 @@ function LoginInner() {
     const newCount = failCount + 1
     setFailCount(newCount)
 
-    // ── Query account-status to detect Layer 3 lockout ──────────────────────
+    // ── Query account-status to detect Layer 3 lockout or pending approval ──
     try {
       const statusRes = await fetch(
         `/api/auth/account-status?identifier=${encodeURIComponent(identifier)}`,
       )
       if (statusRes.ok) {
         const status = await statusRes.json()
+        if (status.pendingApproval) {
+          setErrorType('pending')
+          setError(
+            'Your account is pending admin approval. You will be notified by email once approved.',
+          )
+          return
+        }
         if (status.locked && status.lockedUntil) {
           const unlockAt  = new Date(status.lockedUntil)
           const timeStr   = unlockAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -92,8 +100,9 @@ function LoginInner() {
 
   // Icon + colour per error type
   const errorIcon =
-    errorType === 'rateLimit' ? <Clock   className="w-4 h-4 shrink-0 mt-0.5" /> :
-    errorType === 'locked'    ? <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" /> :
+    errorType === 'rateLimit' ? <Clock       className="w-4 h-4 shrink-0 mt-0.5" /> :
+    errorType === 'locked'    ? <ShieldAlert  className="w-4 h-4 shrink-0 mt-0.5" /> :
+    errorType === 'pending'   ? <Hourglass    className="w-4 h-4 shrink-0 mt-0.5" /> :
                                 null
 
   const errorStyle =
@@ -101,6 +110,8 @@ function LoginInner() {
       ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
       : errorType === 'locked'
       ? 'text-orange-400 bg-orange-500/10 border-orange-500/30'
+      : errorType === 'pending'
+      ? 'text-indigo-300 bg-indigo-500/10 border-indigo-500/30'
       : 'text-red-400 bg-red-500/10 border-red-500/30'
 
   return (
@@ -112,6 +123,13 @@ function LoginInner() {
                       rounded-full bg-violet-600/20 blur-[120px]" />
 
       <div className="relative z-10 w-full max-w-md">
+        {isSwitching && (
+          <div className="mb-4 flex items-center gap-2 text-sm text-indigo-300
+                          bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-3">
+            <RefreshCcw className="w-4 h-4 shrink-0" />
+            Sign in with a different account below.
+          </div>
+        )}
         {/* Card */}
         <div className="bg-slate-900/60 backdrop-blur-2xl border border-slate-800/60
                         rounded-2xl shadow-2xl shadow-black/40 px-8 py-10">

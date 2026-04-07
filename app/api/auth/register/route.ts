@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { handleApiError } from '@/lib/apiError'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
-import { sendWelcomeEmail } from '@/lib/email'
+import { sendNewUserPendingEmail } from '@/lib/email'
+import { createInAppNotification } from '@/lib/notifications'
 import { logger }           from '@/lib/logger'
 import { checkRegisterRateLimit } from '@/lib/rate-limit'
 
@@ -57,25 +58,55 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // ── Create user ───────────────────────────────────────────
+    // ── Create user — inactive until admin approves ───────────
     const passwordHash = await bcrypt.hash(password, 12)
 
     const user = await prisma.user.create({
       data: {
         username,
         email,
-        phone:        phone ?? null,
+        phone:    phone ?? null,
         passwordHash,
-        role:         'UPLOADER',
+        role:     'UPLOADER',
+        isActive: false,   // blocked until an admin activates + assigns a role
       },
       select: { id: true, username: true, email: true, role: true },
     })
 
-    // Non-fatal welcome email
-    sendWelcomeEmail(user.email, user.username ?? user.email)
-      .catch(e => logger.warn('REGISTER_SIDE_EFFECT_FAILED', { route: '/api/auth/register', error: (e as Error)?.message, message: 'sendWelcomeEmail failed' }))
+    // ── Notify all admins (in-app + email) — fire-and-forget ──
+    const appUrl  = process.env.NEXTAUTH_URL ?? 'http://localhost:3001'
+    const approveUrl = `${appUrl}/admin/users`
 
-    return NextResponse.json({ user }, { status: 201 })
+    const admins = await prisma.user.findMany({
+      where:  { role: 'ADMIN', isActive: true },
+      select: { id: true, email: true },
+    }).catch(() => [])
+
+    for (const admin of admins) {
+      createInAppNotification(
+        admin.id,
+        `New user "${username}" has registered and is awaiting your approval.`,
+        '/admin/users',
+        'NEW_USER_PENDING',
+        'New sign-up pending approval',
+      ).catch(() => {})
+
+      sendNewUserPendingEmail({
+        adminEmail:  admin.email,
+        newUsername: username,
+        newEmail:    email,
+        approveUrl,
+      }).catch(e => logger.warn('REGISTER_SIDE_EFFECT_FAILED', {
+        route: '/api/auth/register',
+        error: (e as Error)?.message,
+        message: 'sendNewUserPendingEmail failed',
+      }))
+    }
+
+    return NextResponse.json(
+      { pending: true, message: 'Account created. An admin will review and approve your access shortly.' },
+      { status: 201 },
+    )
   } catch (err) {
     logger.error('USER_CREATED_FAILED', { route: '/api/auth/register', error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'User registration failed' })
     return handleApiError(err)

@@ -72,16 +72,19 @@ echo "  App URL : ${APP_URL}"
 echo ""
 
 # ── Archive files — daily at 02:00 UTC ───────────────────────────────────────
-upsert_job "cmms-cron-archive"       "0 2 * * *"  "/api/cron/archive"
+upsert_job "cmms-cron-archive"              "0 2 * * *"  "/api/cron/archive"
 
 # ── Purge trash — daily at 03:00 UTC ─────────────────────────────────────────
-upsert_job "cmms-cron-purge"         "0 3 * * *"  "/api/cron/purge"
+upsert_job "cmms-cron-purge"                "0 3 * * *"  "/api/cron/purge"
 
 # ── Storage check — daily at 04:00 UTC ───────────────────────────────────────
-upsert_job "cmms-cron-storage-check" "0 4 * * *"  "/api/cron/storage-check"
+upsert_job "cmms-cron-storage-check"        "0 4 * * *"  "/api/cron/storage-check"
 
 # ── Weekly digest — every Monday at 08:00 UTC ────────────────────────────────
-upsert_job "cmms-cron-weekly-digest" "0 8 * * 1"  "/api/cron/weekly-digest"
+upsert_job "cmms-cron-weekly-digest"        "0 8 * * 1"  "/api/cron/weekly-digest"
+
+# ── Cleanup public share uploads — daily at 05:00 UTC ────────────────────────
+upsert_job "cmms-cron-cleanup-public-shares" "0 5 * * *"  "/api/cron/cleanup-public-shares"
 
 echo ""
 echo "All Cloud Scheduler jobs configured successfully."

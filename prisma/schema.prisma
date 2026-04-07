@@ -906,3 +906,55 @@ model FaceEmbedding {
 
   @@index([fileId])
 }
+
+// ─────────────────────────────────────────────
+// Public ShareLink Upload (no CMMS account required)
+// ─────────────────────────────────────────────
+//
+// ISOLATION GUARANTEE:
+//   - ZERO foreign keys to any other table in this schema
+//   - Files stored exclusively under R2 prefix "public-shares/"
+//   - No relationship to User, MediaFile, Transfer, or any CMMS model
+//
+// Flow:
+//   1. POST /api/public-share/upload  → creates record (isReady=false) + returns presigned PUT URL
+//   2. Client uploads directly to R2 via presigned URL
+//   3. POST /api/public-share/[token]/confirm → sets isReady=true
+//   4. Viewer hits /api/public-share/[token] → metadata + PIN gate
+//   5. Viewer hits /api/public-share/[token]/download → presigned GET URL
+//   6. Cron /api/cron/cleanup-public-shares  → deletes expired records + R2 objects
+//
+// Security:
+//   - token = crypto.randomUUID() (128-bit random, unguessable)
+//   - PIN bcrypt-hashed (never stored plaintext)
+//   - 50 MB max upload size (enforced server-side)
+//   - 7-day auto-expiry; isReady=false orphans purged after 2 hours
+//   - 5 uploads per IP per hour (Upstash rate limit)
+//   - uploaderIp stored for abuse tracing only
+
+model PublicShareUpload {
+  id            String   @id @default(cuid())
+  /// crypto.randomUUID() — used as the public share token in the URL
+  token         String   @unique
+  /// R2 object key — always under "public-shares/{token}/{filename}"
+  r2Key         String   @unique
+  originalName  String
+  fileSize      BigInt
+  mimeType      String
+  title         String?
+  message       String?
+  /// bcrypt hash of optional 4–8 digit PIN; null = no PIN required
+  pinHash       String?
+  /// Expires exactly 7 days after creation
+  expiresAt     DateTime
+  downloadCount Int      @default(0)
+  /// false until client POSTs /confirm after R2 upload completes
+  isReady       Boolean  @default(false)
+  /// Stored for abuse tracking only — never shown publicly
+  uploaderIp    String
+  createdAt     DateTime @default(now())
+
+  @@index([token])
+  @@index([expiresAt])
+  @@index([isReady])
+}

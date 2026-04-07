@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import {
   Shield, UserPlus, Pencil, Trash2, X, Loader2,
-  Check, Search, ChevronDown, UserX, UserCheck,
+  Check, Search, ChevronDown, UserX, UserCheck, ShieldCheck,
 } from 'lucide-react'
 import UserDeleteDialog from '@/components/UserDeleteDialog'
 
@@ -193,6 +193,8 @@ export default function AdminUsersPage() {
   const [editUser,   setEditUser]   = useState<User | null>(null)
   const [deleteUser, setDeleteUser] = useState<User | null>(null)
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
+  const [approvingId,    setApprovingId]    = useState<string | null>(null)
+  const [approveRoles,   setApproveRoles]   = useState<Record<string, Role>>({})
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
@@ -231,7 +233,31 @@ export default function AdminUsersPage() {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ action }),
     })
-    setDeactivatingId(null)
+   
+
+  async function handleApprove(user: User) {
+    const role = approveRoles[user.id] ?? 'UPLOADER'
+    setApprovingId(user.id)
+    await fetch(`/api/admin/users/${user.id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ role, approve: true }),
+    })
+    setApprovingId(null)
+    fetchUsers()
+  } setDeactivatingId(null)
+    fetchUsers()
+  }
+
+  async function handleApprove(user: User) {
+    const role = approveRoles[user.id] ?? 'UPLOADER'
+    setApprovingId(user.id)
+    await fetch(`/api/admin/users/${user.id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ role, approve: true }),
+    })
+    setApprovingId(null)
     fetchUsers()
   }
 
@@ -272,7 +298,14 @@ export default function AdminUsersPage() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">User Management</h1>
-              <p className="text-sm text-slate-500">{users.length} total users</p>
+              <p className="text-sm text-slate-500">{users.length} total users
+                {users.filter(u => !u.isActive && !u.deactivatedAt).length > 0 && (
+                  <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold
+                                   bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                    {users.filter(u => !u.isActive && !u.deactivatedAt).length} pending approval
+                  </span>
+                )}
+              </p>
             </div>
           </div>
           <button
@@ -329,9 +362,13 @@ export default function AdminUsersPage() {
                           {u.username ?? <span className="text-slate-500 italic">no username</span>}
                         </span>
                         {!u.isActive && (
-                          <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium
-                                           bg-slate-700/60 text-slate-400 border border-slate-600/40">
-                            Deactivated
+                          <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium
+                                           border ${
+                            !u.deactivatedAt
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                              : 'bg-slate-700/60 text-slate-400 border-slate-600/40'
+                          }`}>
+                            {!u.deactivatedAt ? 'Pending' : 'Deactivated'}
                           </span>
                         )}
                       </div>
@@ -344,6 +381,38 @@ export default function AdminUsersPage() {
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center justify-end gap-1.5">
+                      {!u.isActive && !u.deactivatedAt ? (
+                        // ── Pending approval — show role picker + approve button ──
+                        <>
+                          <select
+                            value={approveRoles[u.id] ?? 'UPLOADER'}
+                            onChange={e => setApproveRoles(r => ({ ...r, [u.id]: e.target.value as Role }))}
+                            className="bg-slate-800 border border-slate-700 text-slate-200
+                                       text-xs rounded-lg px-2 py-1 focus:outline-none
+                                       focus:ring-1 focus:ring-indigo-500/60"
+                          >
+                            <option value="UPLOADER">UPLOADER</option>
+                            <option value="EDITOR">EDITOR</option>
+                            <option value="ADMIN">ADMIN</option>
+                          </select>
+                          <button
+                            onClick={() => handleApprove(u)}
+                            disabled={approvingId === u.id}
+                            title="Approve account"
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs
+                                       font-semibold text-white bg-emerald-600 hover:bg-emerald-500
+                                       disabled:opacity-60 transition"
+                          >
+                            {approvingId === u.id
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : <ShieldCheck className="w-3.5 h-3.5" />
+                            }
+                            Approve
+                          </button>
+                        </>
+                      ) : (
+                        // ── Active / deactivated — normal controls ──
+                        <>
                       <button
                         onClick={() => { setEditUser(u); setModal('edit') }}
                         title="Edit role"
@@ -378,6 +447,8 @@ export default function AdminUsersPage() {
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
+                        </>
+                      )}
                         </>
                       )}
                     </div>
@@ -418,9 +489,12 @@ export default function AdminUsersPage() {
                       {u.username ?? <span className="text-slate-500 italic">no username</span>}
                     </p>
                     {!u.isActive && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0
-                                       bg-slate-700/60 text-slate-400 border border-slate-600/40">
-                        Deactivated
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 border ${
+                        !u.deactivatedAt
+                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                          : 'bg-slate-700/60 text-slate-400 border-slate-600/40'
+                      }`}>
+                        {!u.deactivatedAt ? 'Pending' : 'Deactivated'}
                       </span>
                     )}
                   </div>
@@ -432,7 +506,37 @@ export default function AdminUsersPage() {
                 <span className="text-xs text-slate-500">
                   Joined {new Date(u.createdAt).toLocaleDateString()}
                 </span>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                  {!u.isActive && !u.deactivatedAt ? (
+                    // ── Pending: role picker + approve ──
+                    <>
+                      <select
+                        value={approveRoles[u.id] ?? 'UPLOADER'}
+                        onChange={e => setApproveRoles(r => ({ ...r, [u.id]: e.target.value as Role }))}
+                        className="bg-slate-800 border border-slate-700 text-slate-200
+                                   text-xs rounded-lg px-2 py-1 focus:outline-none"
+                      >
+                        <option value="UPLOADER">UPLOADER</option>
+                        <option value="EDITOR">EDITOR</option>
+                        <option value="ADMIN">ADMIN</option>
+                      </select>
+                      <button
+                        onClick={() => handleApprove(u)}
+                        disabled={approvingId === u.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs
+                                   font-semibold text-white bg-emerald-600 hover:bg-emerald-500
+                                   disabled:opacity-60 transition"
+                      >
+                        {approvingId === u.id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <ShieldCheck className="w-3.5 h-3.5" />
+                        }
+                        Approve
+                      </button>
+                    </>
+                  ) : (
+                    // ── Normal controls ──
+                    <>
                   <button
                     onClick={() => { setEditUser(u); setModal('edit') }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
@@ -466,6 +570,8 @@ export default function AdminUsersPage() {
                         <Trash2 className="w-3.5 h-3.5" />
                         Delete
                       </button>
+                    </>
+                  )}
                     </>
                   )}
                 </div>

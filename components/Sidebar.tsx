@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
-  MessagesSquare, X, Bot, Share2, Tags, GalleryHorizontal,
+  MessagesSquare, X, Bot, Share2, Tags, GalleryHorizontal, RefreshCcw,
 } from 'lucide-react'
 import { useSidebar }       from './DashboardShell'
 import { useUnreadCount }   from '@/hooks/useUnreadCount'
@@ -213,6 +213,16 @@ export function Sidebar() {
             )}
           </Link>
         )}
+        <button
+          onClick={() => signOut({ callbackUrl: '/login?switched=1' })}
+          title={isCollapsed ? 'Switch account' : undefined}
+          className={`w-full flex items-center rounded-xl bg-slate-800/60 hover:bg-indigo-600/20
+                      py-2 text-sm text-slate-400 hover:text-indigo-300 transition-all mb-1
+                      ${isCollapsed ? 'justify-center px-2' : 'gap-2 px-3'}`}
+        >
+          <RefreshCcw className="w-4 h-4" />
+          {!isCollapsed && 'Choose another account'}
+        </button>
         <button
           onClick={() => signOut({ callbackUrl: '/login' })}
           title={isCollapsed ? 'Sign out' : undefined}

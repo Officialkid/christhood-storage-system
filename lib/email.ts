@@ -734,3 +734,63 @@ export async function sendTransferCompletedEmail(opts: {
     html:    layout(`Your transfer "${opts.subject}" has been completed.`, body),
   })
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// New user pending approval — sent to every ADMIN
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sendNewUserPendingEmail(opts: {
+  adminEmail:    string
+  newUsername:   string
+  newEmail:      string
+  approveUrl:    string
+}): Promise<void> {
+  const body = `
+    <h2 style="margin:0 0 6px;font-size:20px;font-weight:700;color:#1e293b;">New account awaiting approval</h2>
+    <p style="margin:0 0 18px;font-size:15px;color:#475569;line-height:1.6;">
+      A new user has just registered on <strong>${APP}</strong> and is waiting for your approval.
+    </p>
+    ${infoBox(`
+      <strong>Username:</strong> ${esc(opts.newUsername)}<br>
+      <strong>Email:</strong> ${esc(opts.newEmail)}
+    `)}
+    <p style="font-size:14px;color:#475569;line-height:1.6;">
+      Log in to User Management, find the user, and assign them a role to grant access.
+    </p>
+    ${btn('Review in User Management', opts.approveUrl)}
+    <p style="font-size:12px;color:#94a3b8;margin-top:22px;">
+      Until you approve them, the new user cannot access the system.
+    </p>
+  `
+  await sendEmail({
+    to:      opts.adminEmail,
+    subject: `[${APP}] New user awaiting approval: ${opts.newUsername}`,
+    html:    layout(`New sign-up from ${opts.newUsername} — pending your approval.`, body),
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User account approved — sent to the new user
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sendUserApprovedEmail(opts: {
+  toEmail:  string
+  username: string
+  role:     string
+  loginUrl: string
+}): Promise<void> {
+  const body = `
+    <h2 style="margin:0 0 6px;font-size:20px;font-weight:700;color:#1e293b;">Your account has been approved!</h2>
+    <p style="margin:0 0 18px;font-size:15px;color:#475569;line-height:1.6;">
+      Hi <strong>${esc(opts.username)}</strong>, your <strong>${APP}</strong> account has been reviewed and approved.
+      You have been assigned the <strong>${esc(opts.role)}</strong> role.
+    </p>
+    ${btn('Sign in now', opts.loginUrl)}
+    <p style="font-size:12px;color:#94a3b8;margin-top:22px;">
+      If you did not register for this service, please ignore this email.
+    </p>
+  `
+  await sendEmail({
+    to:      opts.toEmail,
+    subject: `[${APP}] Your account has been approved`,
+    html:    layout('Your Christhood CMMS account is now active.', body),
+  })
+}

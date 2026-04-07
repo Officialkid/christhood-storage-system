@@ -22,9 +22,10 @@ const isConfigured = Boolean(
   process.env.UPSTASH_REDIS_REST_TOKEN
 )
 
-let ipLimiter:       Ratelimit | null = null
-let registerLimiter: Ratelimit | null = null
-let forgotLimiter:   Ratelimit | null = null
+let ipLimiter:          Ratelimit | null = null
+let registerLimiter:    Ratelimit | null = null
+let forgotLimiter:      Ratelimit | null = null
+let publicShareLimiter: Ratelimit | null = null
 
 if (isConfigured) {
   const redis = new Redis({
@@ -51,6 +52,14 @@ if (isConfigured) {
     redis,
     limiter:   Ratelimit.slidingWindow(3, '15 m'),
     prefix:    'christhood:rl:forgot:ip',
+    analytics: false,
+  })
+
+  // Public share upload: 5 uploads per IP per hour
+  publicShareLimiter = new Ratelimit({
+    redis,
+    limiter:   Ratelimit.slidingWindow(5, '60 m'),
+    prefix:    'christhood:rl:pubshare:ip',
     analytics: false,
   })
 }
@@ -110,4 +119,8 @@ export function checkRegisterRateLimit(ip: string): Promise<RateLimitResult> {
 
 export function checkForgotPasswordRateLimit(ip: string): Promise<RateLimitResult> {
   return checkLimiter(forgotLimiter, ip)
+}
+
+export function checkPublicShareRateLimit(ip: string): Promise<RateLimitResult> {
+  return checkLimiter(publicShareLimiter, ip)
 }

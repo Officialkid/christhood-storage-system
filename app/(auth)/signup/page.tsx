@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { User, Mail, Phone, Lock, Eye, EyeOff, UserPlus, Loader2 } from 'lucide-react'
+import { User, Mail, Phone, Lock, Eye, EyeOff, UserPlus, Loader2, Hourglass } from 'lucide-react'
 
 function PasswordStrengthBar({ password }: { password: string }) {
   const len    = password.length
@@ -46,6 +46,7 @@ export default function SignupPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState('')
+  const [pending,     setPending]     = useState(false)
 
   function update(field: keyof typeof form) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -86,13 +87,8 @@ export default function SignupPage() {
       return
     }
 
-    // Auto sign-in after registration
-    await signIn('credentials', {
-      identifier: form.username,
-      password:   form.password,
-      redirect:   false,
-    })
-    router.push('/dashboard')
+    // Account created but pending admin approval — show waiting screen
+    setPending(true)
   }
 
   async function handleGoogle() {
@@ -107,7 +103,29 @@ export default function SignupPage() {
       <div className="pointer-events-none absolute -bottom-40 -left-40 w-[500px] h-[500px]
                       rounded-full bg-indigo-600/20 blur-[120px]" />
 
-      <div className="relative z-10 w-full max-w-md">
+      {/* ── Pending approval screen ── */}
+      {pending && (
+        <div className="relative z-10 w-full max-w-md text-center space-y-6">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/30
+                          flex items-center justify-center">
+            <Hourglass className="w-8 h-8 text-indigo-400" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-white mb-2">Account submitted!</h2>
+            <p className="text-slate-400 text-sm leading-relaxed max-w-sm mx-auto">
+              Your account is <strong className="text-white">pending admin approval</strong>.
+              An admin will review your request and assign your role — you&apos;ll receive an
+              email at <strong className="text-white">{form.email}</strong> once approved.
+            </p>
+          </div>
+          <Link href="/login"
+            className="inline-block text-sm text-indigo-400 hover:text-indigo-300 transition underline">
+            Back to sign in
+          </Link>
+        </div>
+      )}
+
+      {!pending && <div className="relative z-10 w-full max-w-md">
         <div className="bg-slate-900/60 backdrop-blur-2xl border border-slate-800/60
                         rounded-2xl shadow-2xl shadow-black/40 px-8 py-10">
 
@@ -280,7 +298,7 @@ export default function SignupPage() {
             </Link>
           </p>
         </div>
-      </div>
+      </div>}
     </div>
   )
 }

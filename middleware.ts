@@ -15,7 +15,7 @@ import { checkIpRateLimit } from '@/lib/rate-limit'
 //   /api/health  — read-only probe
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CSRF_EXEMPT_RE = /^\/api\/(?:auth|cron|health|gallery\/public|share\/[^/]+(?:\/download)?)\b/
+const CSRF_EXEMPT_RE = /^\/api\/(?:auth|cron|health|gallery\/public|share\/[^/]+(?:\/download)?|public-share(?:\/|$))\b/
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 function checkCsrfOrigin(req: NextRequest): boolean {
@@ -117,7 +117,7 @@ function extractIp(req: NextRequest): string {
 // /gallery-public/* and /api/gallery/public/* are the public gallery — no auth.
 // All of these still go through the CRLF guard above.
 const AUTH_PASSTHROUGH_RE =
-  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|gallery-public(?:\/|$)|share(?:\/|$)|api\/auth|api\/health|api\/assistant\/health|api\/cron|api\/gallery\/public(?:\/|$))\b/
+  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|gallery-public(?:\/|$)|share(?:\/|$)|public-share(?:\/|$)|api\/auth|api\/health|api\/assistant\/health|api\/cron|api\/gallery\/public(?:\/|$)|api\/share(?:\/|$)|api\/public-share(?:\/|$))\b/
 
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl
@@ -157,6 +157,23 @@ export async function middleware(req: NextRequest) {
   ) {
     const url = req.nextUrl.clone()
     url.pathname = '/gallery-public' + (pathname === '/' ? '' : pathname)
+    return applySecurityHeaders(NextResponse.rewrite(url), pathname)
+  }
+
+  // ── Public ShareLink subdomain rewrite ────────────────────────────────────
+  // sharelink.cmmschristhood.org (or sharelink.localhost for dev) rewrites to
+  // /public-share/* so external users land on the fully isolated upload/view
+  // pages with zero access to the main CMMS app.
+  // API calls (/api/*) and Next.js internals are NOT rewritten.
+  const isSharelinkHost = host.startsWith('sharelink.')
+  if (
+    isSharelinkHost &&
+    !pathname.startsWith('/public-share') &&
+    !pathname.startsWith('/api/') &&
+    !pathname.startsWith('/_next/')
+  ) {
+    const url = req.nextUrl.clone()
+    url.pathname = '/public-share' + (pathname === '/' ? '' : pathname)
     return applySecurityHeaders(NextResponse.rewrite(url), pathname)
   }
 

@@ -20,7 +20,11 @@ function loginDelay(failedAttempts: number): number {
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
-  session: { strategy: 'jwt', maxAge: 60 * (+(process.env.SESSION_TIMEOUT_MINUTES ?? '120')) },
+  session: {
+    strategy:  'jwt',
+    maxAge:    60 * 60 * 24 * 30,                                         // 30 days
+    updateAge: 60 * 60 * 24,                                              // refresh token once per day
+  },
   secret: process.env.NEXTAUTH_SECRET,
   pages: {
     signIn:   '/login',
