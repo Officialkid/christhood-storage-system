@@ -13,7 +13,7 @@ import { useSidebar }       from './DashboardShell'
 import { useUnreadCount }   from '@/hooks/useUnreadCount'
 import { CommsBadge, CommsBadgeSmall } from './CommsBadge'
 
-type NavItem = { label: string; href: string; icon: React.ElementType; badge?: boolean }
+type NavItem = { label: string; href: string; icon: React.ElementType; badge?: boolean; external?: boolean }
 
 const navItems: NavItem[] = [
   { label: 'Dashboard',      href: '/dashboard',        icon: LayoutDashboard },
@@ -24,6 +24,7 @@ const navItems: NavItem[] = [
   { label: 'Search',         href: '/search',           icon: Search          },
   { label: 'Communications', href: '/communications',   icon: MessagesSquare, badge: true },
   { label: 'Notifications',  href: '/notifications',    icon: Bell            },
+  { label: 'Share a File',   href: 'https://sharelink.cmmschristhood.org', icon: Share2, external: true },
   { label: 'User Guide',     href: '/docs',             icon: BookOpen        },
 ]
 
@@ -136,22 +137,18 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className={`flex-1 py-4 space-y-0.5 overflow-y-auto ${isCollapsed ? 'px-1.5' : 'px-3'}`}>
-        {navItems.map(({ label, href, icon: Icon, badge }) => {
-          const active       = pathname.startsWith(href)
+        {navItems.map(({ label, href, icon: Icon, badge, external }) => {
+          const active       = !external && pathname.startsWith(href)
           const badgeCount   = badge ? commsCount : 0
           const badgeUrgent  = badge ? commsUrgent : false
-          return (
-            <Link
-              key={href}
-              href={href}
-              title={isCollapsed ? label : undefined}
-              className={`flex items-center rounded-xl text-sm font-medium transition-all
-                ${isCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'}
-                ${active
-                  ? 'bg-indigo-600/90 text-white shadow-sm shadow-indigo-500/20'
-                  : 'text-slate-200 hover:bg-slate-800/70 hover:text-white'
-                }`}
-            >
+          const itemClass    = `flex items-center rounded-xl text-sm font-medium transition-all
+            ${isCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'}
+            ${active
+              ? 'bg-indigo-600/90 text-white shadow-sm shadow-indigo-500/20'
+              : 'text-slate-200 hover:bg-slate-800/70 hover:text-white'
+            }`
+          const content = (
+            <>
               <span className="relative shrink-0">
                 <Icon className="w-4 h-4 text-current" />
                 {isCollapsed && (
@@ -162,6 +159,19 @@ export function Sidebar() {
               {!isCollapsed && (
                 <CommsBadge count={badgeCount} urgent={badgeUrgent} className="ml-auto" />
               )}
+            </>
+          )
+          if (external) {
+            return (
+              <a key={href} href={href} target="_blank" rel="noopener noreferrer"
+                 title={isCollapsed ? label : undefined} className={itemClass}>
+                {content}
+              </a>
+            )
+          }
+          return (
+            <Link key={href} href={href} title={isCollapsed ? label : undefined} className={itemClass}>
+              {content}
             </Link>
           )
         })}

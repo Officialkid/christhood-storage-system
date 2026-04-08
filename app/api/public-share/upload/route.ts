@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
     title?: unknown
     message?: unknown
     pin?: unknown
+    recipientEmail?: unknown
   }
   try {
     body = await req.json()
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  const { filename, fileSize, mimeType, title, message, pin } = body
+  const { filename, fileSize, mimeType, title, message, pin, recipientEmail } = body
 
   if (typeof filename !== 'string' || !filename.trim()) {
     return NextResponse.json({ error: 'filename is required.' }, { status: 400 })
@@ -91,6 +92,12 @@ export async function POST(req: NextRequest) {
   // Validate optional fields
   const sanitizedTitle   = typeof title   === 'string' ? title.trim().slice(0, 200)  : null
   const sanitizedMessage = typeof message === 'string' ? message.trim().slice(0, 1000) : null
+  const sanitizedEmail   = typeof recipientEmail === 'string' && recipientEmail.trim()
+    ? recipientEmail.trim().toLowerCase().slice(0, 320)
+    : null
+  if (sanitizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sanitizedEmail)) {
+    return NextResponse.json({ error: 'Invalid recipient email address.' }, { status: 400 })
+  }
 
   // PIN validation: must be 4–8 digits if provided
   let pinHash: string | null = null
@@ -116,14 +123,15 @@ export async function POST(req: NextRequest) {
     data: {
       token,
       r2Key,
-      originalName:  filename.slice(0, 500),
-      fileSize:      BigInt(Math.floor(fileSize)),
-      mimeType:      mimeType.slice(0, 200),
-      title:         sanitizedTitle,
-      message:       sanitizedMessage,
+      originalName:   filename.slice(0, 500),
+      fileSize:       BigInt(Math.floor(fileSize)),
+      mimeType:       mimeType.slice(0, 200),
+      title:          sanitizedTitle,
+      message:        sanitizedMessage,
+      recipientEmail: sanitizedEmail,
       pinHash,
       expiresAt,
-      uploaderIp:    ip,
+      uploaderIp:     ip,
     },
   })
 

@@ -948,6 +948,8 @@ model PublicShareUpload {
   mimeType      String
   title         String?
   message       String?
+  /// Optional recipient email address — used to send the download link
+  recipientEmail String?
   /// bcrypt hash of optional 4–8 digit PIN; null = no PIN required
   pinHash       String?
   /// Expires exactly 7 days after creation
