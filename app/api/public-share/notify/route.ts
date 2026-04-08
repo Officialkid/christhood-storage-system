@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
   const { recipientEmail, tokens, senderTitle } = body
 
-  if (typeof recipientEmail !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+\$/.test(recipientEmail)) {
+  if (typeof recipientEmail !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
     return NextResponse.json({ error: 'Valid recipientEmail is required.' }, { status: 400 })
   }
   if (!Array.isArray(tokens) || tokens.length === 0 || tokens.length > 20) {
