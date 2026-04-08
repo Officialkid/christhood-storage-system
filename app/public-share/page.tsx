@@ -391,8 +391,10 @@ export default function PublicSharePage() {
 
         <p className="text-center text-slate-700 text-xs mt-6">
           Files are deleted after 7 days · By uploading you agree to our{' '}
-          <Link href="/terms"   className="text-slate-500 hover:text-slate-400 transition-colors">Terms</Link>{' '}and{' '}
-          <Link href="/privacy" className="text-slate-500 hover:text-slate-400 transition-colors">Privacy Policy</Link>
+          <Link href="/public-share/legal#terms"
+                className="text-slate-500 hover:text-slate-400 transition-colors">Terms</Link>{' '}and{' '}
+          <Link href="/public-share/legal#privacy"
+                className="text-slate-500 hover:text-slate-400 transition-colors">Privacy Policy</Link>
         </p>
       </div>
     </main>
