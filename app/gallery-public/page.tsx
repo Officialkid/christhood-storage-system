@@ -2,6 +2,7 @@ import Link              from 'next/link'
 import { prisma }        from '@/lib/prisma'
 import { getGalleryPublicUrl } from '@/lib/gallery/gallery-r2'
 import { Camera }        from 'lucide-react'
+import { getGallerySessionServer } from '@/lib/photo-gallery/session'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,14 +64,17 @@ function GalleryCard({ g }: { g: GalleryItem }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default async function GalleryHomePage() {
-  const raw = await prisma.publicGallery.findMany({
-    where:   { status: 'PUBLISHED' },
-    orderBy: [{ year: 'desc' }, { createdAt: 'desc' }],
-    select: {
-      id: true, slug: true, title: true, categoryName: true, year: true,
-      coverImageKey: true, totalPhotos: true,
-    },
-  })
+  const [raw, gpSession] = await Promise.all([
+    prisma.publicGallery.findMany({
+      where:   { status: 'PUBLISHED' },
+      orderBy: [{ year: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true, slug: true, title: true, categoryName: true, year: true,
+        coverImageKey: true, totalPhotos: true,
+      },
+    }),
+    getGallerySessionServer(),
+  ])
 
   // Serialize
   const galleries: GalleryItem[] = raw.map(g => ({
@@ -97,6 +101,28 @@ export default async function GalleryHomePage() {
 
   return (
     <div className="min-h-screen bg-black">
+      {/* ── Platform top nav ───────────────────────────────────────────────── */}
+      <nav className="border-b border-zinc-900 px-4 sm:px-6 py-3 flex items-center justify-between">
+        <Link href="/" className="text-sm font-semibold text-white tracking-tight">
+          Christhood Gallery
+        </Link>
+        <div className="flex items-center gap-3 text-sm">
+          {gpSession ? (
+            <Link href="/dashboard" className="text-zinc-300 hover:text-white transition-colors">
+              My Dashboard
+            </Link>
+          ) : (
+            <>
+              <Link href="/login"  className="text-zinc-400 hover:text-white transition-colors">Log in</Link>
+              <Link href="/signup" className="rounded-lg bg-white text-black font-medium px-3 py-1.5
+                                              text-xs hover:bg-zinc-200 transition-colors">
+                Create gallery
+              </Link>
+            </>
+          )}
+        </div>
+      </nav>
+
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="px-4 sm:px-6 pt-8 pb-6 max-w-7xl mx-auto">
         {/* Logo row */}
@@ -136,6 +162,32 @@ export default async function GalleryHomePage() {
             </section>
           ))}
         </main>
+      )}
+
+      {/* ── Your own gallery CTA ───────────────────────────────────────────── */}
+      {!gpSession && (
+        <section className="border-t border-zinc-900 py-14 px-4 text-center">
+          <h2 className="text-white text-2xl font-bold">Share your own photos</h2>
+          <p className="text-zinc-400 text-sm mt-2 max-w-sm mx-auto">
+            Create a free gallery, organise your albums, and share them privately or publicly.
+          </p>
+          <div className="flex items-center justify-center gap-3 mt-6">
+            <Link
+              href="/signup"
+              className="rounded-lg bg-white text-black font-semibold px-5 py-2.5 text-sm
+                         hover:bg-zinc-200 transition-colors"
+            >
+              Start for free
+            </Link>
+            <Link
+              href="/login"
+              className="rounded-lg border border-zinc-700 text-zinc-300 font-medium px-5 py-2.5
+                         text-sm hover:border-zinc-500 hover:text-white transition-colors"
+            >
+              Sign in
+            </Link>
+          </div>
+        </section>
       )}
 
       {/* ── Footer ─────────────────────────────────────────────────────────── */}

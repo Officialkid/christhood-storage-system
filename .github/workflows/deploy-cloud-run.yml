@@ -154,6 +154,8 @@ jobs:
             GALLERY_R2_SECRET_ACCESS_KEY=GALLERY_R2_SECRET_ACCESS_KEY:latest
             GALLERY_R2_BUCKET_NAME=GALLERY_R2_BUCKET_NAME:latest
             GALLERY_R2_PUBLIC_URL=GALLERY_R2_PUBLIC_URL:latest
+            TOTP_ENCRYPTION_KEY=TOTP_ENCRYPTION_KEY:latest
+            GALLERY_BASE_URL=GALLERY_BASE_URL:latest
 
       # ── 8. Print deployed URL ───────────────────────────────────────────────
       - name: Print live URL

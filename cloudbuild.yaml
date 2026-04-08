@@ -89,7 +89,8 @@ steps:
         VAPID_SUBJECT=VAPID_SUBJECT:latest,
         CRON_SECRET=CRON_SECRET:latest,
         GEMINI_API_KEY=GEMINI_API_KEY:latest,
-        TOTP_ENCRYPTION_KEY=TOTP_ENCRYPTION_KEY:latest
+        TOTP_ENCRYPTION_KEY=TOTP_ENCRYPTION_KEY:latest,
+        GALLERY_BASE_URL=GALLERY_BASE_URL:latest
 
 # Artifact Registry images produced by this build
 images:

@@ -963,3 +963,167 @@ model PublicShareUpload {
   @@index([expiresAt])
   @@index([isReady])
 }
+
+// ─────────────────────────────────────────────
+// Photo Gallery Platform
+// ─────────────────────────────────────────────
+//
+// Standalone Pixiset-like platform at gallery.cmmschristhood.org
+// Completely decoupled from the CMMS User system — separate accounts.
+//
+// Structure: PhotoUser → PhotoCollection → PhotoAlbum → PhotoItem
+// Auth:      Custom JWT (gp-session cookie) — email/password or Google OAuth
+// Storage:   christhood-gallery R2 bucket, prefix "photo-platform/"
+// Payments:  Paystack (M-Pesa + cards) + Stripe
+
+enum PhotoPlanTier {
+  FREE    /// 5 GB storage included
+  PREMIUM /// paid plan — storage limit per PhotoPlan.storageLimitBytes
+}
+
+enum PhotoAlbumVisibility {
+  PUBLIC   /// anyone with the link can view
+  PASSWORD /// requires password to view
+  PRIVATE  /// owner only
+}
+
+/// A gallery platform user — completely separate from CMMS User
+model PhotoUser {
+  id                String        @id @default(cuid())
+  username          String        @unique  /// URL slug — e.g., "christhood"
+  displayName       String
+  email             String        @unique
+  passwordHash      String?       /// null for Google-only accounts
+  googleId          String?       @unique  /// Google OAuth subject
+  avatarUrl         String?
+  bio               String?
+  isSuperAdmin      Boolean       @default(false)  /// only danielmwaliliofficial@gmail.com
+  planTier          PhotoPlanTier @default(FREE)
+  storageUsedBytes  BigInt        @default(0)
+  storageLimitBytes BigInt        @default(5368709120) /// 5 GB free tier
+  isActive          Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  collections   PhotoCollection[]
+  subscriptions PhotoSubscription[]
+
+  @@index([email])
+  @@index([username])
+  @@index([googleId])
+}
+
+/// Top-level folder. e.g., "Saturday Fellowships", "Missions"
+model PhotoCollection {
+  id          String   @id @default(cuid())
+  slug        String
+  title       String
+  description String?
+  coverKey    String?  /// R2 key for cover image
+  ownerId     String
+  owner       PhotoUser @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  sortOrder   Int      @default(0)
+  isVisible   Boolean  @default(true)
+  albums      PhotoAlbum[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([ownerId, slug])
+  @@index([ownerId])
+}
+
+/// Album within a collection. e.g., "March 29, 2026"
+model PhotoAlbum {
+  id              String               @id @default(cuid())
+  slug            String
+  title           String
+  description     String?
+  coverKey        String?              /// R2 key for cover photo
+  collectionId    String
+  collection      PhotoCollection      @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  visibility      PhotoAlbumVisibility @default(PUBLIC)
+  passwordHash    String?              /// bcrypt hash — only when visibility = PASSWORD
+  allowDownload   Boolean              @default(true)
+  sortOrder       Int                  @default(0)
+  photoCount      Int                  @default(0)
+  totalSizeBytes  BigInt               @default(0)
+  viewCount       Int                  @default(0)
+  items           PhotoItem[]
+  shareTokens     PhotoShareToken[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([collectionId, slug])
+  @@index([collectionId])
+}
+
+/// A single photo (or video) inside an album
+model PhotoItem {
+  id            String     @id @default(cuid())
+  albumId       String
+  album         PhotoAlbum @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  thumbnailKey  String     /// ~30 KB JPEG for grid
+  previewKey    String     /// ~200 KB JPEG for lightbox
+  originalKey   String     /// byte-for-byte original (never modified)
+  originalName  String
+  mimeType      String
+  fileSizeBytes BigInt
+  width         Int?
+  height        Int?
+  sortOrder     Int        @default(0)
+  caption       String?
+  createdAt     DateTime   @default(now())
+
+  @@index([albumId])
+}
+
+/// A shareable link token for an album
+model PhotoShareToken {
+  id            String     @id @default(cuid())
+  token         String     @unique @default(cuid())
+  albumId       String
+  album         PhotoAlbum @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  label         String?    /// e.g., "WhatsApp group link"
+  allowDownload Boolean    @default(true)
+  passwordHash  String?    /// optional extra password layer on this share link
+  expiresAt     DateTime?
+  viewCount     Int        @default(0)
+  createdAt     DateTime   @default(now())
+
+  @@index([token])
+  @@index([albumId])
+}
+
+/// Subscription plan definition
+model PhotoPlan {
+  id                String        @id @default(cuid())
+  name              String        @unique
+  tier              PhotoPlanTier
+  priceKes          Int           /// price in Kenyan Shillings (0 = free)
+  priceUsdCents     Int           /// price in USD cents (0 = free)
+  storageLimitBytes BigInt
+  description       String?
+  isActive          Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+
+  subscriptions PhotoSubscription[]
+}
+
+/// A user's active subscription
+model PhotoSubscription {
+  id                 String     @id @default(cuid())
+  userId             String
+  user               PhotoUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId             String
+  plan               PhotoPlan  @relation(fields: [planId], references: [id])
+  paystackRef        String?    /// Paystack transaction reference
+  stripeRef          String?    /// Stripe payment intent ID
+  status             String     @default("ACTIVE") /// ACTIVE | CANCELLED | EXPIRED
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
