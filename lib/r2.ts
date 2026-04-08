@@ -130,6 +130,19 @@ export async function getObjectBuffer(key: string): Promise<Buffer> {
 }
 
 /**
+ * Upload a file buffer directly to R2 from the server.
+ * Used for public-share uploads to avoid browser CORS restrictions.
+ */
+export async function putObject(key: string, body: Buffer, contentType: string): Promise<void> {
+  await R2.send(new PutObjectCommand({
+    Bucket:      BUCKET,
+    Key:         key,
+    Body:        body,
+    ContentType: contentType,
+  }))
+}
+
+/**
  * Upload a raw Buffer to R2 (used to store generated thumbnails).
  */
 export async function putObjectBuffer(

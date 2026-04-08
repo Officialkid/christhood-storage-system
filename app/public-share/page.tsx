@@ -83,42 +83,35 @@ export default function PublicSharePage() {
   async function uploadFile(file: File, idx: number): Promise<UploadResult> {
     setCurrentIdx(idx)
 
-    const initRes = await fetch('/api/public-share/upload', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        filename:       file.name,
-        fileSize:       file.size,
-        mimeType:       file.type || 'application/octet-stream',
-        title:          title.trim() || null,
-        message:        message.trim() || null,
-        recipientEmail: recipientEmail.trim() || null,
-        pin:            pin || null,
-      }),
-    })
+    const formData = new FormData()
+    formData.append('file',     file)
+    formData.append('filename', file.name)
+    formData.append('fileSize', String(file.size))
+    formData.append('mimeType', file.type || 'application/octet-stream')
+    if (title.trim())          formData.append('title',          title.trim())
+    if (message.trim())        formData.append('message',        message.trim())
+    if (recipientEmail.trim()) formData.append('recipientEmail', recipientEmail.trim())
+    if (pin)                   formData.append('pin',            pin)
 
-    if (!initRes.ok) {
-      const err = await initRes.json().catch(() => ({}))
-      throw new Error((err as { error?: string }).error ?? `Failed to initiate upload (${initRes.status})`)
-    }
-
-    const { token, uploadUrl } = await initRes.json() as { token: string; uploadUrl: string }
-
-    await new Promise<void>((resolve, reject) => {
+    const { token } = await new Promise<{ token: string }>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
-      xhr.open('PUT', uploadUrl)
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+      xhr.open('POST', '/api/public-share/upload')
       xhr.upload.onprogress = e => {
         if (e.lengthComputable)
           setProgress(p => ({ ...p, [file.name]: Math.round((e.loaded / e.total) * 100) }))
       }
-      xhr.onload  = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error(`R2 upload failed (${xhr.status})`))
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText)) }
+          catch { reject(new Error('Unexpected server response.')) }
+        } else {
+          const msg = (() => { try { return JSON.parse(xhr.responseText).error } catch { return null } })()
+          reject(new Error(msg ?? `Upload failed (${xhr.status})`))
+        }
+      }
       xhr.onerror = () => reject(new Error('Network error during upload'))
-      xhr.send(file)
+      xhr.send(formData)
     })
-
-    const confirmRes = await fetch(`/api/public-share/${token}/confirm`, { method: 'POST' })
-    if (!confirmRes.ok) throw new Error('Could not confirm upload. Please try again.')
 
     const shareUrl = `${window.location.origin}/public-share/${token}`
     return { name: file.name, shareUrl, token, size: file.size }

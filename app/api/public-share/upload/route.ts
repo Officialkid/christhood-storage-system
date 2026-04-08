@@ -1,15 +1,10 @@
 /**
  * POST /api/public-share/upload
  *
- * Initiates a public (no-auth) file upload:
- *  1. Rate-limits the uploader IP (5 uploads / 60 min via Upstash)
- *  2. Validates filename, file size (≤50 MB), and MIME type
- *  3. Optionally hashes a PIN with bcryptjs
- *  4. Creates a PublicShareUpload record (isReady = false)
- *  5. Returns a presigned R2 PUT URL + the share token
- *
- * The client uploads the file directly to R2 via the presigned URL, then
- * calls POST /api/public-share/[token]/confirm to mark isReady = true.
+ * Public (no-auth) file upload — server-side proxy to R2.
+ * The client sends multipart/form-data; this route validates, uploads the
+ * file directly to R2 from the server, and returns the share token.
+ * Bypasses browser CORS restrictions on direct R2 PUT requests.
  *
  * ISOLATION: No authentication required. Zero coupling to CMMS user accounts.
  */
@@ -17,8 +12,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { hash }                       from 'bcryptjs'
 import { prisma }                     from '@/lib/prisma'
-import { getPresignedUploadUrl }      from '@/lib/r2'
+import { putObject }                  from '@/lib/r2'
 import { checkPublicShareRateLimit }  from '@/lib/rate-limit'
+
+// Allow up to 60 s for large file uploads on Cloud Run
+export const maxDuration = 60
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024          // 50 MB
@@ -60,30 +58,34 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── Parse + validate body ─────────────────────────────────────────────────
-  let body: {
-    filename?: unknown
-    fileSize?: unknown
-    mimeType?: unknown
-    title?: unknown
-    message?: unknown
-    pin?: unknown
-    recipientEmail?: unknown
-  }
+  // ── Parse multipart form data ─────────────────────────────────────────────
+  let formData: FormData
   try {
-    body = await req.json()
+    formData = await req.formData()
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid form data.' }, { status: 400 })
   }
 
-  const { filename, fileSize, mimeType, title, message, pin, recipientEmail } = body
+  const fileBlob      = formData.get('file')
+  const filename      = formData.get('filename')
+  const fileSizeRaw   = formData.get('fileSize')
+  const mimeType      = formData.get('mimeType')
+  const title         = formData.get('title')
+  const message       = formData.get('message')
+  const pin           = formData.get('pin')
+  const recipientEmail = formData.get('recipientEmail')
 
+  // ── Validate ──────────────────────────────────────────────────────────────
+  if (!(fileBlob instanceof Blob)) {
+    return NextResponse.json({ error: 'file is required.' }, { status: 400 })
+  }
   if (typeof filename !== 'string' || !filename.trim()) {
     return NextResponse.json({ error: 'filename is required.' }, { status: 400 })
   }
-  if (typeof fileSize !== 'number' || fileSize <= 0 || fileSize > MAX_FILE_SIZE_BYTES) {
+  const fileSize = Number(fileSizeRaw)
+  if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > MAX_FILE_SIZE_BYTES) {
     return NextResponse.json(
-      { error: `fileSize must be between 1 byte and ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB.` },
+      { error: `File must be between 1 byte and ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB.` },
       { status: 400 },
     )
   }
@@ -95,7 +97,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Validate optional fields
-  const sanitizedTitle   = typeof title   === 'string' ? title.trim().slice(0, 200)  : null
+  const sanitizedTitle   = typeof title   === 'string' ? title.trim().slice(0, 200)    : null
   const sanitizedMessage = typeof message === 'string' ? message.trim().slice(0, 1000) : null
   const sanitizedEmail   = typeof recipientEmail === 'string' && recipientEmail.trim()
     ? recipientEmail.trim().toLowerCase().slice(0, 320)
@@ -106,43 +108,40 @@ export async function POST(req: NextRequest) {
 
   // PIN validation: must be 4–8 digits if provided
   let pinHash: string | null = null
-  if (pin !== undefined && pin !== null && pin !== '') {
-    if (typeof pin !== 'string' || !/^\d{4,8}$/.test(pin)) {
-      return NextResponse.json(
-        { error: 'PIN must be 4–8 digits.' },
-        { status: 400 },
-      )
+  if (pin && typeof pin === 'string' && pin !== '') {
+    if (!/^\d{4,8}$/.test(pin)) {
+      return NextResponse.json({ error: 'PIN must be 4–8 digits.' }, { status: 400 })
     }
     pinHash = await hash(pin, BCRYPT_ROUNDS)
   }
 
   // ── Build R2 key + token ──────────────────────────────────────────────────
-  const token       = crypto.randomUUID()
-  // Sanitize filename: strip path traversal, keep only safe characters
-  const safeName    = filename.replace(/[^a-zA-Z0-9._\-() ]/g, '_').replace(/\.\./g, '_')
-  const r2Key       = `public-shares/${token}/${safeName}`
-  const expiresAt   = new Date(Date.now() + EXPIRY_DAYS * 24 * 60 * 60 * 1000)
+  const token    = crypto.randomUUID()
+  const safeName = filename.replace(/[^a-zA-Z0-9._\-() ]/g, '_').replace(/\.\./g, '_')
+  const r2Key    = `public-shares/${token}/${safeName}`
+  const expiresAt = new Date(Date.now() + EXPIRY_DAYS * 24 * 60 * 60 * 1000)
 
-  // ── Create DB record (isReady = false until client confirms R2 upload) ────
+  // ── Upload to R2 server-side (no CORS required) ───────────────────────────
+  const fileBuffer = Buffer.from(await fileBlob.arrayBuffer())
+  await putObject(r2Key, fileBuffer, mimeType || 'application/octet-stream')
+
+  // ── Create DB record (isReady = true — file is already in R2) ────────────
   await prisma.publicShareUpload.create({
     data: {
       token,
       r2Key,
       originalName:   filename.slice(0, 500),
       fileSize:       BigInt(Math.floor(fileSize)),
-      mimeType:       mimeType.slice(0, 200),
+      mimeType:       (mimeType ?? 'application/octet-stream').slice(0, 200),
       title:          sanitizedTitle,
       message:        sanitizedMessage,
       recipientEmail: sanitizedEmail,
       pinHash,
       expiresAt,
       uploaderIp:     ip,
+      isReady:        true,
     },
   })
 
-  // ── Generate presigned R2 PUT URL ─────────────────────────────────────────
-  // Expires in 15 minutes — enough time for the client to complete the upload
-  const uploadUrl = await getPresignedUploadUrl(r2Key, mimeType, 15 * 60)
-
-  return NextResponse.json({ token, uploadUrl, expiresAt }, { status: 201 })
+  return NextResponse.json({ token, expiresAt }, { status: 201 })
 }
