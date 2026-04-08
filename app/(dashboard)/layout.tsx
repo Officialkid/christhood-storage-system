@@ -5,6 +5,7 @@ import OnboardingTour           from '@/components/OnboardingTour'
 import PendingDeletionBanner    from '@/components/PendingDeletionBanner'
 import { DashboardShell }       from '@/components/DashboardShell'
 import { MobileBottomNav }      from '@/components/MobileBottomNav'
+import ChatbotWidget            from '@/components/ChatbotWidget'
 import { getServerSession }     from 'next-auth'
 import { authOptions }          from '@/lib/auth'
 import { prisma }               from '@/lib/prisma'
@@ -44,6 +45,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
         {/* First-time onboarding tour */}
         <OnboardingTour initiallyDone={hasCompletedOnboarding} />
+
+        {/* Zara AI assistant — only for authenticated dashboard users */}
+        <ChatbotWidget />
       </div>
     </DashboardShell>
   )

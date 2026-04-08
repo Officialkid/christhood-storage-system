@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next'
 import { Providers }       from '@/components/Providers'
-import ChatbotWidget       from '@/components/ChatbotWidget'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -42,7 +41,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="antialiased">
         <Providers>
           {children}
-          <ChatbotWidget />
         </Providers>
       </body>
     </html>
