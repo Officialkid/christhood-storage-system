@@ -198,79 +198,112 @@ export default function PublicShareViewClient({ token }: { token: string }) {
 
   // ── Ready / downloading state ─────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-indigo-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full space-y-5">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50">
 
-        {/* File icon + name */}
-        <div className="flex items-start gap-4">
-          <div className="w-14 h-14 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-            <svg className="w-7 h-7 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-bold text-gray-900 truncate">{meta?.title ?? meta?.originalName}</h1>
-            {meta?.title && (
-              <p className="text-sm text-gray-500 truncate">{meta.originalName}</p>
-            )}
-            <p className="text-xs text-gray-400 mt-0.5">{formatBytes(meta?.fileSize ?? '0')}</p>
-          </div>
-        </div>
-
-        {/* Message */}
-        {meta?.message && (
-          <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
-            <p className="text-sm text-gray-700 whitespace-pre-wrap">{meta.message}</p>
-          </div>
-        )}
-
-        {/* Expiry */}
-        <div className="flex items-center gap-2 text-sm">
-          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span className="text-gray-500">
-            Expires {formatExpiry(meta?.expiresAt ?? '')}
-            {' '}·{' '}
-            <span className="font-medium text-indigo-600">{expiryCountdown(meta?.expiresAt ?? '')}</span>
-          </span>
-        </div>
-
-        {meta && meta.downloadCount > 0 && (
-          <p className="text-xs text-gray-400">
-            Downloaded {meta.downloadCount} {meta.downloadCount === 1 ? 'time' : 'times'}
-          </p>
-        )}
-
-        {/* Download button */}
-        <button
-          onClick={handleDownload}
-          disabled={step === 'downloading'}
-          className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3.5
-            text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition"
-        >
-          {step === 'downloading' ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-              Preparing download…
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      {/* Brand header */}
+      <header className="bg-white border-b border-slate-200">
+        <div className="max-w-2xl mx-auto px-5 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
               </svg>
-              Download file
-            </>
-          )}
-        </button>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-900 leading-none">Christhood ShareLink</p>
+              <p className="text-xs text-slate-400 leading-none mt-0.5">Secure file sharing</p>
+            </div>
+          </div>
+          <a
+            href="/public-share"
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
+          >
+            Share files
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+            </svg>
+          </a>
+        </div>
+      </header>
 
-        <p className="text-center text-xs text-gray-400">
-          Powered by{' '}
-          <a href="/" className="text-indigo-500 hover:underline">CMMS Christhood</a>
-        </p>
+      {/* Card */}
+      <div className="flex items-center justify-center px-4 py-10">
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full space-y-5">
+
+          {/* File icon + name */}
+          <div className="flex items-start gap-4">
+            <div className="w-14 h-14 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <svg className="w-7 h-7 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg font-bold text-gray-900 truncate">{meta?.originalName}</h1>
+              {meta?.title && (
+                <p className="text-sm text-indigo-600 font-medium truncate">{meta.title}</p>
+              )}
+              <p className="text-xs text-gray-400 mt-0.5">{formatBytes(meta?.fileSize ?? '0')}</p>
+            </div>
+          </div>
+
+          {/* Message */}
+          {meta?.message && (
+            <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{meta.message}</p>
+            </div>
+          )}
+
+          {/* Expiry */}
+          <div className="flex items-center gap-2 text-sm">
+            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-gray-500">
+              Expires {formatExpiry(meta?.expiresAt ?? '')}
+              {' '}·{' '}
+              <span className="font-medium text-indigo-600">{expiryCountdown(meta?.expiresAt ?? '')}</span>
+            </span>
+          </div>
+
+          {meta && meta.downloadCount > 0 && (
+            <p className="text-xs text-gray-400">
+              Downloaded {meta.downloadCount} {meta.downloadCount === 1 ? 'time' : 'times'}
+            </p>
+          )}
+
+          {/* Download button */}
+          <button
+            onClick={handleDownload}
+            disabled={step === 'downloading'}
+            className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3.5
+              text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition"
+          >
+            {step === 'downloading' ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                Preparing download…
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download file
+              </>
+            )}
+          </button>
+
+          <p className="text-center text-xs text-gray-400">
+            Shared via{' '}
+            <a href="https://cmmschristhood.org" className="text-indigo-500 hover:underline">
+              Christhood CMMS
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   )

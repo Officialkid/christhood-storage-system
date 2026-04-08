@@ -45,10 +45,12 @@ export default function PublicSharePage() {
   const [errorMsg,   setErrorMsg]   = useState<string | null>(null)
 
   // success state
-  const [results,   setResults]   = useState<UploadResult[]>([])
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
-  const [allCopied, setAllCopied] = useState(false)
-  const [emailSent, setEmailSent] = useState(false)
+  const [results,     setResults]     = useState<UploadResult[]>([])
+  const [copiedIdx,   setCopiedIdx]   = useState<number | null>(null)
+  const [allCopied,   setAllCopied]   = useState(false)
+  const [emailSent,   setEmailSent]   = useState(false)
+  const [batchUrl,    setBatchUrl]    = useState<string | null>(null)
+  const [batchCopied, setBatchCopied] = useState(false)
 
   const isDone = results.length > 0
 
@@ -139,6 +141,11 @@ export default function PublicSharePage() {
     }
 
     setResults(collected)
+    if (collected.length > 1) {
+      setBatchUrl(
+        `${window.location.origin}/public-share/batch?tokens=${collected.map(r => r.token).join(',')}`,
+      )
+    }
     setUploading(false)
 
     if (recipientEmail.trim() && collected.length > 0) {
@@ -170,75 +177,140 @@ export default function PublicSharePage() {
     setTimeout(() => setAllCopied(false), 2500)
   }
 
+  async function copyBatchUrl() {
+    if (!batchUrl) return
+    await navigator.clipboard.writeText(batchUrl)
+    setBatchCopied(true)
+    setTimeout(() => setBatchCopied(false), 2500)
+  }
+
   function reset() {
     setFiles([]); setTitle(''); setMessage(''); setRecipientEmail('')
     setPin(''); setShowPin(false); setProgress({}); setResults([])
     setErrorMsg(null); setCopiedIdx(null); setAllCopied(false)
-    setEmailSent(false); setUploading(false)
+    setEmailSent(false); setUploading(false); setBatchUrl(null); setBatchCopied(false)
   }
+
+  // --- Shared nav bar -------------------------------------------------------
+
+  const navBar = (
+    <nav className="border-b border-slate-800/60 px-5 py-3.5">
+      <div className="max-w-lg mx-auto flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
+            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+            </svg>
+          </div>
+          <span className="text-sm font-bold text-white">Christhood ShareLink</span>
+        </div>
+        <a
+          href="https://cmmschristhood.org/login"
+          className="text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-1"
+        >
+          Sign in to CMMS
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+          </svg>
+        </a>
+      </div>
+    </nav>
+  )
 
   // --- Success screen --------------------------------------------------------
 
   if (isDone) {
     return (
-      <main className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-lg">
-          <div className="flex justify-center mb-6">
-            <div className="w-24 h-24 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center">
-              <CheckCircle2 className="w-12 h-12 text-emerald-400" />
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
+        {navBar}
+        <main className="flex flex-col items-center justify-center min-h-[calc(100vh-57px)] p-4">
+          <div className="w-full max-w-lg">
+            <div className="flex justify-center mb-6">
+              <div className="w-24 h-24 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center">
+                <CheckCircle2 className="w-12 h-12 text-emerald-400" />
+              </div>
             </div>
-          </div>
 
-          <h1 className="text-3xl font-bold text-white text-center mb-1">Transfer complete</h1>
-          <p className="text-slate-400 text-center mb-2">
-            {results.length === 1 ? `"${results[0].name}" is ready to share` : `${results.length} files are ready to share`}
-          </p>
-
-          {emailSent && (
-            <p className="text-center text-emerald-400 text-sm mb-4 flex items-center justify-center gap-1.5">
-              <Mail className="w-4 h-4" />
-              Email sent to {recipientEmail}
+            <h1 className="text-3xl font-bold text-white text-center mb-1">Transfer complete</h1>
+            <p className="text-slate-400 text-center mb-2">
+              {results.length === 1 ? `"${results[0].name}" is ready to share` : `${results.length} files are ready to share`}
             </p>
-          )}
 
-          <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl overflow-hidden mb-4">
-            {results.map((r, i) => (
-              <div key={r.token} className="flex items-center gap-3 px-5 py-4 border-b border-slate-700/40 last:border-0">
-                <FileText className="w-5 h-5 text-indigo-400 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{r.name}</p>
-                  <p className="text-xs text-slate-500">{formatBytes(r.size)}</p>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <a href={r.shareUrl} target="_blank" rel="noopener noreferrer"
-                     className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/60 text-slate-300 text-xs font-medium hover:bg-slate-700 transition-colors">
-                    <ExternalLink className="w-3.5 h-3.5" />Open
-                  </a>
-                  <button onClick={() => copyLink(r.shareUrl, i)}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-600/80 text-white text-xs font-medium hover:bg-indigo-600 transition-colors">
-                    {copiedIdx === i ? <><Check className="w-3.5 h-3.5" />Copied</> : <><Copy className="w-3.5 h-3.5" />Copy link</>}
+            {emailSent && (
+              <p className="text-center text-emerald-400 text-sm mb-4 flex items-center justify-center gap-1.5">
+                <Mail className="w-4 h-4" />
+                Email sent to {recipientEmail}
+              </p>
+            )}
+
+            {/* Batch link — shown when multiple files were uploaded */}
+            {batchUrl && (
+              <div className="mb-4 rounded-2xl bg-indigo-600/15 border border-indigo-500/30 p-4 space-y-2">
+                <p className="text-sm font-semibold text-white flex items-center gap-2">
+                  <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                  </svg>
+                  One link for all {results.length} files
+                </p>
+                <p className="text-xs text-slate-400">Recipients can download all files at once from this single link</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={batchUrl}
+                    className="flex-1 bg-slate-800/80 text-xs text-indigo-300 px-3 py-2 rounded-lg border border-slate-700/60 truncate focus:outline-none"
+                    onFocus={e => e.currentTarget.select()}
+                  />
+                  <button
+                    onClick={copyBatchUrl}
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition"
+                  >
+                    {batchCopied ? <><Check className="w-3.5 h-3.5" />Copied!</> : <><Copy className="w-3.5 h-3.5" />Copy</>}
                   </button>
                 </div>
               </div>
-            ))}
-          </div>
-
-          <div className="flex gap-3">
-            {results.length > 1 && (
-              <button onClick={copyAllLinks}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-700/70 text-white text-sm font-semibold hover:bg-slate-700 transition-colors border border-slate-600/50">
-                {allCopied ? <><Check className="w-4 h-4 text-emerald-400" />All links copied</> : <><Copy className="w-4 h-4" />Copy all links</>}
-              </button>
             )}
-            <button onClick={reset}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-500 transition-colors">
-              <RefreshCw className="w-4 h-4" />Send another transfer
-            </button>
-          </div>
 
-          <p className="text-center text-slate-600 text-xs mt-6">Links expire in 7 days · Files are permanently deleted after expiry</p>
-        </div>
-      </main>
+            <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl overflow-hidden mb-4">
+              {results.map((r, i) => (
+                <div key={r.token} className="flex items-center gap-3 px-5 py-4 border-b border-slate-700/40 last:border-0">
+                  <FileText className="w-5 h-5 text-indigo-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-white truncate">{r.name}</p>
+                    <p className="text-xs text-slate-500">{formatBytes(r.size)}</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <a href={r.shareUrl} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/60 text-slate-300 text-xs font-medium hover:bg-slate-700 transition-colors">
+                      <ExternalLink className="w-3.5 h-3.5" />Open
+                    </a>
+                    <button onClick={() => copyLink(r.shareUrl, i)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-600/80 text-white text-xs font-medium hover:bg-indigo-600 transition-colors">
+                      {copiedIdx === i ? <><Check className="w-3.5 h-3.5" />Copied</> : <><Copy className="w-3.5 h-3.5" />Copy link</>}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              {results.length > 1 && (
+                <button onClick={copyAllLinks}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-700/70 text-white text-sm font-semibold hover:bg-slate-700 transition-colors border border-slate-600/50">
+                  {allCopied ? <><Check className="w-4 h-4 text-emerald-400" />All links copied</> : <><Copy className="w-4 h-4" />Copy all links</>}
+                </button>
+              )}
+              <button onClick={reset}
+                      className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-500 transition-colors">
+                <RefreshCw className="w-4 h-4" />Send another transfer
+              </button>
+            </div>
+
+            <p className="text-center text-slate-600 text-xs mt-6">Links expire in 7 days · Files are permanently deleted after expiry</p>
+          </div>
+        </main>
+      </div>
     )
   }
 
@@ -249,7 +321,9 @@ export default function PublicSharePage() {
     : Math.round(Object.values(progress).reduce((s, v) => s + v, 0) / files.length)
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
+      {navBar}
+      <main className="flex flex-col items-center justify-center min-h-[calc(100vh-57px)] p-4">
       <div className="w-full max-w-lg">
 
         <div className="text-center mb-8">
@@ -390,6 +464,7 @@ export default function PublicSharePage() {
                 className="text-slate-500 hover:text-slate-400 transition-colors">Privacy Policy</Link>
         </p>
       </div>
-    </main>
+      </main>
+    </div>
   )
 }
