@@ -25,19 +25,21 @@ const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024          // 50 MB
 const EXPIRY_DAYS         = 7
 const BCRYPT_ROUNDS       = 10
 
-/** Broad allowlist of MIME type prefixes. Reject executables and archives. */
-const ALLOWED_MIME_PREFIXES = [
-  'image/', 'video/', 'audio/', 'text/', 'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument',
-  'application/vnd.ms-',
-  'application/zip',
-  'application/x-zip-compressed',
+/** Blocklist of executable MIME types that must never be stored or served. */
+const BLOCKED_MIME_TYPES = [
+  'application/x-msdownload',
+  'application/x-msdos-program',
+  'application/x-executable',
+  'application/x-sh',
+  'application/x-bat',
+  'application/x-com',
+  'application/x-dex',
+  'application/x-elf',
 ]
 
-function isAllowedMime(mime: string): boolean {
+function isBlockedMime(mime: string): boolean {
   if (!mime) return false
-  return ALLOWED_MIME_PREFIXES.some(prefix => mime.startsWith(prefix))
+  return BLOCKED_MIME_TYPES.includes(mime.toLowerCase())
 }
 
 function extractIp(req: NextRequest): string {
@@ -85,8 +87,11 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     )
   }
-  if (typeof mimeType !== 'string' || !isAllowedMime(mimeType)) {
-    return NextResponse.json({ error: 'Unsupported file type.' }, { status: 400 })
+  if (typeof mimeType !== 'string') {
+    return NextResponse.json({ error: 'mimeType is required.' }, { status: 400 })
+  }
+  if (isBlockedMime(mimeType)) {
+    return NextResponse.json({ error: 'Executable file types are not allowed.' }, { status: 400 })
   }
 
   // Validate optional fields
