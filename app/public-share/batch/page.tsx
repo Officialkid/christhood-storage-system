@@ -6,18 +6,20 @@ export const metadata: Metadata = {
   title: 'Shared Files — Christhood ShareLink',
 }
 
-export default function BatchPage({
+export default async function BatchPage({
   searchParams,
 }: {
-  searchParams: { tokens?: string }
+  searchParams: Promise<{ tokens?: string }>
 }) {
+  const { tokens } = await searchParams
+
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-indigo-50">
-        <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
+        <div className="w-8 h-8 border-4 border-indigo-800 border-t-indigo-400 rounded-full animate-spin" />
       </div>
     }>
-      <BatchDownloadClient tokens={searchParams.tokens ?? ''} />
+      <BatchDownloadClient tokens={tokens ?? ''} />
     </Suspense>
   )
 }
