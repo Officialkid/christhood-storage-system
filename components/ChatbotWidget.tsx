@@ -77,8 +77,9 @@ export default function ChatbotWidget() {
   const pathname          = usePathname()
   const { data: session } = useSession()
 
-  // Don't render on public gallery pages — no CMMS branding there
+  // Don't render on public gallery pages or ShareLink — no CMMS branding there
   if (pathname.startsWith('/gallery-public')) return null
+  if (pathname.startsWith('/public-share'))  return null
 
   const [isOpen, setIsOpen]           = useState(false)
   const [showPulse, setShowPulse]     = useState(false)
