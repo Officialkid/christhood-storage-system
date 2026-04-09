@@ -113,7 +113,7 @@ jobs:
           flags: >-
             --allow-unauthenticated
             --port=3000
-            --min-instances=0
+            --min-instances=1
             --max-instances=10
             --memory=1Gi
             --cpu=1
