@@ -7,6 +7,9 @@ import { sendAdminPurgeAlert, type PurgedFileInfo } from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
 
+// Only the chief admin receives critical system alert emails
+const CHIEF_ADMIN_EMAIL = process.env.CHIEF_ADMIN_EMAIL ?? 'danielmwalili1@gmail.com'
+
 /**
  * GET /api/cron/purge
  *
@@ -96,15 +99,10 @@ export async function GET(req: NextRequest) {
 
   logger.info('CRON_PURGE_COMPLETE', { route: '/api/cron/purge', message: `Purged ${results.purged.length} file(s), failed ${results.failed.length}`, metadata: { purged: results.purged.length, failed: results.failed.length, ranAt: now.toISOString() } })
 
-  // ── Email all admins a purge summary (non-fatal) ─────────────────────────
+  // ── Email only the chief admin a purge summary (non-fatal) ─────────────────
   if (purgedFileInfo.length > 0) {
     try {
-      const admins = await prisma.user.findMany({
-        where:  { role: 'ADMIN' },
-        select: { email: true },
-      })
-      const adminEmails = admins.map(a => a.email)
-      await sendAdminPurgeAlert(adminEmails, purgedFileInfo, now)
+      await sendAdminPurgeAlert([CHIEF_ADMIN_EMAIL], purgedFileInfo, now)
     } catch (err) {
       logger.warn('PURGE_SIDE_EFFECT_FAILED', { route: '/api/cron/purge', error: (err as Error)?.message, message: 'sendAdminPurgeAlert failed' })
     }

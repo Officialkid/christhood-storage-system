@@ -205,28 +205,8 @@ export async function notifyUploadInFollowedFolder(opts: {
       notifTitle,
     )
 
-    // ── 3. Email only to staff who have email enabled for this category ───────
-    // Defer email import to avoid circular dependency at module init
-    const { sendFileUploadedEmail } = await import('./email')
-    // uploaderName already resolved above
-
-    const emailRecipients: string[] = []
-    for (const u of staff) {
-      const pref = await prisma.notificationPreference.findUnique({
-        where: { userId_category: { userId: u.id, category: 'UPLOAD_IN_FOLLOWED_FOLDER' } },
-      })
-      // Default is to send email; only skip if explicitly opted out
-      if (!pref || pref.email) emailRecipients.push(u.email)
-    }
-
-    if (emailRecipients.length > 0) {
-      await sendFileUploadedEmail(emailRecipients, {
-        fileName:     opts.fileName,
-        fileId:       opts.fileId,
-        eventName:    opts.eventName,
-        uploaderName,
-      })
-    }
+    // Email is intentionally NOT sent for uploads — in-app + push is sufficient.
+    // Only ShareLink/Transfer recipients receive email for file-related events.
   } catch (err) {
     console.error('[notifications] notifyUploadInFollowedFolder failed:', err)
   }

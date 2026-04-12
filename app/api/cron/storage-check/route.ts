@@ -6,6 +6,8 @@ export const dynamic = 'force-dynamic'
 
 const STORAGE_THRESHOLD_PERCENT = parseInt(process.env.STORAGE_THRESHOLD_PERCENT ?? '80')
 const STORAGE_LIMIT_GB          = parseFloat(process.env.STORAGE_LIMIT_GB         ?? '50')
+// Only the chief admin receives critical system alert emails
+const CHIEF_ADMIN_EMAIL         = process.env.CHIEF_ADMIN_EMAIL ?? 'danielmwalili1@gmail.com'
 
 /**
  * GET /api/cron/storage-check
@@ -43,19 +45,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, pct, totalGB: totalGB.toFixed(2), limitGB, threshold: STORAGE_THRESHOLD_PERCENT, alerted: false })
   }
 
-  // Get ADMIN recipients who have storage alerts enabled (default true)
-  const admins = await prisma.user.findMany({
-    where:  { role: 'ADMIN' },
-    select: { id: true, email: true },
-  })
-
-  const recipientEmails: string[] = []
-  for (const u of admins) {
-    const pref = await prisma.notificationPreference.findUnique({
-      where: { userId_category: { userId: u.id, category: 'STORAGE_THRESHOLD_ALERT' } },
-    })
-    if (!pref || pref.email) recipientEmails.push(u.email)
-  }
+  // Only the chief admin receives storage alert emails
+  const recipientEmails: string[] = [CHIEF_ADMIN_EMAIL]
 
   if (recipientEmails.length > 0) {
     await sendStorageThresholdEmail(recipientEmails, { pct, totalGB, limitGB, thresholdPct: STORAGE_THRESHOLD_PERCENT })

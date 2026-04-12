@@ -4,6 +4,9 @@ import { sendWeeklyDigestEmail }     from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
 
+// Only the chief admin receives the weekly digest email
+const CHIEF_ADMIN_EMAIL = process.env.CHIEF_ADMIN_EMAIL ?? 'danielmwalili1@gmail.com'
+
 /**
  * GET /api/cron/weekly-digest
  *
@@ -43,20 +46,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, message: 'No uploads this week — digest skipped.' })
   }
 
-  // Get recipients = ADMIN + EDITOR who have digest email enabled (default true)
-  const staffUsers = await prisma.user.findMany({
-    where: { OR: [{ role: 'ADMIN' }, { role: 'EDITOR' }] },
-    select: { id: true, email: true, username: true, name: true },
-  })
-
-  const recipientEmails: string[] = []
-  for (const u of staffUsers) {
-    const pref = await prisma.notificationPreference.findUnique({
-      where: { userId_category: { userId: u.id, category: 'WEEKLY_DIGEST' } },
-    })
-    const emailEnabled = pref ? pref.email : true  // default on
-    if (emailEnabled) recipientEmails.push(u.email)
-  }
+  // Only the chief admin receives the weekly digest email
+  const recipientEmails: string[] = [CHIEF_ADMIN_EMAIL]
 
   if (recipientEmails.length === 0) {
     return NextResponse.json({ ok: true, message: 'No recipients opted in.' })

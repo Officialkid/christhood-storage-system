@@ -4,7 +4,6 @@ import { authOptions }                                         from '@/lib/auth'
 import { prisma }                                              from '@/lib/prisma'
 import { log }                                                 from '@/lib/activityLog'
 import { notifyFileStatusChanged, notifyFilePublished }       from '@/lib/notifications'
-import { sendFilePublishedEmail }                              from '@/lib/email'
 
 /**
  * PATCH /api/media/[fileId]/status
@@ -104,40 +103,11 @@ export async function PATCH(req:     NextRequest, props: { params: Promise<{ fil
   }).catch(() => {})
 
   if (newStatus === 'PUBLISHED') {
-    // In-app + push for published
+    // In-app + push for published (no email blast — use in-app notifications only)
     notifyFilePublished({
       fileId:   file.id,
       fileName: file.originalName,
       actorId:  session.user.id,
-    }).catch(() => {})
-
-    // Email alert for published — send to ADMIN + EDITOR staff
-    prisma.user.findMany({
-      where:  {
-        AND: [
-          { id: { not: session.user.id } },
-          { OR: [{ role: 'ADMIN' }, { role: 'EDITOR' }] },
-        ],
-      },
-      select: { id: true, email: true },
-    }).then(async (staff) => {
-      const recipientEmails: string[] = []
-      for (const u of staff) {
-        const pref = await prisma.notificationPreference.findUnique({
-          where: { userId_category: { userId: u.id, category: 'FILE_PUBLISHED_ALERT' } },
-        })
-        if (!pref || pref.email) recipientEmails.push(u.email)
-      }
-      if (recipientEmails.length > 0) {
-        const actor = session.user.username ?? session.user.name ?? session.user.email ?? 'Someone'
-        const ev    = await prisma.event.findUnique({ where: { id: file.eventId }, select: { name: true } })
-        sendFilePublishedEmail(recipientEmails, {
-          fileName:    file.originalName,
-          fileId:      file.id,
-          eventName:   ev?.name,
-          publishedBy: actor,
-        }).catch(() => {})
-      }
     }).catch(() => {})
   }
 
