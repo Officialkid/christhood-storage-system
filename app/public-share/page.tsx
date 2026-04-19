@@ -1,11 +1,12 @@
-ï»¿'use client'
+'use client'
 
 import { useState, useRef, useCallback, DragEvent, ChangeEvent } from 'react'
 import Link from 'next/link'
 import {
   Upload, X, Eye, EyeOff, CheckCircle2, Copy, Check, ExternalLink,
-  Send, FileText, Mail, Lock, RefreshCw, Plus,
+  Send, FileText, Mail, Lock, RefreshCw, Plus, WifiOff, AlertCircle,
 } from 'lucide-react'
+import { useShareUpload } from '@/contexts/ShareUploadContext'
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -16,46 +17,39 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`
 }
 
-interface UploadResult {
-  name: string
-  shareUrl: string
-  token: string
-  size: number
-}
-
 // --- Component ---------------------------------------------------------------
 
 export default function PublicSharePage() {
-  // files
-  const [files,     setFiles]    = useState<File[]>([])
-  const [dragging,  setDragging] = useState(false)
-  const fileInputRef             = useRef<HTMLInputElement>(null)
-
-  // form fields
+  // -- Form-only local state --------------------------------------------------
+  const [files,          setFiles]          = useState<File[]>([])
+  const [dragging,       setDragging]       = useState(false)
   const [title,          setTitle]          = useState('')
   const [message,        setMessage]        = useState('')
   const [recipientEmail, setRecipientEmail] = useState('')
   const [pin,            setPin]            = useState('')
   const [showPin,        setShowPin]        = useState(false)
+  const [formError,      setFormError]      = useState<string | null>(null)
 
-  // upload state
-  const [uploading,   setUploading]   = useState(false)
-  const [confirming,  setConfirming]  = useState(false)
-  const [progress,    setProgress]    = useState<Record<string, number>>({})
-  const [currentIdx,  setCurrentIdx]  = useState(0)
-  const [errorMsg,    setErrorMsg]    = useState<string | null>(null)
-
-  // success state
-  const [results,     setResults]     = useState<UploadResult[]>([])
+  // Copy-link UI state (local, cosmetic only)
   const [copiedIdx,   setCopiedIdx]   = useState<number | null>(null)
   const [allCopied,   setAllCopied]   = useState(false)
-  const [emailSent,   setEmailSent]   = useState(false)
-  const [batchUrl,    setBatchUrl]    = useState<string | null>(null)
   const [batchCopied, setBatchCopied] = useState(false)
 
-  const isDone = results.length > 0 && !confirming
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // --- File selection --------------------------------------------------------
+  // -- Upload state from global context --------------------------------------
+  const {
+    status, files: uploadFiles, currentIdx,
+    overallProgress, results, errorMsg, isNetworkError,
+    batchUrl, emailSent,
+    startUpload, retry, reset: ctxReset,
+  } = useShareUpload()
+
+  const isUploading = status === 'uploading' || status === 'confirming'
+  const isDone      = status === 'done'
+  const hasError    = status === 'error'
+
+  // -- File selection ---------------------------------------------------------
 
   const addFiles = useCallback((incoming: FileList | File[]) => {
     const arr = Array.from(incoming)
@@ -64,11 +58,10 @@ export default function PublicSharePage() {
       const fresh    = arr.filter(f => !existing.has(f.name + f.size))
       return [...prev, ...fresh].slice(0, 20)
     })
-    setErrorMsg(null)
+    setFormError(null)
   }, [])
 
-  const removeFile = (idx: number) =>
-    setFiles(prev => prev.filter((_, i) => i !== idx))
+  const removeFile = (idx: number) => setFiles(prev => prev.filter((_, i) => i !== idx))
 
   const onDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -81,89 +74,17 @@ export default function PublicSharePage() {
     e.target.value = ''
   }
 
-  // --- Upload flow -----------------------------------------------------------
+  // -- Submit -----------------------------------------------------------------
 
-  async function uploadFile(file: File, idx: number): Promise<UploadResult> {
-    setCurrentIdx(idx)
-
-    const formData = new FormData()
-    formData.append('file',     file)
-    formData.append('filename', file.name)
-    formData.append('fileSize', String(file.size))
-    formData.append('mimeType', file.type || 'application/octet-stream')
-    if (title.trim())          formData.append('title',          title.trim())
-    if (message.trim())        formData.append('message',        message.trim())
-    if (recipientEmail.trim()) formData.append('recipientEmail', recipientEmail.trim())
-    if (pin)                   formData.append('pin',            pin)
-
-    const { token } = await new Promise<{ token: string }>((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open('POST', '/api/public-share/upload')
-      xhr.upload.onprogress = e => {
-        if (e.lengthComputable)
-          setProgress(p => ({ ...p, [file.name]: Math.round((e.loaded / e.total) * 100) }))
-      }
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try { resolve(JSON.parse(xhr.responseText)) }
-          catch { reject(new Error('Unexpected server response.')) }
-        } else {
-          const msg = (() => { try { return JSON.parse(xhr.responseText).error } catch { return null } })()
-          reject(new Error(msg ?? `Upload failed (${xhr.status})`))
-        }
-      }
-      xhr.onerror = () => reject(new Error('Network error during upload'))
-      xhr.send(formData)
-    })
-
-    const shareUrl = `${window.location.origin}/public-share/${token}`
-    return { name: file.name, shareUrl, token, size: file.size }
+  function handleSubmit() {
+    setFormError(null)
+    if (files.length === 0) { setFormError('Please select at least one file.'); return }
+    if (!title.trim())      { setFormError('Please enter a title for this transfer.'); return }
+    startUpload(files, { title: title.trim(), message, recipientEmail, pin })
+    setFiles([])
   }
 
-  async function handleSubmit() {
-    setErrorMsg(null)
-    if (files.length === 0)  { setErrorMsg('Please select at least one file.'); return }
-    if (!title.trim())       { setErrorMsg('Please enter a title for this transfer.'); return }
-
-    setUploading(true)
-    setProgress({})
-    const collected: UploadResult[] = []
-
-    try {
-      for (let i = 0; i < files.length; i++) {
-        collected.push(await uploadFile(files[i], i))
-      }
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Upload failed. Please try again.')
-      setUploading(false)
-      return
-    }
-
-    setResults(collected)
-    if (collected.length > 1) {
-      setBatchUrl(
-        `${window.location.origin}/public-share/batch?tokens=${collected.map(r => r.token).join(',')}`,
-      )
-    }
-    setUploading(false)
-    setConfirming(true)
-    setTimeout(() => setConfirming(false), 1400)
-
-    if (recipientEmail.trim() && collected.length > 0) {
-      try {
-        await fetch('/api/public-share/notify', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({
-            recipientEmail: recipientEmail.trim(),
-            tokens:         collected.map(r => r.token),
-            senderTitle:    title.trim(),
-          }),
-        })
-        setEmailSent(true)
-      } catch { /* non-fatal */ }
-    }
-  }
+  // -- Copy helpers -----------------------------------------------------------
 
   async function copyLink(url: string, idx: number) {
     await navigator.clipboard.writeText(url)
@@ -185,14 +106,14 @@ export default function PublicSharePage() {
     setTimeout(() => setBatchCopied(false), 2500)
   }
 
-  function reset() {
-    setFiles([]); setTitle(''); setMessage(''); setRecipientEmail('')
-    setPin(''); setShowPin(false); setProgress({}); setResults([])
-    setErrorMsg(null); setCopiedIdx(null); setAllCopied(false)
-    setEmailSent(false); setUploading(false); setConfirming(false); setBatchUrl(null); setBatchCopied(false)
+  function handleReset() {
+    ctxReset()
+    setFiles([]); setTitle(''); setMessage('')
+    setRecipientEmail(''); setPin(''); setShowPin(false)
+    setFormError(null)
   }
 
-  // --- Shared nav bar -------------------------------------------------------
+  // -- Shared nav bar ---------------------------------------------------------
 
   const navBar = (
     <nav className="border-b border-slate-800/60 px-5 py-3.5">
@@ -219,7 +140,7 @@ export default function PublicSharePage() {
     </nav>
   )
 
-  // --- Success screen --------------------------------------------------------
+  // -- Success screen ---------------------------------------------------------
 
   if (isDone) {
     return (
@@ -235,7 +156,9 @@ export default function PublicSharePage() {
 
             <h1 className="text-3xl font-bold text-white text-center mb-1">Transfer complete</h1>
             <p className="text-slate-400 text-center mb-2">
-              {results.length === 1 ? `"${results[0].name}" is ready to share` : `${results.length} files are ready to share`}
+              {results.length === 1
+                ? `"${results[0].name}" is ready to share`
+                : `${results.length} files are ready to share`}
             </p>
 
             {emailSent && (
@@ -245,7 +168,7 @@ export default function PublicSharePage() {
               </p>
             )}
 
-            {/* Batch link â€” shown when multiple files were uploaded */}
+            {/* Batch link */}
             {batchUrl && (
               <div className="mb-4 rounded-2xl bg-indigo-600/15 border border-indigo-500/30 p-4 space-y-2">
                 <p className="text-sm font-semibold text-white flex items-center gap-2">
@@ -257,16 +180,11 @@ export default function PublicSharePage() {
                 </p>
                 <p className="text-xs text-slate-400">Recipients can download all files at once from this single link</p>
                 <div className="flex items-center gap-2">
-                  <input
-                    readOnly
-                    value={batchUrl}
+                  <input readOnly value={batchUrl}
                     className="flex-1 bg-slate-800/80 text-xs text-indigo-300 px-3 py-2 rounded-lg border border-slate-700/60 truncate focus:outline-none"
-                    onFocus={e => e.currentTarget.select()}
-                  />
-                  <button
-                    onClick={copyBatchUrl}
-                    className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition"
-                  >
+                    onFocus={e => e.currentTarget.select()} />
+                  <button onClick={copyBatchUrl}
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition">
                     {batchCopied ? <><Check className="w-3.5 h-3.5" />Copied!</> : <><Copy className="w-3.5 h-3.5" />Copy</>}
                   </button>
                 </div>
@@ -287,8 +205,10 @@ export default function PublicSharePage() {
                       <ExternalLink className="w-3.5 h-3.5" />Open
                     </a>
                     <button onClick={() => copyLink(r.shareUrl, i)}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-600/80 text-white text-xs font-medium hover:bg-indigo-600 transition-colors">
-                      {copiedIdx === i ? <><Check className="w-3.5 h-3.5" />Copied</> : <><Copy className="w-3.5 h-3.5" />Copy link</>}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-600/80 text-white text-xs font-medium hover:bg-indigo-600 transition-colors">
+                      {copiedIdx === i
+                        ? <><Check className="w-3.5 h-3.5" />Copied</>
+                        : <><Copy className="w-3.5 h-3.5" />Copy link</>}
                     </button>
                   </div>
                 </div>
@@ -298,28 +218,30 @@ export default function PublicSharePage() {
             <div className="flex gap-3">
               {results.length > 1 && (
                 <button onClick={copyAllLinks}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-700/70 text-white text-sm font-semibold hover:bg-slate-700 transition-colors border border-slate-600/50">
-                  {allCopied ? <><Check className="w-4 h-4 text-emerald-400" />All links copied</> : <><Copy className="w-4 h-4" />Copy all links</>}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-700/70 text-white text-sm font-semibold hover:bg-slate-700 transition-colors border border-slate-600/50">
+                  {allCopied
+                    ? <><Check className="w-4 h-4 text-emerald-400" />All links copied</>
+                    : <><Copy className="w-4 h-4" />Copy all links</>}
                 </button>
               )}
-              <button onClick={reset}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-500 transition-colors">
+              <button onClick={handleReset}
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-500 transition-colors">
                 <RefreshCw className="w-4 h-4" />Send another transfer
               </button>
             </div>
 
-            <p className="text-center text-slate-600 text-xs mt-6">Links expire in 7 days Â· Files are permanently deleted after expiry</p>
+            <p className="text-center text-slate-600 text-xs mt-6">
+              Links expire in 7 days · Files are permanently deleted after expiry
+            </p>
           </div>
         </main>
       </div>
     )
   }
 
-  // --- Upload form -----------------------------------------------------------
+  // -- Upload form + progress -------------------------------------------------
 
-  const totalSize       = files.reduce((s, f) => s + f.size, 0)
-  const overallProgress = files.length === 0 ? 0
-    : Math.round(Object.values(progress).reduce((s, v) => s + v, 0) / files.length)
+  const totalSize = files.reduce((s, f) => s + f.size, 0)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
@@ -334,54 +256,99 @@ export default function PublicSharePage() {
             </div>
           </div>
           <h1 className="text-3xl font-bold text-white mb-1">ShareLink</h1>
-          <p className="text-slate-400 text-sm">Share files securely â€” no account needed</p>
+          <p className="text-slate-400 text-sm">Share files securely — no account needed</p>
         </div>
 
         <div className="bg-slate-900/70 border border-slate-700/50 rounded-2xl p-6 space-y-5 backdrop-blur-sm shadow-2xl">
 
-          {(uploading || confirming) ? (
+          {/* -- Uploading / confirming -- */}
+          {isUploading && (
             <div className="flex flex-col items-center gap-5 py-6">
-              {/* Circular progress ring */}
               <div className="relative w-36 h-36">
                 <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
-                  {/* Track */}
                   <circle cx="60" cy="60" r="52" fill="none" stroke="rgb(30,41,59)" strokeWidth="8" />
-                  {/* Progress arc */}
                   <circle
                     cx="60" cy="60" r="52" fill="none"
-                    stroke={confirming ? 'rgb(52,211,153)' : 'rgb(99,102,241)'}
+                    stroke={status === 'confirming' ? 'rgb(52,211,153)' : 'rgb(99,102,241)'}
                     strokeWidth="8"
                     strokeLinecap="round"
                     strokeDasharray={2 * Math.PI * 52}
-                    strokeDashoffset={confirming ? 0 : 2 * Math.PI * 52 * (1 - overallProgress / 100)}
+                    strokeDashoffset={status === 'confirming' ? 0 : 2 * Math.PI * 52 * (1 - overallProgress / 100)}
                     style={{ transition: 'stroke-dashoffset 0.4s ease-out, stroke 0.4s ease' }}
                   />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  {confirming
+                  {status === 'confirming'
                     ? <CheckCircle2 className="w-14 h-14 text-emerald-400" />
                     : <span className="text-3xl font-bold text-white tabular-nums leading-none">{overallProgress}%</span>
                   }
                 </div>
               </div>
 
-              {confirming ? (
+              {status === 'confirming' ? (
                 <div className="text-center space-y-1">
                   <p className="text-base font-semibold text-emerald-400">Transfer complete!</p>
-                  <p className="text-xs text-slate-400">Preparing your share linkâ€¦</p>
+                  <p className="text-xs text-slate-400">Preparing your share link…</p>
                 </div>
               ) : (
                 <div className="text-center space-y-1">
-                  {files.length > 1 && (
+                  {uploadFiles.length > 1 && (
                     <p className="text-sm font-medium text-indigo-300">
-                      File {currentIdx + 1} of {files.length}
+                      File {currentIdx + 1} of {uploadFiles.length}
                     </p>
                   )}
-                  <p className="text-xs text-slate-500 max-w-xs truncate px-4">{files[currentIdx]?.name}</p>
+                  <p className="text-xs text-slate-500 max-w-xs truncate px-4">
+                    {uploadFiles[currentIdx]?.name}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-1">
+                    You can navigate away — upload continues in the background
+                  </p>
                 </div>
               )}
             </div>
-          ) : (
+          )}
+
+          {/* -- Network / upload error -- */}
+          {hasError && (
+            <div className="py-4 space-y-4">
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-red-900/20 border border-red-800/50">
+                {isNetworkError
+                  ? <WifiOff className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                  : <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />}
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-red-300">
+                    {isNetworkError ? 'Network error' : 'Upload error'}
+                  </p>
+                  <p className="text-xs text-red-400 leading-relaxed">{errorMsg}</p>
+                  {results.length > 0 && (
+                    <p className="text-xs text-slate-400 mt-1">
+                      {results.length} of {uploadFiles.length} file{uploadFiles.length !== 1 ? 's' : ''} already uploaded — retry will continue from where it stopped.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={retry}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-500 transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  {results.length > 0
+                    ? `Retry — continue from file ${results.length + 1}`
+                    : 'Retry upload'}
+                </button>
+                <button
+                  onClick={handleReset}
+                  className="px-4 py-3 rounded-xl bg-slate-800 text-slate-400 text-sm hover:bg-slate-700 transition-colors border border-slate-700/50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* -- Upload form (shown when idle) -- */}
+          {!isUploading && !hasError && (
             <>
               {/* Drop zone */}
               <div
@@ -389,7 +356,11 @@ export default function PublicSharePage() {
                 onDragOver={e => { e.preventDefault(); setDragging(true) }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={onDrop}
-                className={`group relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-200 select-none ${dragging ? 'border-indigo-400 bg-indigo-900/20' : 'border-slate-700 hover:border-indigo-500/60 hover:bg-slate-800/30'}`}
+                className={`group relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-200 select-none ${
+                  dragging
+                    ? 'border-indigo-400 bg-indigo-900/20'
+                    : 'border-slate-700 hover:border-indigo-500/60 hover:bg-slate-800/30'
+                }`}
               >
                 <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFileInput} />
                 {files.length === 0 ? (
@@ -398,12 +369,16 @@ export default function PublicSharePage() {
                     <p className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">
                       Drop files here or <span className="text-indigo-400">browse</span>
                     </p>
-                    <p className="text-xs text-slate-600">Up to 20 files Â· any size</p>
+                    <p className="text-xs text-slate-600">Up to 20 files · any size</p>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-slate-300">{files.length} file{files.length !== 1 ? 's' : ''} â€” {formatBytes(totalSize)}</span>
-                    <span className="flex items-center gap-1 text-xs text-indigo-400"><Plus className="w-3.5 h-3.5" />Add more</span>
+                    <span className="text-sm text-slate-300">
+                      {files.length} file{files.length !== 1 ? 's' : ''} — {formatBytes(totalSize)}
+                    </span>
+                    <span className="flex items-center gap-1 text-xs text-indigo-400">
+                      <Plus className="w-3.5 h-3.5" />Add more
+                    </span>
                   </div>
                 )}
               </div>
@@ -417,7 +392,7 @@ export default function PublicSharePage() {
                       <span className="flex-1 text-sm text-slate-300 truncate">{f.name}</span>
                       <span className="text-xs text-slate-500 shrink-0">{formatBytes(f.size)}</span>
                       <button onClick={() => removeFile(i)} aria-label="Remove file"
-                              className="shrink-0 text-slate-600 hover:text-red-400 transition-colors">
+                        className="shrink-0 text-slate-600 hover:text-red-400 transition-colors">
                         <X className="w-4 h-4" />
                       </button>
                     </li>
@@ -430,8 +405,9 @@ export default function PublicSharePage() {
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">
                   Title <span className="text-red-500">*</span>
                 </label>
-                <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Wedding photos, Project filesâ€¦" maxLength={200}
-                       className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/60 transition" />
+                <input type="text" value={title} onChange={e => setTitle(e.target.value)}
+                  placeholder="e.g. Wedding photos, Project files…" maxLength={200}
+                  className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/60 transition" />
               </div>
 
               {/* Description */}
@@ -439,8 +415,9 @@ export default function PublicSharePage() {
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">
                   Description <span className="text-slate-600">(optional)</span>
                 </label>
-                <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Add a short note for the recipientâ€¦" rows={2} maxLength={1000}
-                          className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/60 transition" />
+                <textarea value={message} onChange={e => setMessage(e.target.value)}
+                  placeholder="Add a short note for the recipient…" rows={2} maxLength={1000}
+                  className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/60 transition" />
               </div>
 
               {/* Recipient email */}
@@ -449,36 +426,40 @@ export default function PublicSharePage() {
                   <Mail className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
                   Send to email <span className="text-slate-600">(optional)</span>
                 </label>
-                <input type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} placeholder="recipient@example.com"
-                       className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/60 transition" />
+                <input type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)}
+                  placeholder="recipient@example.com"
+                  className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/60 transition" />
               </div>
 
-              {/* PIN with show/hide */}
+              {/* PIN */}
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">
                   <Lock className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
-                  PIN protection <span className="text-slate-600">(optional Â· 4â€“8 digits)</span>
+                  PIN protection <span className="text-slate-600">(optional · 4–8 digits)</span>
                 </label>
                 <div className="relative">
                   <input type={showPin ? 'text' : 'password'} value={pin}
-                         onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                         placeholder="Enter a PINâ€¦" inputMode="numeric"
-                         className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-3 pr-12 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/60 transition" />
-                  <button type="button" onClick={() => setShowPin(v => !v)} aria-label={showPin ? 'Hide PIN' : 'Show PIN'}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
+                    onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                    placeholder="Enter a PIN…" inputMode="numeric"
+                    className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-3 pr-12 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/60 transition" />
+                  <button type="button" onClick={() => setShowPin(v => !v)}
+                    aria-label={showPin ? 'Hide PIN' : 'Show PIN'}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
                     {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
 
-              {/* Error */}
-              {errorMsg && (
-                <p className="text-sm text-red-400 bg-red-900/20 border border-red-800/50 rounded-xl px-4 py-3">{errorMsg}</p>
+              {/* Form validation error */}
+              {formError && (
+                <p className="text-sm text-red-400 bg-red-900/20 border border-red-800/50 rounded-xl px-4 py-3">
+                  {formError}
+                </p>
               )}
 
               {/* Submit */}
               <button onClick={handleSubmit} disabled={files.length === 0 || !title.trim()}
-                      className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-lg shadow-indigo-900/30">
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-lg shadow-indigo-900/30">
                 <Send className="w-4 h-4" />
                 {files.length > 1 ? `Upload ${files.length} files` : 'Upload & share'}
               </button>
@@ -487,14 +468,15 @@ export default function PublicSharePage() {
         </div>
 
         <p className="text-center text-slate-700 text-xs mt-6">
-          Files are deleted after 7 days Â· By uploading you agree to our{' '}
+          Files are deleted after 7 days · By uploading you agree to our{' '}
           <Link href="/public-share/legal#terms"
-                className="text-slate-500 hover:text-slate-400 transition-colors">Terms</Link>{' '}and{' '}
+            className="text-slate-500 hover:text-slate-400 transition-colors">Terms</Link>{' '}and{' '}
           <Link href="/public-share/legal#privacy"
-                className="text-slate-500 hover:text-slate-400 transition-colors">Privacy Policy</Link>
+            className="text-slate-500 hover:text-slate-400 transition-colors">Privacy Policy</Link>
         </p>
       </div>
       </main>
     </div>
   )
 }
+
