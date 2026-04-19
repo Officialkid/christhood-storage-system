@@ -69,6 +69,8 @@ export function MediaCard({
     setIsMobileSheet(window.matchMedia('(pointer: coarse)').matches)
   }, [])
 
+  const isVideo = media.fileType === 'VIDEO'
+
   // ── Video duration detection ───────────────────────────────────────────────
   // Programmatic createElement is reliable on mobile; hidden DOM elements are
   // skipped by mobile browsers and never fire loadedmetadata.
@@ -125,8 +127,6 @@ export function MediaCard({
     if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
     return `${m}:${String(sec).padStart(2, '0')}`
   }
-
-  const isVideo = media.fileType === 'VIDEO'
 
   const canDelete = (() => {
     if (role === 'UPLOADER') return false
