@@ -55,6 +55,7 @@ export function MediaCard({
   const [showDeleteDlg, setShowDeleteDlg] = useState(false)
   const [showShareDlg,  setShowShareDlg]  = useState(false)
   const [videoThumbErr, setVideoThumbErr] = useState(false)
+  const [videoDuration, setVideoDuration] = useState<string | null>(null)
   const [menuPos,       setMenuPos]       = useState<{ right: number; bottom: number } | null>(null)
   const [isMobileSheet, setIsMobileSheet] = useState(false)
 
@@ -89,6 +90,15 @@ export function MediaCard({
   function closeMenu() {
     setMenuOpen(false)
     setShowStatusSub(false)
+  }
+
+  function formatVideoDuration(s: number): string {
+    if (!Number.isFinite(s) || s <= 0) return ''
+    const h   = Math.floor(s / 3600)
+    const m   = Math.floor((s % 3600) / 60)
+    const sec = Math.floor(s % 60)
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+    return `${m}:${String(sec).padStart(2, '0')}`
   }
 
   const isVideo = media.fileType === 'VIDEO'
@@ -334,13 +344,28 @@ export function MediaCard({
         {/* Full-bleed thumbnail */}
         <div className="absolute inset-0">
           {media.thumbnailUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={media.thumbnailUrl}
-              alt={media.originalName}
-              className="w-full h-full object-cover"
-              loading="lazy"
-            />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={media.thumbnailUrl}
+                alt={media.originalName}
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+              {/* Hidden video to extract duration when thumbnail is available */}
+              {isVideo && media.downloadUrl && (
+                <video
+                  key={media.id}
+                  src={media.downloadUrl}
+                  preload="metadata"
+                  className="absolute invisible w-0 h-0 pointer-events-none"
+                  onLoadedMetadata={e => {
+                    const d = e.currentTarget.duration
+                    if (Number.isFinite(d) && d > 0) setVideoDuration(formatVideoDuration(d))
+                  }}
+                />
+              )}
+            </>
           ) : isVideo && !videoThumbErr ? (
             <video
               ref={videoRef}
@@ -350,7 +375,11 @@ export function MediaCard({
               playsInline
               className="w-full h-full object-cover"
               onLoadedMetadata={() => {
-                if (videoRef.current) videoRef.current.currentTime = 0.001
+                if (videoRef.current) {
+                  const d = videoRef.current.duration
+                  if (Number.isFinite(d) && d > 0) setVideoDuration(formatVideoDuration(d))
+                  videoRef.current.currentTime = 0.001
+                }
               }}
               onError={() => setVideoThumbErr(true)}
             />
@@ -370,7 +399,9 @@ export function MediaCard({
             <div className="flex items-center gap-1 bg-black/60 backdrop-blur-sm
                             rounded-full px-2 py-0.5">
               <Play className="w-2.5 h-2.5 text-white fill-white" />
-              <span className="text-[9px] text-white font-semibold tracking-wide">VIDEO</span>
+              <span className="text-[9px] text-white font-semibold tracking-wide">
+                VIDEO{videoDuration ? ` · ${videoDuration}` : ''}
+              </span>
             </div>
           </div>
         )}
@@ -457,6 +488,18 @@ export function MediaCard({
             <div className="px-4 py-2.5 border-b border-slate-700/60">
               <p className="text-sm font-semibold text-white truncate">{media.originalName}</p>
               <p className="text-xs text-slate-500 mt-0.5">{isVideo ? 'Video' : 'Photo'}</p>
+            </div>
+            {/* Prominent download CTA for mobile */}
+            <div className="px-4 py-3 border-b border-slate-700/60">
+              <button
+                onClick={handleDownload}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl
+                           bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700
+                           text-white font-semibold text-sm transition"
+              >
+                <Download className="w-4 h-4" />
+                Download
+              </button>
             </div>
             {menuContent}
             <div className="px-4 pb-2 pt-1">

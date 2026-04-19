@@ -807,7 +807,7 @@ export default function ChatbotWidget() {
       </div>
 
       {/* ── Floating Action Button ───────────────────────────────────────── */}
-      <div data-tour="chatbot-fab" className="fixed bottom-8 right-5 sm:right-6 z-[60]">
+      <div data-tour="chatbot-fab" className="fixed bottom-20 right-5 sm:bottom-8 sm:right-6 z-[60]">
         {/* Pulse ring — a faint expanding ring shown on first visit */}
         {showPulse && !isOpen && (
           <span

@@ -47,7 +47,7 @@ export default async function EventDetailPage(props: Props) {
     prisma.mediaFile.findMany({
       where: {
         eventId,
-        subfolderId: subfolderId ?? null,
+        ...(subfolderId ? { subfolderId } : {}),
         status: { notIn: ['DELETED', 'PURGED', 'ARCHIVED'] },
       },
       orderBy: { createdAt: 'desc' },
@@ -59,7 +59,7 @@ export default async function EventDetailPage(props: Props) {
     prisma.mediaFile.findMany({
       where: {
         eventId,
-        subfolderId: subfolderId ?? null,
+        ...(subfolderId ? { subfolderId } : {}),
         status: 'ARCHIVED',
       },
       orderBy: { archivedAt: 'desc' },
