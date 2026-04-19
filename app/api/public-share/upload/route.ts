@@ -15,12 +15,11 @@ import { prisma }                     from '@/lib/prisma'
 import { putObject }                  from '@/lib/r2'
 import { checkPublicShareRateLimit }  from '@/lib/rate-limit'
 
-// Allow up to 60 s for large file uploads on Cloud Run
-export const maxDuration = 60
+// Allow up to 300 s for large file uploads on Cloud Run
+export const maxDuration = 300
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024          // 50 MB
-const EXPIRY_DAYS         = 7
+const EXPIRY_DAYS = 7
 const BCRYPT_ROUNDS       = 10
 
 /** Blocklist of executable MIME types that must never be stored or served. */
@@ -83,9 +82,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'filename is required.' }, { status: 400 })
   }
   const fileSize = Number(fileSizeRaw)
-  if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > MAX_FILE_SIZE_BYTES) {
+  if (!Number.isFinite(fileSize) || fileSize <= 0) {
     return NextResponse.json(
-      { error: `File must be between 1 byte and ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB.` },
+      { error: 'File size is invalid.' },
       { status: 400 },
     )
   }

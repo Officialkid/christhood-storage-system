@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, DragEvent, ChangeEvent } from 'react'
 import Link from 'next/link'
 import {
   Upload, X, Eye, EyeOff, CheckCircle2, Copy, Check, ExternalLink,
-  Send, FileText, Loader2, Mail, Lock, RefreshCw, Plus,
+  Send, FileText, Mail, Lock, RefreshCw, Plus,
 } from 'lucide-react'
 
 // --- Helpers -----------------------------------------------------------------
@@ -39,10 +39,11 @@ export default function PublicSharePage() {
   const [showPin,        setShowPin]        = useState(false)
 
   // upload state
-  const [uploading,  setUploading]  = useState(false)
-  const [progress,   setProgress]   = useState<Record<string, number>>({})
-  const [currentIdx, setCurrentIdx] = useState(0)
-  const [errorMsg,   setErrorMsg]   = useState<string | null>(null)
+  const [uploading,   setUploading]   = useState(false)
+  const [confirming,  setConfirming]  = useState(false)
+  const [progress,    setProgress]    = useState<Record<string, number>>({})
+  const [currentIdx,  setCurrentIdx]  = useState(0)
+  const [errorMsg,    setErrorMsg]    = useState<string | null>(null)
 
   // success state
   const [results,     setResults]     = useState<UploadResult[]>([])
@@ -52,7 +53,7 @@ export default function PublicSharePage() {
   const [batchUrl,    setBatchUrl]    = useState<string | null>(null)
   const [batchCopied, setBatchCopied] = useState(false)
 
-  const isDone = results.length > 0
+  const isDone = results.length > 0 && !confirming
 
   // --- File selection --------------------------------------------------------
 
@@ -123,8 +124,6 @@ export default function PublicSharePage() {
     setErrorMsg(null)
     if (files.length === 0)  { setErrorMsg('Please select at least one file.'); return }
     if (!title.trim())       { setErrorMsg('Please enter a title for this transfer.'); return }
-    const oversized = files.find(f => f.size > 50 * 1024 * 1024)
-    if (oversized)           { setErrorMsg(`"${oversized.name}" exceeds the 50 MB limit.`); return }
 
     setUploading(true)
     setProgress({})
@@ -147,6 +146,8 @@ export default function PublicSharePage() {
       )
     }
     setUploading(false)
+    setConfirming(true)
+    setTimeout(() => setConfirming(false), 1400)
 
     if (recipientEmail.trim() && collected.length > 0) {
       try {
@@ -188,7 +189,7 @@ export default function PublicSharePage() {
     setFiles([]); setTitle(''); setMessage(''); setRecipientEmail('')
     setPin(''); setShowPin(false); setProgress({}); setResults([])
     setErrorMsg(null); setCopiedIdx(null); setAllCopied(false)
-    setEmailSent(false); setUploading(false); setBatchUrl(null); setBatchCopied(false)
+    setEmailSent(false); setUploading(false); setConfirming(false); setBatchUrl(null); setBatchCopied(false)
   }
 
   // --- Shared nav bar -------------------------------------------------------
@@ -338,18 +339,47 @@ export default function PublicSharePage() {
 
         <div className="bg-slate-900/70 border border-slate-700/50 rounded-2xl p-6 space-y-5 backdrop-blur-sm shadow-2xl">
 
-          {uploading ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 text-indigo-300">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="text-sm font-medium">
-                  Uploading file {currentIdx + 1} of {files.length} — {files[currentIdx]?.name}
-                </span>
+          {(uploading || confirming) ? (
+            <div className="flex flex-col items-center gap-5 py-6">
+              {/* Circular progress ring */}
+              <div className="relative w-36 h-36">
+                <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
+                  {/* Track */}
+                  <circle cx="60" cy="60" r="52" fill="none" stroke="rgb(30,41,59)" strokeWidth="8" />
+                  {/* Progress arc */}
+                  <circle
+                    cx="60" cy="60" r="52" fill="none"
+                    stroke={confirming ? 'rgb(52,211,153)' : 'rgb(99,102,241)'}
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={2 * Math.PI * 52}
+                    strokeDashoffset={confirming ? 0 : 2 * Math.PI * 52 * (1 - overallProgress / 100)}
+                    style={{ transition: 'stroke-dashoffset 0.4s ease-out, stroke 0.4s ease' }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  {confirming
+                    ? <CheckCircle2 className="w-14 h-14 text-emerald-400" />
+                    : <span className="text-3xl font-bold text-white tabular-nums leading-none">{overallProgress}%</span>
+                  }
+                </div>
               </div>
-              <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                <div className="bg-indigo-500 h-2 rounded-full transition-all duration-300" style={{ width: `${overallProgress}%` }} />
-              </div>
-              <p className="text-slate-500 text-xs text-right">{overallProgress}%</p>
+
+              {confirming ? (
+                <div className="text-center space-y-1">
+                  <p className="text-base font-semibold text-emerald-400">Transfer complete!</p>
+                  <p className="text-xs text-slate-400">Preparing your share link…</p>
+                </div>
+              ) : (
+                <div className="text-center space-y-1">
+                  {files.length > 1 && (
+                    <p className="text-sm font-medium text-indigo-300">
+                      File {currentIdx + 1} of {files.length}
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-500 max-w-xs truncate px-4">{files[currentIdx]?.name}</p>
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -368,7 +398,7 @@ export default function PublicSharePage() {
                     <p className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">
                       Drop files here or <span className="text-indigo-400">browse</span>
                     </p>
-                    <p className="text-xs text-slate-600">Up to 20 files · 50 MB each</p>
+                    <p className="text-xs text-slate-600">Up to 20 files · any size</p>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
