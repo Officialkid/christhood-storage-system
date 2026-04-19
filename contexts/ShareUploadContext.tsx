@@ -93,13 +93,44 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const stateRef                = useRef(state)
   const xhrsRef                 = useRef<Set<XMLHttpRequest>>(new Set())
+  // Background Fetch tracking
+  const bgFetchCallbacks = useRef<Map<string, { resolve: () => void; reject: (e: Error) => void }>>(new Map())
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const bgFetchRegs      = useRef<Map<string, any>>(new Map())
   const pathname                = usePathname()
 
   useEffect(() => { stateRef.current = state }, [state])
 
+  // ── SW message listener (Background Fetch completion) ────────────────────────
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+    const handler = (ev: MessageEvent) => {
+      const { type, token } = (ev.data ?? {}) as { type?: string; token?: string }
+      if (type === 'SHARELINK_BG_COMPLETE' && token) {
+        bgFetchCallbacks.current.get(token)?.resolve()
+        bgFetchCallbacks.current.delete(token)
+        bgFetchRegs.current.delete(token)
+      }
+      if (type === 'SHARELINK_BG_FAILED' && token) {
+        bgFetchCallbacks.current.get(token)?.reject(
+          Object.assign(new Error('Background upload failed — tap Retry'), { isNetwork: true })
+        )
+        bgFetchCallbacks.current.delete(token)
+        bgFetchRegs.current.delete(token)
+      }
+    }
+    navigator.serviceWorker.addEventListener('message', handler)
+    return () => navigator.serviceWorker.removeEventListener('message', handler)
+  }, [])
+
   // ── Core upload engine ────────────────────────────────────────────────────
 
   const CONCURRENCY = 3
+
+  // Helper: post a message to the registered service worker (non-fatal)
+  function postSw(data: Record<string, unknown>) {
+    try { navigator.serviceWorker?.controller?.postMessage(data) } catch { /* ignore */ }
+  }
 
   const uploadFrom = useCallback(async (
     files: File[],
@@ -107,8 +138,8 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
     existingResults: UploadResult[],
   ) => {
     const collected: UploadResult[] = [...existingResults]
-    // Track which files already succeeded (by index) so retry skips them
-    const doneIndices = new Set(existingResults.map((_, i) => i))
+    // Track completed files BY NAME so parallel out-of-order completion works correctly
+    const doneNames = new Set(existingResults.map(r => r.name))
 
     setState(s => ({
       ...s,
@@ -119,10 +150,10 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
     }))
 
     // Files not yet completed
-    const pending = files.filter((_, i) => !doneIndices.has(i))
+    const pending = files.filter(f => !doneNames.has(f.name))
     let firstError: (Error & { isNetwork?: boolean }) | null = null
 
-    // ── Upload a single file: presign → PUT → confirm ──────────────────────
+    // ── Upload a single file: presign → (BgFetch | XHR) → confirm ──────────────
     const processOne = async (file: File): Promise<void> => {
       // ── Step 1: presigned URL ──────────────────────────────────────────────
       const presignRes = await fetch('/api/public-share/presign', {
@@ -148,63 +179,119 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
 
       const { token, presignedUrl } = await presignRes.json()
 
-      // ── Step 2: PUT directly to R2 via presigned URL ───────────────────────
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhrsRef.current.add(xhr)
-        xhr.open('PUT', presignedUrl)
-        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+      // ── Step 2a: Try Background Fetch API (OS-level, survives screen-off) ───
+      let usedBgFetch = false
+      try {
+        const swReg = typeof navigator !== 'undefined' && 'serviceWorker' in navigator
+          ? await navigator.serviceWorker.ready
+          : null
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (swReg && 'backgroundFetch' in swReg) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const bgReg = await (swReg as any).backgroundFetch.fetch(
+            `sl-${token}`,
+            [new Request(presignedUrl, {
+              method:  'PUT',
+              body:    file,
+              headers: { 'Content-Type': file.type || 'application/octet-stream' },
+            })],
+            {
+              title:         `Uploading ${file.name}`,
+              downloadTotal: file.size,
+              icons:         [{ src: '/icons/icon-192.svg', sizes: '192x192', type: 'image/svg+xml' }],
+            },
+          )
+          bgFetchRegs.current.set(token, bgReg)
+          usedBgFetch = true
 
-        xhr.upload.onprogress = e => {
-          if (e.lengthComputable) {
-            setState(s => ({
-              ...s,
-              progress: { ...s.progress, [file.name]: Math.round((e.loaded / e.total) * 100) },
-            }))
-          }
+          // Track upload progress from Background Fetch
+          bgReg.addEventListener('progress', () => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const r = bgReg as any
+            if (r.uploadTotal > 0) {
+              const pct = Math.round(r.uploaded / r.uploadTotal * 100)
+              setState(s => ({ ...s, progress: { ...s.progress, [file.name]: pct } }))
+            }
+          })
+
+          // Await SW confirmation message
+          await new Promise<void>((resolve, reject) => {
+            bgFetchCallbacks.current.set(token, { resolve, reject })
+          })
+          // SW already called /confirm — skip step 3
         }
+      } catch {
+        usedBgFetch = false // fall through to XHR
+      }
 
-        xhr.onload = () => {
-          xhrsRef.current.delete(xhr)
-          if (xhr.status >= 200 && xhr.status < 300) {
-            setState(s => ({ ...s, progress: { ...s.progress, [file.name]: 100 } }))
-            resolve()
-          } else {
-            const err = new Error(`Upload failed (${xhr.status})`) as Error & { isNetwork?: boolean }
-            err.isNetwork = false
+      // ── Step 2b: XHR fallback (when Background Fetch unavailable) ──────────
+      if (!usedBgFetch) {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          xhrsRef.current.add(xhr)
+          xhr.open('PUT', presignedUrl)
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+
+          xhr.upload.onprogress = e => {
+            if (e.lengthComputable) {
+              setState(s => ({
+                ...s,
+                progress: { ...s.progress, [file.name]: Math.round((e.loaded / e.total) * 100) },
+              }))
+            }
+          }
+
+          xhr.onload = () => {
+            xhrsRef.current.delete(xhr)
+            if (xhr.status >= 200 && xhr.status < 300) {
+              setState(s => ({ ...s, progress: { ...s.progress, [file.name]: 100 } }))
+              resolve()
+            } else {
+              const err = new Error(`Upload failed (${xhr.status})`) as Error & { isNetwork?: boolean }
+              err.isNetwork = false
+              reject(err)
+            }
+          }
+
+          xhr.onerror = () => {
+            xhrsRef.current.delete(xhr)
+            const err = new Error('Network error — check your connection and tap Retry') as Error & { isNetwork?: boolean }
+            err.isNetwork = true
             reject(err)
           }
+
+          xhr.ontimeout = () => {
+            xhrsRef.current.delete(xhr)
+            const err = new Error('Upload timed out — tap Retry to continue from where it stopped') as Error & { isNetwork?: boolean }
+            err.isNetwork = true
+            reject(err)
+          }
+
+          xhr.send(file)
+        })
+
+        // ── Step 3: confirm in the DB (XHR path only — BG Fetch path uses SW) ──
+        const confirmRes = await fetch(`/api/public-share/${token}/confirm`, { method: 'POST' })
+        if (!confirmRes.ok) {
+          const err = new Error('Could not confirm upload. Please retry.') as Error & { isNetwork?: boolean }
+          err.isNetwork = false
+          throw err
         }
-
-        xhr.onerror = () => {
-          xhrsRef.current.delete(xhr)
-          const err = new Error('Network error — check your connection and tap Retry') as Error & { isNetwork?: boolean }
-          err.isNetwork = true
-          reject(err)
-        }
-
-        xhr.ontimeout = () => {
-          xhrsRef.current.delete(xhr)
-          const err = new Error('Upload timed out — tap Retry to continue from where it stopped') as Error & { isNetwork?: boolean }
-          err.isNetwork = true
-          reject(err)
-        }
-
-        xhr.send(file)
-      })
-
-      // ── Step 3: confirm in the DB ──────────────────────────────────────────
-      const confirmRes = await fetch(`/api/public-share/${token}/confirm`, { method: 'POST' })
-      if (!confirmRes.ok) {
-        const err = new Error('Could not confirm upload. Please retry.') as Error & { isNetwork?: boolean }
-        err.isNetwork = false
-        throw err
       }
 
       const shareUrl = `${window.location.origin}/public-share/${token}`
       const result: UploadResult = { name: file.name, shareUrl, token, size: file.size }
       collected.push(result)
       setState(s => ({ ...s, results: [...collected], currentIdx: collected.length - 1 }))
+
+      // Post per-file progress to SW → shows in Android notification bar
+      postSw({
+        type:   'UPLOAD_PROGRESS',
+        active: collected.length,
+        total:  files.length,
+        pct:    Math.round(collected.length / files.length * 100),
+        tag:    'sharelink-upload',
+      })
     }
 
     // ── Concurrency pool: up to CONCURRENCY workers drain the queue ────────
@@ -225,6 +312,11 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
     )
 
     if (firstError) {
+      postSw({
+        type:       'UPLOAD_FAILED',
+        failedCount: files.length - collected.length,
+        tag:        'sharelink-upload',
+      })
       setState(s => ({
         ...s,
         status:        'error',
@@ -235,6 +327,8 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
     }
 
     // ── All files done ────────────────────────────────────────────────────
+    postSw({ type: 'UPLOAD_COMPLETE', total: collected.length, tag: 'sharelink-upload' })
+
     const batchUrl = collected.length > 1
       ? `${window.location.origin}/public-share/batch?tokens=${collected.map(r => r.token).join(',')}`
       : null
@@ -277,6 +371,10 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
   const reset = useCallback(() => {
     xhrsRef.current.forEach(xhr => xhr.abort())
     xhrsRef.current.clear()
+    // Abort any in-flight Background Fetch registrations
+    bgFetchRegs.current.forEach((reg: any) => reg.abort?.().catch(() => {}))
+    bgFetchRegs.current.clear()
+    bgFetchCallbacks.current.clear()
     setState(defaultState)
   }, [])
 

@@ -10,7 +10,7 @@
  */
 
 // â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const CACHE_NAME    = 'cmms-v8'
+const CACHE_NAME    = 'cmms-v9'
 const OFFLINE_URL   = '/offline'
 
 // App-shell routes to pre-cache on install
@@ -512,4 +512,70 @@ self.addEventListener('notificationclick', (event) => {
       return clients.openWindow(fullUrl)
     })
   )
+})
+
+// ── Background Fetch (ShareLink uploads via presigned R2 URL) ─────────────────
+//
+// When the Background Fetch API is available (Chrome/Android 74+), the app
+// delegates each file PUT to the OS-level network stack via
+// reg.backgroundFetch.fetch(`sl-${token}`, [request], options).
+// These events fire even when the browser tab is not visible or the screen
+// is off.  The SW then confirms the upload in the DB and messages the page.
+
+self.addEventListener('backgroundfetchsuccess', (event) => {
+  event.waitUntil((async () => {
+    const reg = event.registration
+    // id format: "sl-<token>" set by ShareUploadContext
+    if (!reg.id.startsWith('sl-')) return
+    const token = reg.id.slice(3)
+
+    try {
+      // Confirm the upload so the DB record is marked isReady = true
+      await fetch(`${self.location.origin}/api/public-share/${token}/confirm`, { method: 'POST' })
+    } catch { /* non-fatal — page will show an error and the user can retry */ }
+
+    // Dismiss the OS progress notification and show a brief success one
+    await self.registration.showNotification('Upload complete ✅', {
+      body:  'Your file is ready to share — tap to view',
+      icon:  '/icons/icon-192.svg',
+      badge: '/icons/icon-192.svg',
+      tag:   `sl-done-${token}`,
+      data:  { url: '/public-share' },
+    }).catch(() => {})
+
+    // Notify any open tabs so the UI updates instantly
+    const openClients = await clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const client of openClients) {
+      client.postMessage({ type: 'SHARELINK_BG_COMPLETE', token })
+    }
+  })())
+})
+
+self.addEventListener('backgroundfetchfail', (event) => {
+  event.waitUntil((async () => {
+    const reg   = event.registration
+    const token = reg.id.startsWith('sl-') ? reg.id.slice(3) : null
+
+    await self.registration.showNotification('Upload failed ❌', {
+      body:  'A file failed to upload — tap to retry',
+      icon:  '/icons/icon-192.svg',
+      badge: '/icons/icon-192.svg',
+      tag:   `sl-fail-${token ?? 'unknown'}`,
+      data:  { url: '/public-share' },
+    }).catch(() => {})
+
+    const openClients = await clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const client of openClients) {
+      client.postMessage({ type: 'SHARELINK_BG_FAILED', token })
+    }
+  })())
+})
+
+self.addEventListener('backgroundfetchabort', () => {
+  // User cancelled via Android notification bar — nothing to do
+})
+
+self.addEventListener('backgroundfetchclick', (event) => {
+  // User tapped the upload progress notification — bring the app to front
+  event.waitUntil(clients.openWindow('/public-share'))
 })

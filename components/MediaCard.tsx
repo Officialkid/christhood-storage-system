@@ -69,6 +69,31 @@ export function MediaCard({
     setIsMobileSheet(window.matchMedia('(pointer: coarse)').matches)
   }, [])
 
+  // ── Video duration detection ───────────────────────────────────────────────
+  // Programmatic createElement is reliable on mobile; hidden DOM elements are
+  // skipped by mobile browsers and never fire loadedmetadata.
+  useEffect(() => {
+    if (!isVideo || !media.downloadUrl) return
+    const v = document.createElement('video')
+    v.preload = 'metadata'
+    v.muted   = true
+    const onMeta = () => {
+      const d = v.duration
+      if (Number.isFinite(d) && d > 0) setVideoDuration(formatVideoDuration(d))
+      v.src = '' // release
+    }
+    const onErr = () => { v.src = '' }
+    v.addEventListener('loadedmetadata', onMeta)
+    v.addEventListener('error', onErr)
+    v.src = media.downloadUrl
+    return () => {
+      v.removeEventListener('loadedmetadata', onMeta)
+      v.removeEventListener('error', onErr)
+      v.src = ''
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVideo, media.downloadUrl])
+
   // Close menu on outside click
   useEffect(() => {
     if (!menuOpen) return
@@ -344,28 +369,13 @@ export function MediaCard({
         {/* Full-bleed thumbnail */}
         <div className="absolute inset-0">
           {media.thumbnailUrl ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={media.thumbnailUrl}
-                alt={media.originalName}
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-              {/* Hidden video to extract duration when thumbnail is available */}
-              {isVideo && media.downloadUrl && (
-                <video
-                  key={media.id}
-                  src={media.downloadUrl}
-                  preload="metadata"
-                  className="absolute invisible w-0 h-0 pointer-events-none"
-                  onLoadedMetadata={e => {
-                    const d = e.currentTarget.duration
-                    if (Number.isFinite(d) && d > 0) setVideoDuration(formatVideoDuration(d))
-                  }}
-                />
-              )}
-            </>
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={media.thumbnailUrl}
+              alt={media.originalName}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
           ) : isVideo && !videoThumbErr ? (
             <video
               ref={videoRef}
@@ -375,11 +385,8 @@ export function MediaCard({
               playsInline
               className="w-full h-full object-cover"
               onLoadedMetadata={() => {
-                if (videoRef.current) {
-                  const d = videoRef.current.duration
-                  if (Number.isFinite(d) && d > 0) setVideoDuration(formatVideoDuration(d))
-                  videoRef.current.currentTime = 0.001
-                }
+                // Seek slightly so the first frame is visible as a poster
+                if (videoRef.current) videoRef.current.currentTime = 0.001
               }}
               onError={() => setVideoThumbErr(true)}
             />

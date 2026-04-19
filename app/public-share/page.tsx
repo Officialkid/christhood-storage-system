@@ -256,7 +256,7 @@ export default function PublicSharePage() {
             </div>
           </div>
           <h1 className="text-3xl font-bold text-white mb-1">ShareLink</h1>
-          <p className="text-slate-400 text-sm">Share files securely ù no account needed</p>
+          <p className="text-slate-400 text-sm">Share files securely — no account needed</p>
         </div>
 
         <div className="bg-slate-900/70 border border-slate-700/50 rounded-2xl p-6 space-y-5 backdrop-blur-sm shadow-2xl">
