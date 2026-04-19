@@ -231,7 +231,7 @@ export default function PublicSharePage() {
             </div>
 
             <p className="text-center text-slate-600 text-xs mt-6">
-              Links expire in 7 days · Files are permanently deleted after expiry
+              Links expire in 7 days â•– Files are permanently deleted after expiry
             </p>
           </div>
         </main>
@@ -256,7 +256,7 @@ export default function PublicSharePage() {
             </div>
           </div>
           <h1 className="text-3xl font-bold text-white mb-1">ShareLink</h1>
-          <p className="text-slate-400 text-sm">Share files securely — no account needed</p>
+          <p className="text-slate-400 text-sm">Share files securely Ã¹ no account needed</p>
         </div>
 
         <div className="bg-slate-900/70 border border-slate-700/50 rounded-2xl p-6 space-y-5 backdrop-blur-sm shadow-2xl">
@@ -288,7 +288,7 @@ export default function PublicSharePage() {
               {status === 'confirming' ? (
                 <div className="text-center space-y-1">
                   <p className="text-base font-semibold text-emerald-400">Transfer complete!</p>
-                  <p className="text-xs text-slate-400">Preparing your share link…</p>
+                  <p className="text-xs text-slate-400">Preparing your share linkÃ </p>
                 </div>
               ) : (
                 <div className="text-center space-y-1">
@@ -301,7 +301,7 @@ export default function PublicSharePage() {
                     {uploadFiles[currentIdx]?.name}
                   </p>
                   <p className="text-xs text-slate-600 mt-1">
-                    You can navigate away — upload continues in the background
+                    You can navigate away Ã¹ upload continues in the background
                   </p>
                 </div>
               )}
@@ -322,7 +322,7 @@ export default function PublicSharePage() {
                   <p className="text-xs text-red-400 leading-relaxed">{errorMsg}</p>
                   {results.length > 0 && (
                     <p className="text-xs text-slate-400 mt-1">
-                      {results.length} of {uploadFiles.length} file{uploadFiles.length !== 1 ? 's' : ''} already uploaded — retry will continue from where it stopped.
+                      {results.length} of {uploadFiles.length} file{uploadFiles.length !== 1 ? 's' : ''} already uploaded Ã¹ retry will continue from where it stopped.
                     </p>
                   )}
                 </div>
@@ -334,7 +334,7 @@ export default function PublicSharePage() {
                 >
                   <RefreshCw className="w-4 h-4" />
                   {results.length > 0
-                    ? `Retry — continue from file ${results.length + 1}`
+                    ? `Retry Ã¹ continue from file ${results.length + 1}`
                     : 'Retry upload'}
                 </button>
                 <button
@@ -369,12 +369,12 @@ export default function PublicSharePage() {
                     <p className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">
                       Drop files here or <span className="text-indigo-400">browse</span>
                     </p>
-                    <p className="text-xs text-slate-600">Up to 20 files · any size</p>
+                    <p className="text-xs text-slate-600">Up to 20 files â•– any size</p>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm text-slate-300">
-                      {files.length} file{files.length !== 1 ? 's' : ''} — {formatBytes(totalSize)}
+                      {files.length} file{files.length !== 1 ? 's' : ''} Ã¹ {formatBytes(totalSize)}
                     </span>
                     <span className="flex items-center gap-1 text-xs text-indigo-400">
                       <Plus className="w-3.5 h-3.5" />Add more
@@ -406,7 +406,7 @@ export default function PublicSharePage() {
                   Title <span className="text-red-500">*</span>
                 </label>
                 <input type="text" value={title} onChange={e => setTitle(e.target.value)}
-                  placeholder="e.g. Wedding photos, Project files…" maxLength={200}
+                  placeholder="e.g. Wedding photos, Project filesÃ " maxLength={200}
                   className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/60 transition" />
               </div>
 
@@ -416,7 +416,7 @@ export default function PublicSharePage() {
                   Description <span className="text-slate-600">(optional)</span>
                 </label>
                 <textarea value={message} onChange={e => setMessage(e.target.value)}
-                  placeholder="Add a short note for the recipient…" rows={2} maxLength={1000}
+                  placeholder="Add a short note for the recipientÃ " rows={2} maxLength={1000}
                   className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/60 transition" />
               </div>
 
@@ -435,12 +435,12 @@ export default function PublicSharePage() {
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">
                   <Lock className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
-                  PIN protection <span className="text-slate-600">(optional · 4–8 digits)</span>
+                  PIN protection <span className="text-slate-600">(optional â•– 4Ã»8 digits)</span>
                 </label>
                 <div className="relative">
                   <input type={showPin ? 'text' : 'password'} value={pin}
                     onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                    placeholder="Enter a PIN…" inputMode="numeric"
+                    placeholder="Enter a PINÃ " inputMode="numeric"
                     className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-4 py-3 pr-12 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/60 transition" />
                   <button type="button" onClick={() => setShowPin(v => !v)}
                     aria-label={showPin ? 'Hide PIN' : 'Show PIN'}
@@ -468,7 +468,7 @@ export default function PublicSharePage() {
         </div>
 
         <p className="text-center text-slate-700 text-xs mt-6">
-          Files are deleted after 7 days · By uploading you agree to our{' '}
+          Files are deleted after 7 days â•– By uploading you agree to our{' '}
           <Link href="/public-share/legal#terms"
             className="text-slate-500 hover:text-slate-400 transition-colors">Terms</Link>{' '}and{' '}
           <Link href="/public-share/legal#privacy"
