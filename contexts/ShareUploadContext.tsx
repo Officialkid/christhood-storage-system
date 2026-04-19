@@ -92,149 +92,170 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
   const [state, setState]       = useState<UploadState>(defaultState)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const stateRef                = useRef(state)
-  const xhrRef                  = useRef<XMLHttpRequest | null>(null)
+  const xhrsRef                 = useRef<Set<XMLHttpRequest>>(new Set())
   const pathname                = usePathname()
 
   useEffect(() => { stateRef.current = state }, [state])
 
   // ── Core upload engine ────────────────────────────────────────────────────
 
+  const CONCURRENCY = 3
+
   const uploadFrom = useCallback(async (
-    startIdx: number,
     files: File[],
     meta: UploadMeta,
     existingResults: UploadResult[],
   ) => {
-    const collected = [...existingResults]
+    const collected: UploadResult[] = [...existingResults]
+    // Track which files already succeeded (by index) so retry skips them
+    const doneIndices = new Set(existingResults.map((_, i) => i))
 
     setState(s => ({
       ...s,
-      status: 'uploading',
-      currentIdx: startIdx,
-      errorMsg: null,
+      status:        'uploading',
+      currentIdx:    existingResults.length,
+      errorMsg:      null,
       isNetworkError: false,
     }))
 
-    try {
-      for (let i = startIdx; i < files.length; i++) {
-        const file = files[i]
-        setState(s => ({ ...s, currentIdx: i }))
+    // Files not yet completed
+    const pending = files.filter((_, i) => !doneIndices.has(i))
+    let firstError: (Error & { isNetwork?: boolean }) | null = null
 
-        // ── Step 1: get presigned PUT URL (tiny JSON request, no 413) ────────
-        const presignRes = await fetch('/api/public-share/presign', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename:       file.name,
-            mimeType:       file.type || 'application/octet-stream',
-            fileSize:       file.size,
-            title:          meta.title,
-            message:        meta.message,
-            recipientEmail: meta.recipientEmail,
-            pin:            meta.pin,
-          }),
-        })
+    // ── Upload a single file: presign → PUT → confirm ──────────────────────
+    const processOne = async (file: File): Promise<void> => {
+      // ── Step 1: presigned URL ──────────────────────────────────────────────
+      const presignRes = await fetch('/api/public-share/presign', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename:       file.name,
+          mimeType:       file.type || 'application/octet-stream',
+          fileSize:       file.size,
+          title:          meta.title,
+          message:        meta.message,
+          recipientEmail: meta.recipientEmail,
+          pin:            meta.pin,
+        }),
+      })
 
-        if (!presignRes.ok) {
-          const errData = await presignRes.json().catch(() => ({}))
-          const err = new Error(errData.error ?? `Server error (${presignRes.status})`) as Error & { isNetwork?: boolean }
-          err.isNetwork = false
-          throw err
-        }
-
-        const { token, presignedUrl } = await presignRes.json()
-
-        // ── Step 2: upload file DIRECTLY to R2 via presigned PUT URL ─────────
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest()
-          xhrRef.current = xhr
-          xhr.open('PUT', presignedUrl)
-          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
-
-          xhr.upload.onprogress = e => {
-            if (e.lengthComputable) {
-              setState(s => ({
-                ...s,
-                progress: { ...s.progress, [file.name]: Math.round((e.loaded / e.total) * 100) },
-              }))
-            }
-          }
-
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              // Ensure this file shows 100% in the ring before moving on
-              setState(s => ({
-                ...s,
-                progress: { ...s.progress, [file.name]: 100 },
-              }))
-              resolve()
-            } else {
-              const err = new Error(`Upload failed (${xhr.status})`) as Error & { isNetwork?: boolean }
-              err.isNetwork = false
-              reject(err)
-            }
-          }
-
-          xhr.onerror = () => {
-            const err = new Error('Network error — check your connection and tap Retry') as Error & { isNetwork?: boolean }
-            err.isNetwork = true
-            reject(err)
-          }
-
-          xhr.ontimeout = () => {
-            const err = new Error('Upload timed out — tap Retry to continue from where it stopped') as Error & { isNetwork?: boolean }
-            err.isNetwork = true
-            reject(err)
-          }
-
-          xhr.send(file)
-        })
-
-        // ── Step 3: confirm the upload in the DB ─────────────────────────────
-        const confirmRes = await fetch(`/api/public-share/${token}/confirm`, { method: 'POST' })
-        if (!confirmRes.ok) {
-          const err = new Error('Could not confirm upload. Please retry.') as Error & { isNetwork?: boolean }
-          err.isNetwork = false
-          throw err
-        }
-
-        const shareUrl = `${window.location.origin}/public-share/${token}`
-        collected.push({ name: file.name, shareUrl, token, size: file.size })
-        setState(s => ({ ...s, results: [...collected] }))
+      if (!presignRes.ok) {
+        const errData = await presignRes.json().catch(() => ({}))
+        const err = new Error(errData.error ?? `Server error (${presignRes.status})`) as Error & { isNetwork?: boolean }
+        err.isNetwork = false
+        throw err
       }
 
-      // ── All files done ────────────────────────────────────────────────────
-      const batchUrl = collected.length > 1
-        ? `${window.location.origin}/public-share/batch?tokens=${collected.map(r => r.token).join(',')}`
-        : null
+      const { token, presignedUrl } = await presignRes.json()
 
-      setState(s => ({ ...s, status: 'confirming', batchUrl, results: collected }))
-      setTimeout(() => setState(s => ({ ...s, status: 'done' })), 1400)
+      // ── Step 2: PUT directly to R2 via presigned URL ───────────────────────
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhrsRef.current.add(xhr)
+        xhr.open('PUT', presignedUrl)
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
 
-      // Email notification (non-fatal)
-      if (meta.recipientEmail.trim() && collected.length > 0) {
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) {
+            setState(s => ({
+              ...s,
+              progress: { ...s.progress, [file.name]: Math.round((e.loaded / e.total) * 100) },
+            }))
+          }
+        }
+
+        xhr.onload = () => {
+          xhrsRef.current.delete(xhr)
+          if (xhr.status >= 200 && xhr.status < 300) {
+            setState(s => ({ ...s, progress: { ...s.progress, [file.name]: 100 } }))
+            resolve()
+          } else {
+            const err = new Error(`Upload failed (${xhr.status})`) as Error & { isNetwork?: boolean }
+            err.isNetwork = false
+            reject(err)
+          }
+        }
+
+        xhr.onerror = () => {
+          xhrsRef.current.delete(xhr)
+          const err = new Error('Network error — check your connection and tap Retry') as Error & { isNetwork?: boolean }
+          err.isNetwork = true
+          reject(err)
+        }
+
+        xhr.ontimeout = () => {
+          xhrsRef.current.delete(xhr)
+          const err = new Error('Upload timed out — tap Retry to continue from where it stopped') as Error & { isNetwork?: boolean }
+          err.isNetwork = true
+          reject(err)
+        }
+
+        xhr.send(file)
+      })
+
+      // ── Step 3: confirm in the DB ──────────────────────────────────────────
+      const confirmRes = await fetch(`/api/public-share/${token}/confirm`, { method: 'POST' })
+      if (!confirmRes.ok) {
+        const err = new Error('Could not confirm upload. Please retry.') as Error & { isNetwork?: boolean }
+        err.isNetwork = false
+        throw err
+      }
+
+      const shareUrl = `${window.location.origin}/public-share/${token}`
+      const result: UploadResult = { name: file.name, shareUrl, token, size: file.size }
+      collected.push(result)
+      setState(s => ({ ...s, results: [...collected], currentIdx: collected.length - 1 }))
+    }
+
+    // ── Concurrency pool: up to CONCURRENCY workers drain the queue ────────
+    const queue = [...pending]
+    const runWorker = async () => {
+      while (queue.length > 0 && !firstError) {
+        const file = queue.shift()!
         try {
-          await fetch('/api/public-share/notify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              recipientEmail: meta.recipientEmail.trim(),
-              tokens:         collected.map(r => r.token),
-              senderTitle:    meta.title,
-            }),
-          })
-          setState(s => ({ ...s, emailSent: true }))
-        } catch { /* non-fatal */ }
+          await processOne(file)
+        } catch (err) {
+          if (!firstError) firstError = err as Error & { isNetwork?: boolean }
+        }
       }
-    } catch (rawErr) {
-      const err        = rawErr as Error & { isNetwork?: boolean }
-      const isNetErr   = err.isNetwork === true
+    }
+
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, pending.length || 1) }, runWorker)
+    )
+
+    if (firstError) {
       setState(s => ({
         ...s,
-        status: 'error',
-        errorMsg: err.message ?? 'Upload failed. Please try again.',
-        isNetworkError: isNetErr,
+        status:        'error',
+        errorMsg:      firstError!.message ?? 'Upload failed. Please try again.',
+        isNetworkError: firstError!.isNetwork === true,
       }))
+      return
+    }
+
+    // ── All files done ────────────────────────────────────────────────────
+    const batchUrl = collected.length > 1
+      ? `${window.location.origin}/public-share/batch?tokens=${collected.map(r => r.token).join(',')}`
+      : null
+
+    setState(s => ({ ...s, status: 'confirming', batchUrl, results: collected }))
+    setTimeout(() => setState(s => ({ ...s, status: 'done' })), 1400)
+
+    // Email notification (non-fatal)
+    if (meta.recipientEmail.trim() && collected.length > 0) {
+      try {
+        await fetch('/api/public-share/notify', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipientEmail: meta.recipientEmail.trim(),
+            tokens:         collected.map(r => r.token),
+            senderTitle:    meta.title,
+          }),
+        })
+        setState(s => ({ ...s, emailSent: true }))
+      } catch { /* non-fatal */ }
     }
   }, [])
 
@@ -242,19 +263,20 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
 
   const startUpload = useCallback((files: File[], meta: UploadMeta) => {
     setState({ ...defaultState, files, meta })
-    uploadFrom(0, files, meta, [])
+    uploadFrom(files, meta, [])
   }, [uploadFrom])
 
   const retry = useCallback(() => {
     const s = stateRef.current
     if (s.status !== 'error') return
-    const startIdx = s.results.length  // resume from first failed file
+    // Resume: already-completed files are passed as existingResults; uncompleted ones will be retried
     setState(prev => ({ ...prev, status: 'uploading', errorMsg: null, isNetworkError: false }))
-    uploadFrom(startIdx, s.files, s.meta, s.results)
+    uploadFrom(s.files, s.meta, s.results)
   }, [uploadFrom])
 
   const reset = useCallback(() => {
-    xhrRef.current?.abort()
+    xhrsRef.current.forEach(xhr => xhr.abort())
+    xhrsRef.current.clear()
     setState(defaultState)
   }, [])
 
@@ -328,7 +350,7 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
                 <div className="flex-1 min-w-0">
                   {state.files.length > 1 && (
                     <p className="text-xs text-indigo-400 font-medium">
-                      File {state.currentIdx + 1} of {state.files.length}
+                      {state.results.length} of {state.files.length} done
                     </p>
                   )}
                   <p className="text-xs text-slate-400 truncate">{state.files[state.currentIdx]?.name}</p>
