@@ -64,15 +64,7 @@ export async function GET(req: NextRequest) {
         event:    { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
-      const videoUrl = file.fileType === 'VIDEO'
-        ? await getPresignedDownloadUrl(file.r2Key, 3600).catch(() => null)
-        : null
-      return {
-        ...rest,
-        thumbnailUrl: thumbUrl,
-        videoUrl,
-        fileSize: file.fileSize.toString(),
-      }
+      take: 12,
     }),
 
     // Activity feed — uploaders see only their own; editors/admins see all,
@@ -146,7 +138,10 @@ export async function GET(req: NextRequest) {
         }
       } catch { /* swallow */ }
       const { r2Key: _r, ...rest } = file   // strip r2Key from client payload
-      return { ...rest, thumbnailUrl: thumbUrl, fileSize: file.fileSize.toString() }
+      const videoUrl = file.fileType === 'VIDEO'
+        ? await getPresignedDownloadUrl(file.r2Key, 3600).catch(() => null)
+        : null
+      return { ...rest, thumbnailUrl: thumbUrl, videoUrl, fileSize: file.fileSize.toString() }
     }),
   )
 
