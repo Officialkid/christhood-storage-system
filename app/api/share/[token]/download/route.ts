@@ -128,6 +128,14 @@ export async function GET(
   // ── ZIP download ───────────────────────────────────────────────────────────
   const pass    = new PassThrough()
   const archive = archiver('zip', { store: false, zlib: { level: 6 } })
+  archive.on('error', (err) => {
+    logger.warn('SHARE_ZIP_ARCHIVE_ERROR', {
+      route: '/api/share/[token]/download',
+      error: (err as Error)?.message,
+      message: 'Archiver emitted an error during ZIP generation',
+    })
+    pass.destroy(err as Error)
+  })
   archive.pipe(pass)
 
   ;(async () => {
@@ -150,8 +158,16 @@ export async function GET(
         logger.warn('SHARE_ZIP_ERROR', { route: '/api/share/[token]/download', error: (err as Error)?.message, metadata: { fileName: file.name }, message: 'Error adding file to ZIP' })
       }
     }
-    archive.finalize()
-  })()
+    await archive.finalize()
+  })().catch((err) => {
+    logger.warn('SHARE_ZIP_PIPELINE_ERROR', {
+      route: '/api/share/[token]/download',
+      error: (err as Error)?.message,
+      message: 'ZIP pipeline failed before completion',
+    })
+    archive.abort()
+    pass.destroy(err as Error)
+  })
 
   const webStream = new ReadableStream<Uint8Array>({
     start(controller) {

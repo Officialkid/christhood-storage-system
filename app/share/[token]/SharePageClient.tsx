@@ -158,8 +158,14 @@ export default function SharePage({ token }: { token: string }) {
       const name = cd.match(/filename="([^"]+)"/)?.[1] ?? `shared_files.zip`
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
-      a.href = url; a.download = name; a.click()
-      URL.revokeObjectURL(url)
+      a.href = url
+      a.download = name
+      a.rel = 'noopener noreferrer'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      // Revoke after the browser has had time to start/finish the download.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
     } catch {
       alert('Download failed — please check your connection.')
     } finally {
