@@ -18,6 +18,10 @@ on:
     branches: [main]
   workflow_dispatch:          # Allow manual triggers from the GitHub Actions UI
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 # ── Shared variables ──────────────────────────────────────────────────────────
 env:
   REGION:     us-central1
@@ -29,6 +33,7 @@ jobs:
   build-and-deploy:
     name: Build & Deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     # id-token: write is required for Workload Identity Federation.
     permissions:
@@ -61,14 +66,15 @@ jobs:
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
       # ── 5. Build Docker image ───────────────────────────────────────────────
-      # Tagged with the immutable commit SHA and the mutable "latest" pointer.
-      # --build-arg passes NEXT_TELEMETRY_DISABLED at build time so next build
-      # never phones home even if the ENV instruction is cached differently.
+      # Force plain progress output so long builds still emit logs regularly.
+      # Tagged with immutable commit SHA and mutable "latest" pointer.
       - name: Build Docker image
         env:
+          DOCKER_BUILDKIT: 1
           IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}
         run: |
           docker build \
+            --progress=plain \
             --build-arg NEXT_TELEMETRY_DISABLED=1 \
             --tag "$IMAGE:${{ github.sha }}" \
             --tag "$IMAGE:latest" \
@@ -160,6 +166,6 @@ jobs:
             TOTP_ENCRYPTION_KEY=TOTP_ENCRYPTION_KEY:latest
             GALLERY_BASE_URL=GALLERY_BASE_URL:latest
 
-      # ── 8. Print deployed URL ───────────────────────────────────────────────
+      # ── 9. Print deployed URL ───────────────────────────────────────────────
       - name: Print live URL
         run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
