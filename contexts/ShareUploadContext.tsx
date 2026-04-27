@@ -152,10 +152,29 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
 
     // Files not yet completed
     const pending = files.filter(f => !doneNames.has(f.name))
+    // Initialize missing progress entries so overall progress is never computed
+    // from a sparse object (which can leave the UI stuck at 0%).
+    if (pending.length > 0) {
+      setState(s => ({
+        ...s,
+        progress: {
+          ...s.progress,
+          ...Object.fromEntries(pending.map(f => [f.name, s.progress[f.name] ?? 0])),
+        },
+      }))
+    }
     let firstError: (Error & { isNetwork?: boolean }) | null = null
 
     // ── Upload a single file: presign → (BgFetch | XHR) → confirm ──────────────
     const processOne = async (file: File): Promise<void> => {
+      // Mark file as started so single-file uploads don't visually sit at 0%
+      // while waiting on first transport progress event.
+      setState(s => ({
+        ...s,
+        currentIdx: Math.max(0, s.files.findIndex(f => f.name === file.name && f.size === file.size)),
+        progress: { ...s.progress, [file.name]: Math.max(1, s.progress[file.name] ?? 0) },
+      }))
+
       // ── Step 1: presigned URL ──────────────────────────────────────────────
       const presignRes = await fetch('/api/public-share/presign', {
         method:  'POST',
@@ -212,6 +231,8 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
             if (r.uploadTotal > 0) {
               const pct = Math.round(r.uploaded / r.uploadTotal * 100)
               setState(s => ({ ...s, progress: { ...s.progress, [file.name]: pct } }))
+            } else {
+              setState(s => ({ ...s, progress: { ...s.progress, [file.name]: Math.max(1, s.progress[file.name] ?? 0) } }))
             }
           })
 
@@ -234,10 +255,15 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
           xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
 
           xhr.upload.onprogress = e => {
-            if (e.lengthComputable) {
+            if (e.lengthComputable && e.total > 0) {
               setState(s => ({
                 ...s,
                 progress: { ...s.progress, [file.name]: Math.round((e.loaded / e.total) * 100) },
+              }))
+            } else {
+              setState(s => ({
+                ...s,
+                progress: { ...s.progress, [file.name]: Math.max(1, s.progress[file.name] ?? 0) },
               }))
             }
           }
@@ -383,7 +409,7 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
 
   const overallProgress = state.files.length === 0 ? 0
     : Math.round(
-        Object.values(state.progress).reduce((acc, v) => acc + v, 0) / state.files.length
+        state.files.reduce((acc, f) => acc + (state.progress[f.name] ?? 0), 0) / state.files.length
       )
 
   async function copyLink(url: string, idx: number) {
