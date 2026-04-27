@@ -18,6 +18,8 @@ import { authOptions }               from '@/lib/auth'
 import { verifyTotp, decryptSecret, matchBackupCode } from '@/lib/totp'
 import { prisma } from '@/lib/prisma'
 import crypto     from 'crypto'
+import { verifyEmailOtp } from '@/lib/emailOtp'
+import { log } from '@/lib/activityLog'
 
 const COOKIE_NAME = '2fa_verified'
 const COOKIE_TTL  = 60 * 60 * 12  // 12 hours in seconds
@@ -56,8 +58,37 @@ export async function POST(req: NextRequest) {
     select: { twoFactorSecret: true, twoFactorBackupCodes: true, twoFactorEnabled: true },
   })
 
-  if (!user?.twoFactorEnabled || !user.twoFactorSecret) {
+  if (!user?.twoFactorEnabled) {
     return NextResponse.json({ error: '2FA is not set up for this account.' }, { status: 400 })
+  }
+
+  // Primary method: email OTP challenge code.
+  const emailOtp = await verifyEmailOtp(session.user.id, 'challenge', code)
+  if (emailOtp.ok) {
+    await log('TWO_FACTOR_OTP_VERIFY_SUCCESS', session.user.id, {
+      metadata: { purpose: 'challenge', method: 'email' },
+    })
+    const cookieSecret = process.env.NEXTAUTH_SECRET!
+    const value = signPayload(session.user.id, cookieSecret)
+    const isProd = process.env.NODE_ENV === 'production'
+    const res = NextResponse.json({ ok: true })
+    res.cookies.set(COOKIE_NAME, value, {
+      httpOnly: true,
+      secure:   isProd,
+      sameSite: 'lax',
+      maxAge:   COOKIE_TTL,
+      path:     '/',
+    })
+    return res
+  }
+
+  await log('TWO_FACTOR_OTP_VERIFY_FAILED', session.user.id, {
+    metadata: { purpose: 'challenge', method: 'email', reason: emailOtp.error ?? 'INVALID_CODE' },
+  })
+
+  // Backward compatibility: TOTP / backup codes for already-configured users.
+  if (!user.twoFactorSecret) {
+    return NextResponse.json({ error: 'Invalid code. Request a new verification code from email.' }, { status: 422 })
   }
 
   const plainSecret = decryptSecret(user.twoFactorSecret)

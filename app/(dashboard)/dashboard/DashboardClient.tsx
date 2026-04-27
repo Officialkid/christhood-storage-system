@@ -8,7 +8,7 @@ import {
   UploadCloud, Film, ImageIcon, Users, FileText, HardDrive, Clock,
   TrendingUp, CheckCircle2, Circle, Loader2, RefreshCw, ArrowRight,
   CalendarDays, Zap, AlertTriangle, Star, BarChart3, MessageSquare,
-  Folder, ChevronRight, CheckCheck,
+  Folder, ChevronRight, CheckCheck, X, Download,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
@@ -18,13 +18,28 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
 type Role = 'ADMIN' | 'EDITOR' | 'UPLOADER'
 
-interface AdminStats { totalFiles: number; weekUploads: number; pendingEdit: number; activeToday: number; monthChangePct: number | null }
+interface ActiveUser {
+  id: string
+  name: string | null
+  username: string | null
+  email: string
+  lastSeenAt: string | null
+}
+
+interface AdminStats {
+  totalFiles: number
+  weekUploads: number
+  pendingEdit: number
+  activeToday: number
+  monthChangePct: number | null
+  activeUsers?: ActiveUser[]
+}
 interface EditorStats { filesToEdit: number; editedThisMonth: number; transfersWaiting: number }
 interface UploaderStats { myTotal: number; myWeek: number; myEvents: number }
 
 interface RecentFile {
   id: string; originalName: string; fileType: 'PHOTO' | 'VIDEO'
-  fileSize: string; status: string; createdAt: string; thumbnailUrl: string | null
+  fileSize: string; status: string; createdAt: string; thumbnailUrl: string | null; videoUrl: string | null
   uploader: { name: string | null; username: string | null } | null
   event:    { id: string; name: string } | null
 }
@@ -121,15 +136,17 @@ function formatActivity(item: ActivityItem): { icon: string; text: string } {
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({
-  icon, label, value, sub, href, accentClass = 'text-indigo-400',
+  icon, label, value, sub, href, onClick, accentClass = 'text-indigo-400',
 }: {
   icon:         React.ReactNode
   label:        string
   value:        string | number
   sub?:         string
   href?:        string
+  onClick?:     () => void
   accentClass?: string
 }) {
+  const clickable = !!href || !!onClick
   const inner = (
     <div className="bg-slate-900 border border-slate-800/60 rounded-2xl p-5 flex items-start gap-4
                     hover:border-slate-700/80 transition-colors group">
@@ -144,6 +161,13 @@ function StatCard({
     </div>
   )
   if (href) return <Link href={href} className="block">{inner}</Link>
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className="block w-full text-left">
+        {inner}
+      </button>
+    )
+  }
   return inner
 }
 
@@ -386,6 +410,47 @@ function UploadThumbnail({ file }: { file: RecentFile }) {
   )
 }
 
+function fmtDuration(totalSec: number): string {
+  const sec = Math.max(0, Math.floor(totalSec))
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = sec % 60
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function VideoDurationBadge({ file }: { file: RecentFile }) {
+  const [duration, setDuration] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (file.fileType !== 'VIDEO' || !file.videoUrl) return
+    let mounted = true
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.src = file.videoUrl
+    video.onloadedmetadata = () => {
+      if (!mounted) return
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        setDuration(video.duration)
+      }
+    }
+    video.onerror = () => {
+      if (mounted) setDuration(null)
+    }
+    return () => {
+      mounted = false
+      video.src = ''
+    }
+  }, [file.fileType, file.videoUrl])
+
+  if (file.fileType !== 'VIDEO') return null
+  return (
+    <span className="absolute bottom-2 left-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-black/70 text-white">
+      {duration ? fmtDuration(duration) : 'VIDEO'}
+    </span>
+  )
+}
+
 function RecentUploadsGrid({ files }: { files: RecentFile[] }) {
   const STATUS_COLORS: Record<string, string> = {
     RAW:                  'bg-slate-600 text-slate-200',
@@ -432,6 +497,7 @@ function RecentUploadsGrid({ files }: { files: RecentFile[] }) {
                                   ${STATUS_COLORS[file.status] ?? 'bg-slate-700 text-slate-300'}`}>
                   {file.status.replace(/_/g, ' ')}
                 </span>
+                <VideoDurationBadge file={file} />
               </div>
               {/* Caption */}
               <div className="p-2.5">
@@ -591,7 +657,15 @@ function ZaraCard() {
 // Stats sections (role-specific)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function AdminStatsSection({ stats, isLoading }: { stats: AdminStats; isLoading: boolean }) {
+function AdminStatsSection({
+  stats,
+  isLoading,
+  onOpenActiveUsers,
+}: {
+  stats: AdminStats
+  isLoading: boolean
+  onOpenActiveUsers: () => void
+}) {
   const v = (n: number) => isLoading ? '—' : n
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -607,7 +681,64 @@ function AdminStatsSection({ stats, isLoading }: { stats: AdminStats; isLoading:
         href="/media?status=RAW" accentClass="text-amber-400" />
       <StatCard icon={<Users className="w-5 h-5" />} label="Active Today"
         value={v(stats.activeToday)} sub="unique users"
-        href="/admin/users" accentClass="text-green-400" />
+        onClick={onOpenActiveUsers} accentClass="text-green-400" />
+    </div>
+  )
+}
+
+function ActiveUsersModal({ users, onClose }: { users: ActiveUser[]; onClose: () => void }) {
+  const downloadCsv = () => {
+    const header = 'Name,Username,Email,Last Seen\n'
+    const rows = users
+      .map(u => {
+        const name = (u.name ?? '').replace(/"/g, '""')
+        const username = (u.username ?? '').replace(/"/g, '""')
+        const email = (u.email ?? '').replace(/"/g, '""')
+        const lastSeen = u.lastSeenAt ? new Date(u.lastSeenAt).toISOString() : ''
+        return `"${name}","${username}","${email}","${lastSeen}"`
+      })
+      .join('\n')
+    const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `unique-viewers-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-2xl bg-slate-900 border border-slate-700/60 overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+          <h3 className="text-sm font-semibold text-white">Unique Viewers Today ({users.length})</h3>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="max-h-[55vh] overflow-y-auto divide-y divide-slate-800">
+          {users.length === 0 ? (
+            <p className="px-5 py-6 text-sm text-slate-500">No active viewers yet today.</p>
+          ) : users.map(u => (
+            <div key={u.id} className="px-5 py-3 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm text-white truncate">{u.name ?? u.username ?? 'Unknown User'}</p>
+                <p className="text-xs text-slate-400 truncate">{u.email}</p>
+              </div>
+              <span className="text-xs text-slate-500 shrink-0">{u.lastSeenAt ? timeAgo(u.lastSeenAt) : 'today'}</span>
+            </div>
+          ))}
+        </div>
+        <div className="px-5 py-4 border-t border-slate-800 flex justify-end">
+          <button type="button" onClick={downloadCsv}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors">
+            <Download className="w-3.5 h-3.5" />
+            Download list (CSV)
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -659,6 +790,7 @@ export default function DashboardClient({ initialData }: { initialData: Dashboar
   // False until the first successful client-side fetch completes.
   // Prevents the SSR-fallback zeros from flashing as real data.
   const [hasRealData,   setHasRealData]   = useState(false)
+  const [showActiveUsers, setShowActiveUsers] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const refresh = useCallback(async (silent = true) => {
@@ -762,9 +894,20 @@ export default function DashboardClient({ initialData }: { initialData: Dashboar
       )}
 
       {/* ── Section 2: Stats cards ──────────────────────────────────────────── */}
-      {isAdmin  && <AdminStatsSection    stats={stats as AdminStats}    isLoading={!hasRealData} />}
+      {isAdmin  && <AdminStatsSection
+        stats={stats as AdminStats}
+        isLoading={!hasRealData}
+        onOpenActiveUsers={() => setShowActiveUsers(true)}
+      />}
       {isEditor && <EditorStatsSection   stats={stats as EditorStats}   isLoading={!hasRealData} />}
       {!isAdmin && !isEditor && <UploaderStatsSection stats={stats as UploaderStats} isLoading={!hasRealData} />}
+
+      {isAdmin && showActiveUsers && (
+        <ActiveUsersModal
+          users={(stats as AdminStats).activeUsers ?? []}
+          onClose={() => setShowActiveUsers(false)}
+        />
+      )}
 
       {/* ── Sections 3 + 5: Activity feed + Upcoming events ─────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

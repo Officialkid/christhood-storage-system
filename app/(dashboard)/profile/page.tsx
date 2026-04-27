@@ -13,387 +13,240 @@ function EditableField({
   label, value, placeholder, maxLength, onSave,
 }: {
   label: string; value: string; placeholder?: string
-  maxLength: number; onSave: (val: string) => Promise<void>
-}) {
-  const [editing, setEditing] = useState(false)
-  const [draft,   setDraft]   = useState(value)
-  const [saving,  setSaving]  = useState(false)
-  const [saved,   setSaved]   = useState(false)
-  const [error,   setError]   = useState('')
+  // ─── Two-Factor Authentication ────────────────────────────────────────────────
+  type TfaState = 'idle' | 'enable' | 'disable'
 
-  function startEdit() { setDraft(value); setError(''); setEditing(true) }
-  function cancel()    { setEditing(false); setError('') }
+  function TwoFactorSection() {
+    const [enabled, setEnabled] = useState<boolean | null>(null)
+    const [phase, setPhase] = useState<TfaState>('idle')
+    const [code, setCode] = useState('')
+    const [password, setPassword] = useState('')
+    const [showPassword, setShowPassword] = useState(false)
+    const [loading, setLoading] = useState(false)
+    const [sendingCode, setSendingCode] = useState(false)
+    const [error, setError] = useState('')
+    const [sentMsg, setSentMsg] = useState('')
 
-  async function save() {
-    if (draft.trim() === value) { setEditing(false); return }
-    setSaving(true); setError('')
-    try {
-      await onSave(draft.trim())
-      setSaved(true); setEditing(false)
-      setTimeout(() => setSaved(false), 2000)
-    } catch (e: any) {
-      setError(e.message ?? 'Failed to save')
-    } finally {
-      setSaving(false)
+    useEffect(() => {
+      fetch('/api/user/2fa-status')
+        .then(r => r.json())
+        .then(d => setEnabled(!!d.twoFactorEnabled))
+        .catch(() => setEnabled(false))
+    }, [])
+
+    function reset() {
+      setPhase('idle')
+      setCode('')
+      setPassword('')
+      setError('')
+      setSentMsg('')
     }
-  }
 
-  return (
-    <div className="flex items-center justify-between py-3 border-b border-slate-800/60 gap-3 min-w-0">
-      <dt className="text-sm text-slate-500 shrink-0 w-20">{label}</dt>
-      {editing ? (
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <input
-            autoFocus
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            maxLength={maxLength}
-            placeholder={placeholder}
-            onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel() }}
-            className="flex-1 min-w-0 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5
-                       text-sm text-white placeholder-slate-500 focus:outline-none
-                       focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 transition"
-          />
-          <button onClick={save} disabled={saving}
-            className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 transition disabled:opacity-50">
-            {saving ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" /> : <Check className="w-3.5 h-3.5 text-white" />}
-          </button>
-          <button onClick={cancel}
-            className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 transition">
-            <X className="w-3.5 h-3.5 text-slate-300" />
-          </button>
-          {error && <p className="text-xs text-red-400 shrink-0">{error}</p>}
-        </div>
-      ) : (
-        <dd className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-          <span className={`text-sm font-medium truncate ${saved ? 'text-green-400' : 'text-white'}`}>
-            {value || <span className="text-slate-500 italic font-normal">Not set</span>}
-          </span>
-          {saved && <CheckCircle className="w-3.5 h-3.5 text-green-400 shrink-0" />}
-          <button onClick={startEdit}
-            className="p-1 rounded-md text-slate-500 hover:text-indigo-400 hover:bg-slate-800 transition shrink-0">
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-        </dd>
-      )}
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Username field — editable with debounced availability check
-// ─────────────────────────────────────────────────────────────────────────────
-const USERNAME_RE = /^[a-zA-Z0-9_-]+$/
-
-function UsernameField({
-  currentUsername,
-  onSaved,
-}: {
-  currentUsername: string
-  onSaved: (username: string) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [draft,   setDraft]   = useState(currentUsername)
-  type Status = 'idle' | 'checking' | 'available' | 'taken' | 'invalid' | 'saving'
-  const [status,    setStatus]    = useState<Status>('idle')
-  const [statusMsg, setStatusMsg] = useState('')
-  const [error,     setError]     = useState('')
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  function startEdit() {
-    setDraft(currentUsername)
-    setStatus('idle'); setStatusMsg(''); setError('')
-    setEditing(true)
-  }
-  function cancel() { setEditing(false); setStatus('idle'); setError('') }
-
-  useEffect(() => {
-    if (!editing) return
-    const val = draft.trim()
-    if (val === currentUsername) { setStatus('idle'); setStatusMsg(''); return }
-    if (!val) { setStatus('idle'); return }
-    if (val.length < 3)         { setStatus('invalid'); setStatusMsg('Too short (min 3 characters)'); return }
-    if (val.length > 20)        { setStatus('invalid'); setStatusMsg('Too long (max 20 characters)'); return }
-    if (!USERNAME_RE.test(val)) { setStatus('invalid'); setStatusMsg('Letters, numbers, _ and – only'); return }
-
-    setStatus('checking')
-    if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(async () => {
+    async function sendCode(purpose: 'enable' | 'disable') {
+      setSendingCode(true)
+      setError('')
+      setSentMsg('')
       try {
-        const res  = await fetch(`/api/user/username?q=${encodeURIComponent(val)}`)
+        const res = await fetch('/api/auth/2fa/email/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ purpose }),
+        })
         const data = await res.json()
-        if (data.available) { setStatus('available'); setStatusMsg('Username available') }
-        else                { setStatus('taken');     setStatusMsg(data.reason ?? 'Username taken') }
-      } catch { setStatus('idle') }
-    }, 500)
+        if (!res.ok) throw new Error(data.error ?? 'Failed to send verification code.')
+        setSentMsg('Verification code sent to your Gmail inbox.')
+        setPhase(purpose)
+      } catch (e: any) {
+        setError(e.message ?? 'Could not send verification code.')
+      } finally {
+        setSendingCode(false)
+      }
+    }
 
-    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
-  }, [draft, editing, currentUsername])
+    async function enableEmailOtp() {
+      setLoading(true)
+      setError('')
+      try {
+        const res = await fetch('/api/auth/2fa/email/enable', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? 'Failed to enable 2FA.')
+        setEnabled(true)
+        reset()
+      } catch (e: any) {
+        setError(e.message ?? 'Could not enable 2FA.')
+      } finally {
+        setLoading(false)
+      }
+    }
 
-  async function save() {
-    if (status !== 'available') return
-    setStatus('saving'); setError('')
-    try {
-      const res  = await fetch('/api/user/username', {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ newUsername: draft.trim() }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Save failed')
-      onSaved(data.username)
-      setEditing(false); setStatus('idle')
-    } catch (e: any) { setError(e.message); setStatus('available') }
-  }
+    async function disableEmailOtp() {
+      setLoading(true)
+      setError('')
+      try {
+        const res = await fetch('/api/auth/2fa/email/disable', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password, code }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? 'Failed to disable 2FA.')
+        setEnabled(false)
+        reset()
+      } catch (e: any) {
+        setError(e.message ?? 'Could not disable 2FA.')
+      } finally {
+        setLoading(false)
+      }
+    }
 
-  return (
-    <div className="flex items-start justify-between py-3 border-b border-slate-800/60 gap-3 min-w-0">
-      <dt className="text-sm text-slate-500 shrink-0 w-20 pt-1.5">Username</dt>
-      {editing ? (
-        <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <input
-              autoFocus
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              maxLength={20}
-              placeholder="3–20 chars · letters, numbers, _ –"
-              onKeyDown={e => {
-                if (e.key === 'Enter'  && status === 'available') save()
-                if (e.key === 'Escape') cancel()
-              }}
-              className="flex-1 min-w-0 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5
-                         text-sm text-white placeholder-slate-500 focus:outline-none
-                         focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 transition"
-            />
-            <button onClick={save} disabled={status !== 'available'}
-              className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 transition disabled:opacity-40 disabled:cursor-not-allowed">
-              {status === 'saving'
-                ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
-                : <Check   className="w-3.5 h-3.5 text-white" />}
-            </button>
-            <button onClick={cancel} className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 transition">
-              <X className="w-3.5 h-3.5 text-slate-300" />
+    return (
+      <div className="bg-slate-900 border border-slate-800/60 rounded-2xl p-6 space-y-5">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-slate-400" />
+          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
+            Two-Factor Authentication
+          </h2>
+          {enabled === true && (
+            <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-green-300 bg-green-600/15 border border-green-500/30 rounded-full px-2.5 py-0.5">
+              <CheckCircle2 className="w-3 h-3" /> Enabled
+            </span>
+          )}
+          {enabled === false && (
+            <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-slate-400 bg-slate-800/60 border border-slate-700/40 rounded-full px-2.5 py-0.5">
+              Off
+            </span>
+          )}
+        </div>
+
+        {error && (
+          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+            {error}
+          </div>
+        )}
+        {sentMsg && (
+          <div className="text-sm text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-3">
+            {sentMsg}
+          </div>
+        )}
+
+        {phase === 'idle' && enabled === false && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400">
+              Secure your account with email OTP. At sign-in, we will send a one-time code to your Gmail inbox for verification.
+            </p>
+            <button
+              onClick={() => sendCode('enable')}
+              disabled={sendingCode}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium transition"
+            >
+              {sendingCode ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+              Enable email OTP verification
             </button>
           </div>
-          {(status === 'checking' || status === 'available' || status === 'taken' || status === 'invalid') && (
-            <div className={`flex items-center gap-1.5 text-xs ${
-              status === 'available' ? 'text-emerald-400' : status === 'checking' ? 'text-slate-400' : 'text-red-400'
-            }`}>
-              {status === 'checking'  && <Loader2      className="w-3 h-3 animate-spin" />}
-              {status === 'available' && <CheckCircle2 className="w-3 h-3" />}
-              {(status === 'taken' || status === 'invalid') && <XCircle className="w-3 h-3" />}
-              {statusMsg}
-            </div>
-          )}
-          {error && <p className="text-xs text-red-400">{error}</p>}
-        </div>
-      ) : (
-        <dd className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-          <span className="text-sm font-medium text-white truncate font-mono">
-            {currentUsername || <span className="text-slate-500 italic font-normal font-sans">Not set</span>}
-          </span>
-          <button onClick={startEdit}
-            className="p-1 rounded-md text-slate-500 hover:text-indigo-400 hover:bg-slate-800 transition shrink-0">
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-        </dd>
-      )}
-    </div>
-  )
-}
-
-// ─── Two-Factor Authentication ────────────────────────────────────────────────
-type TfaState = 'idle' | 'setup' | 'backup' | 'disable'
-
-function TwoFactorSection() {
-  /* local 2FA enabled state, fetched from the server on mount */
-  const [enabled,   setEnabled]   = useState<boolean | null>(null)
-  const [phase,     setPhase]     = useState<TfaState>('idle')
-
-  /* setup wizard */
-  const [qrUrl,     setQrUrl]     = useState('')
-  const [secret,    setSecret]    = useState('')
-  const [token,     setToken]     = useState('')
-  const [backups,   setBackups]   = useState<string[]>([])
-  const [copied,    setCopied]    = useState(false)
-
-  /* disable form */
-  const [disablePw,  setDisablePw]  = useState('')
-  const [disableCode, setDisableCode] = useState('')
-  const [showDisPw,  setShowDisPw]  = useState(false)
-
-  /* backup regenerate */
-  const [regenToken, setRegenToken] = useState('')
-  const [newBackups, setNewBackups] = useState<string[]>([])
-
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState('')
-
-  /* fetch current 2FA status */
-  useEffect(() => {
-    fetch('/api/user/2fa-status')
-      .then(r => r.json())
-      .then(d => setEnabled(!!d.twoFactorEnabled))
-      .catch(() => setEnabled(false))
-  }, [])
-
-  function reset() {
-    setPhase('idle'); setError(''); setToken(''); setQrUrl(''); setSecret('')
-    setBackups([]); setDisablePw(''); setDisableCode(''); setRegenToken(''); setNewBackups([])
-  }
-
-  async function startSetup() {
-    setLoading(true); setError('')
-    try {
-      const res  = await fetch('/api/auth/2fa/setup', { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Setup failed')
-      setSecret(data.secret); setQrUrl(data.qrCodeUrl); setPhase('setup')
-    } catch (e: any) { setError(e.message) }
-    finally { setLoading(false) }
-  }
-
-  async function enableTotp() {
-    setLoading(true); setError('')
-    try {
-      const res  = await fetch('/api/auth/2fa/enable', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ secret, token }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Enable failed')
-      setBackups(data.backupCodes); setEnabled(true); setPhase('backup')
-    } catch (e: any) { setError(e.message) }
-    finally { setLoading(false) }
-  }
-
-  async function disable2fa() {
-    setLoading(true); setError('')
-    try {
-      const res  = await fetch('/api/auth/2fa/disable', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ password: disablePw, code: disableCode }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Disable failed')
-      setEnabled(false); reset()
-    } catch (e: any) { setError(e.message) }
-    finally { setLoading(false) }
-  }
-
-  async function regenerateBackup() {
-    setLoading(true); setError('')
-    try {
-      const res  = await fetch('/api/auth/2fa/backup-codes/regenerate', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ token: regenToken }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Regenerate failed')
-      setNewBackups(data.backupCodes)
-    } catch (e: any) { setError(e.message) }
-    finally { setLoading(false) }
-  }
-
-  function copySecret() {
-    navigator.clipboard.writeText(secret)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  /* ── Render ──────────────────────────────────────────────────────────── */
-  return (
-    <div className="bg-slate-900 border border-slate-800/60 rounded-2xl p-6 space-y-5">
-      <div className="flex items-center gap-2">
-        <ShieldCheck className="w-4 h-4 text-slate-400" />
-        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-          Two-Factor Authentication
-        </h2>
-        {enabled === true && (
-          <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium
-                           text-green-300 bg-green-600/15 border border-green-500/30
-                           rounded-full px-2.5 py-0.5">
-            <CheckCircle2 className="w-3 h-3" /> Enabled
-          </span>
         )}
-        {enabled === false && (
-          <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium
-                           text-slate-400 bg-slate-800/60 border border-slate-700/40
-                           rounded-full px-2.5 py-0.5">
-            Off
-          </span>
+
+        {phase === 'enable' && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-300">Enter the 6-digit code sent to your Gmail to enable two-factor authentication.</p>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={code}
+              onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="000000"
+              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition"
+            />
+            <div className="flex items-center gap-3">
+              <button
+                onClick={enableEmailOtp}
+                disabled={loading || code.length !== 6}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium transition"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                Verify &amp; enable
+              </button>
+              <button onClick={() => sendCode('enable')} disabled={sendingCode}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition disabled:opacity-50">
+                Resend code
+              </button>
+              <button onClick={reset}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {phase === 'idle' && enabled === true && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400">Email OTP verification is active. You will receive a code in Gmail whenever you sign in.</p>
+            <button
+              onClick={() => sendCode('disable')}
+              disabled={sendingCode}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-500/30 text-sm text-red-300 transition disabled:opacity-50"
+            >
+              {sendingCode ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldOff className="w-4 h-4" />}
+              Disable email OTP
+            </button>
+          </div>
+        )}
+
+        {phase === 'disable' && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-300">To disable email OTP, confirm your password and enter the code sent to your Gmail.</p>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Current password"
+                className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl px-4 pr-11 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={code}
+              onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="000000"
+              className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition"
+            />
+            <div className="flex items-center gap-3">
+              <button
+                onClick={disableEmailOtp}
+                disabled={loading || !password || code.length !== 6}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-700/90 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium transition"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldOff className="w-4 h-4" />}
+                Disable 2FA
+              </button>
+              <button onClick={() => sendCode('disable')} disabled={sendingCode}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition disabled:opacity-50">
+                Resend code
+              </button>
+              <button onClick={reset}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm transition">
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
       </div>
-
-      {error && (
-        <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30
-                        rounded-lg px-4 py-3">
-          {error}
-        </div>
-      )}
-
-      {/* ── Idle: show enable / disable / regen options ─────────────────── */}
-      {phase === 'idle' && enabled === false && (
-        <div>
-          <p className="text-sm text-slate-400 mb-4">
-            Add an extra layer of security. You will need your authenticator app
-            (Google Authenticator, Authy, etc.) each time you sign in.
-          </p>
-          <button
-            onClick={startSetup}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500
-                       disabled:opacity-50 text-white text-sm font-medium transition"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
-            Set up two-factor authentication
-          </button>
-        </div>
-      )}
-
-      {phase === 'idle' && enabled === true && (
-        <div className="space-y-4">
-          <p className="text-sm text-slate-400">
-            Your account is protected with TOTP-based two-factor authentication.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => { setPhase('backup'); setError('') }}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700
-                         border border-slate-700/60 text-sm text-white transition"
-            >
-              <KeyRound className="w-4 h-4 text-indigo-400" />
-              Regenerate backup codes
-            </button>
-            <button
-              onClick={() => { setPhase('disable'); setError('') }}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/50
-                         border border-red-500/30 text-sm text-red-300 transition"
-            >
-              <ShieldOff className="w-4 h-4" />
-              Disable 2FA
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Setup wizard ────────────────────────────────────────────────── */}
-      {phase === 'setup' && (
-        <div className="space-y-5">
-          <p className="text-sm text-slate-300">
-            Scan this QR code with your authenticator app, then enter the 6-digit code below.
-          </p>
-          {qrUrl && (
-            <div className="flex justify-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={qrUrl} alt="QR code" className="rounded-xl w-40 h-40 border border-slate-700" />
-            </div>
-          )}
-          <div>
+    )
+  }
             <p className="text-xs text-slate-400 mb-1">
               Can't scan? Enter this code manually in your authenticator app:
             </p>

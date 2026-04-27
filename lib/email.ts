@@ -6,7 +6,11 @@ import { Resend } from 'resend'
 // NOTE: Resend client is intentionally NOT constructed at module level.
 // Constructing it top-level causes Next.js to throw "Missing API key" during
 // the build phase (Collecting page data) when env vars are not yet available.
-const FROM    = process.env.FROM_EMAIL   ?? 'noreply@christhood.org'
+const FROM_ADDRESS = process.env.FROM_EMAIL ?? 'noreply@cmmschristhood.org'
+const FROM_NAME    = process.env.FROM_NAME  ?? 'CMMS Platform'
+const FROM         = FROM_ADDRESS.includes('<')
+  ? FROM_ADDRESS
+  : `${FROM_NAME} <${FROM_ADDRESS}>`
 const APP_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3001'
 const APP     = 'Christhood CMMS'
 
@@ -792,5 +796,33 @@ export async function sendUserApprovedEmail(opts: {
     to:      opts.toEmail,
     subject: `[${APP}] Your account has been approved`,
     html:    layout('Your Christhood CMMS account is now active.', body),
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2FA Email OTP — sent when user requests a sign-in verification code
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sendTwoFactorOtpEmail(opts: {
+  toEmail: string
+  code: string
+  minutes?: number
+}): Promise<void> {
+  const ttl = opts.minutes ?? 10
+  const body = `
+    <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#6366f1;text-transform:uppercase;letter-spacing:0.6px;">Security Verification</p>
+    <h1 style="margin:0 0 18px;font-size:26px;font-weight:700;color:#0f172a;line-height:1.2;">Your one-time verification code</h1>
+    <p style="margin:0 0 12px;font-size:15px;color:#334155;line-height:1.6;">
+      Use this code to complete your sign-in to <strong>${APP}</strong>:
+    </p>
+    <div style="margin:14px 0 18px;padding:16px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;text-align:center;">
+      <span style="font-size:30px;letter-spacing:6px;font-weight:700;color:#1e1b4b;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(opts.code)}</span>
+    </div>
+    ${infoBox(`This code expires in <strong>${ttl} minute${ttl !== 1 ? 's' : ''}</strong>. Do not share it with anyone.`)}
+  `
+
+  await sendEmail({
+    to:      opts.toEmail,
+    subject: `[${APP}] Your verification code: ${opts.code}`,
+    html:    layout(`Your Christhood verification code is ${opts.code}.`, body),
   })
 }

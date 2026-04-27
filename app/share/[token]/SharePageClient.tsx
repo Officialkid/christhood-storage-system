@@ -137,7 +137,12 @@ export default function SharePage({ token }: { token: string }) {
       if (!res.ok) { alert('Download failed. Please try again.'); return }
       const { url, filename } = await res.json() as { url: string; filename: string }
       const a = document.createElement('a')
-      a.href = url; a.download = filename; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click()
+      a.href = url
+      a.download = filename
+      a.rel = 'noopener noreferrer'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
       setDownloadDone(prev => new Set([...prev, file.id]))
     } catch {
       alert('Download failed — please check your connection.')
@@ -148,24 +153,35 @@ export default function SharePage({ token }: { token: string }) {
 
   async function downloadAll() {
     if (downloading) return
+    if (!data?.files?.length) return
     setDownloading('all')
+    const failed: string[] = []
     try {
-      const pinParam = verifiedPin ? `?pin=${encodeURIComponent(verifiedPin)}` : ''
-      const res = await fetch(`/api/share/${token}/download${pinParam}`)
-      if (!res.ok) { alert('Download failed. Please try again.'); return }
-      const blob = await res.blob()
-      const cd   = res.headers.get('Content-Disposition') ?? ''
-      const name = cd.match(/filename="([^"]+)"/)?.[1] ?? `shared_files.zip`
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href = url
-      a.download = name
-      a.rel = 'noopener noreferrer'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      // Revoke after the browser has had time to start/finish the download.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      const pinParam = verifiedPin ? `&pin=${encodeURIComponent(verifiedPin)}` : ''
+      for (const file of data.files) {
+        try {
+          const res = await fetch(`/api/share/${token}/download?fileId=${file.id}${pinParam}`)
+          if (!res.ok) {
+            failed.push(file.name)
+            continue
+          }
+          const { url, filename } = await res.json() as { url: string; filename: string }
+          const a = document.createElement('a')
+          a.href = url
+          a.download = filename
+          a.rel = 'noopener noreferrer'
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          setDownloadDone(prev => new Set([...prev, file.id]))
+          await new Promise(resolve => setTimeout(resolve, 150))
+        } catch {
+          failed.push(file.name)
+        }
+      }
+      if (failed.length) {
+        alert(`Some files could not be downloaded: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '...' : ''}`)
+      }
     } catch {
       alert('Download failed — please check your connection.')
     } finally {
@@ -328,7 +344,7 @@ export default function SharePage({ token }: { token: string }) {
               {downloading === 'all'
                 ? <Loader2 className="w-4 h-4 animate-spin" />
                 : <Archive className="w-4 h-4" />}
-              Download All (.zip)
+              Download All Files
             </button>
           </div>
         </div>

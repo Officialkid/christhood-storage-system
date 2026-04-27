@@ -835,7 +835,8 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
   const [pinVerified,    setPinVerified]    = useState(!transfer.isPinProtected)
   const [currentStatus,  setCurrentStatus]  = useState<TransferStatus>(transfer.status)
   const [existingResp,   setExistingResp]   = useState<TransferResponseData | null>(transfer.response)
-  const [downloadingZip, setDownloadingZip] = useState(false)
+  const [downloadingAll, setDownloadingAll] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState<{ done: number; total: number } | null>(null)
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null)
   const [verifying,      setVerifying]      = useState(false)
   const [verifyDone,     setVerifyDone]     = useState(false)
@@ -851,29 +852,60 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
 
   // ── Download handlers ──────────────────────────────────────────────────────
 
-  const handleDownloadZip = useCallback(() => {
-    if (downloadingZip) return
-    setDownloadingZip(true)
-
-    // Use a direct browser download instead of fetch+blob to avoid mobile memory/
-    // user-activation issues for large transfer archives.
+  const triggerBrowserDownload = useCallback((url: string, filename: string) => {
     const a = document.createElement('a')
-    a.href = `/api/transfers/${transfer.id}/download`
+    a.href = url
+    a.download = filename
     a.rel = 'noopener noreferrer'
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
+  }, [])
 
-    setTimeout(() => setDownloadingZip(false), 1200)
-  }, [downloadingZip, transfer.id])
+  const handleDownloadAll = useCallback(async () => {
+    if (downloadingAll || downloadingFile) return
+    setDownloadingAll(true)
+    setDownloadProgress({ done: 0, total: transfer.files.length })
+
+    const failed: string[] = []
+    for (let i = 0; i < transfer.files.length; i++) {
+      const file = transfer.files[i]
+      try {
+        const res = await fetch(`/api/transfers/${transfer.id}/files/${file.id}`)
+        if (!res.ok) {
+          failed.push(file.originalName)
+          setDownloadProgress({ done: i + 1, total: transfer.files.length })
+          continue
+        }
+        const { url, filename } = await res.json() as { url: string; filename: string }
+        triggerBrowserDownload(url, filename)
+      } catch {
+        failed.push(file.originalName)
+      }
+
+      setDownloadProgress({ done: i + 1, total: transfer.files.length })
+      await new Promise(resolve => setTimeout(resolve, 140))
+    }
+
+    if (currentStatus === 'PENDING') setCurrentStatus('DOWNLOADED')
+    if (failed.length > 0) {
+      alert(`Some files could not be downloaded: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '...' : ''}`)
+    }
+
+    setTimeout(() => {
+      setDownloadingAll(false)
+      setDownloadProgress(null)
+    }, 350)
+  }, [currentStatus, downloadingAll, downloadingFile, transfer.files, transfer.id, triggerBrowserDownload])
 
   const handleDownloadFile = useCallback(async (file: TransferFileItem) => {
-    if (downloadingFile) return
+    if (downloadingFile || downloadingAll) return
     setDownloadingFile(file.id)
     try {
       const res = await fetch(`/api/transfers/${transfer.id}/files/${file.id}`)
       if (!res.ok) { alert('Could not get download link.'); return }
-      const { url, filename } = await res.json()
-      const a = document.createElement('a')
-      a.href = url; a.download = filename; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click()
+      const { url, filename } = await res.json() as { url: string; filename: string }
+      triggerBrowserDownload(url, filename)
       // Individual file download also unlocks response
       if (currentStatus === 'PENDING') setCurrentStatus('DOWNLOADED')
     } catch {
@@ -881,7 +913,7 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
     } finally {
       setDownloadingFile(null)
     }
-  }, [downloadingFile, transfer.id, currentStatus])
+  }, [downloadingAll, downloadingFile, transfer.id, currentStatus, triggerBrowserDownload])
 
   const handleResponseSubmitted = useCallback((response: TransferResponseData) => {
     setExistingResp(response)
@@ -961,15 +993,15 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
           <h2 className="text-sm font-semibold text-white">Original Files</h2>
           <button
-            onClick={handleDownloadZip}
-            disabled={downloadingZip || currentStatus === 'EXPIRED'}
+            onClick={handleDownloadAll}
+            disabled={downloadingAll || !!downloadingFile || currentStatus === 'EXPIRED'}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500
                        disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors"
           >
-            {downloadingZip ? (
+            {downloadingAll ? (
               <>
                 <span className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-white rounded-full animate-spin" />
-                Preparing…
+                Downloading…
               </>
             ) : (
               <>
@@ -979,6 +1011,12 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
             )}
           </button>
         </div>
+
+        {downloadProgress && (
+          <div className="px-5 pt-3 text-xs text-slate-400">
+            Downloading {downloadProgress.done}/{downloadProgress.total} files…
+          </div>
+        )}
 
         <div className="px-5 py-4">
           <FolderTreeView

@@ -64,7 +64,15 @@ export async function GET(req: NextRequest) {
         event:    { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 12,
+      const videoUrl = file.fileType === 'VIDEO'
+        ? await getPresignedDownloadUrl(file.r2Key, 3600).catch(() => null)
+        : null
+      return {
+        ...rest,
+        thumbnailUrl: thumbUrl,
+        videoUrl,
+        fileSize: file.fileSize.toString(),
+      }
     }),
 
     // Activity feed — uploaders see only their own; editors/admins see all,
@@ -192,7 +200,8 @@ async function fetchStats(
         prisma.mediaFile.count({ where: { status: 'RAW' } }),
         prisma.activityLog.groupBy({
           by:    ['userId'],
-          where: { createdAt: { gte: todayStart } },
+          where: { createdAt: { gte: todayStart }, userId: { not: null } },
+          _max:  { createdAt: true },
         }),
         prisma.mediaFile.count({ where: { createdAt: { gte: monthStart }, status: { notIn: ['DELETED', 'PURGED'] } } }),
         prisma.mediaFile.count({
@@ -206,6 +215,37 @@ async function fetchStats(
         }),
       ])
 
+    const activeUserIds = activeGroups
+      .map(g => g.userId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+
+    const activeUsersRaw = activeUserIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: activeUserIds } },
+          select: { id: true, name: true, username: true, email: true },
+        })
+      : []
+
+    const lastSeenMap = new Map(
+      activeGroups
+        .filter(g => !!g.userId)
+        .map(g => [g.userId as string, g._max.createdAt?.toISOString() ?? null]),
+    )
+
+    const activeUsers = activeUsersRaw
+      .map(u => ({
+        id: u.id,
+        name: u.name,
+        username: u.username,
+        email: u.email,
+        lastSeenAt: lastSeenMap.get(u.id) ?? null,
+      }))
+      .sort((a, b) => {
+        const aT = a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0
+        const bT = b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0
+        return bT - aT
+      })
+
     const monthChangePct = lastMonthUploads > 0
       ? Math.round(((thisMonthUploads - lastMonthUploads) / lastMonthUploads) * 100)
       : null
@@ -217,6 +257,7 @@ async function fetchStats(
       weekUploads,
       pendingEdit,
       activeToday:    activeGroups.length,
+      activeUsers,
       monthChangePct,
     }
   }

@@ -1,9 +1,8 @@
 import { getServerSession } from 'next-auth'
 import { redirect }         from 'next/navigation'
 import { authOptions }      from '@/lib/auth'
-import { prisma }           from '@/lib/prisma'
-import { getGalleryPublicUrl } from '@/lib/gallery/gallery-r2'
-import { GalleryListClient }   from './GalleryListClient'
+import Link                 from 'next/link'
+import { Sparkles, ImageIcon, ArrowRight } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,51 +10,34 @@ export default async function GalleriesPage() {
   const session = await getServerSession(authOptions)
   if (!session?.user) redirect('/login')
 
-  const { role, id: userId } = session.user
-
-  // Build role-based where clause
-  const where =
-    role === 'ADMIN'
-      ? {}
-      : role === 'EDITOR'
-      ? { OR: [{ createdById: userId }, { status: 'PUBLISHED' as const }] }
-      : { status: 'PUBLISHED' as const }
-
-  const galleries = await prisma.publicGallery.findMany({
-    where,
-    orderBy: [{ createdAt: 'desc' }],
-    include: {
-      createdBy:   { select: { id: true, name: true, username: true } },
-      publishedBy: { select: { id: true, name: true } },
-      _count:      { select: { files: true, views: true } },
-    },
-  })
-
-  // Serialise — no BigInt, no Date objects, add cover URL
-  const serialised = galleries.map(g => ({
-    id:           g.id,
-    slug:         g.slug,
-    title:        g.title,
-    description:  g.description,
-    categoryName: g.categoryName,
-    year:         g.year,
-    status:       g.status as string,
-    coverUrl:     g.coverImageKey ? getGalleryPublicUrl(g.coverImageKey) : null,
-    totalPhotos:  g.totalPhotos,
-    viewCount:    g.viewCount,
-    createdAt:    g.createdAt.toISOString(),
-    publishedAt:  g.publishedAt?.toISOString() ?? null,
-    createdById:  g.createdById,
-    createdBy:    g.createdBy,
-    publishedBy:  g.publishedBy,
-    fileCount:    g._count.files,
-  }))
-
   return (
-    <GalleryListClient
-      galleries={serialised}
-      userRole={role}
-      userId={userId}
-    />
+    <div className="min-h-[65vh] flex items-center justify-center">
+      <div className="w-full max-w-2xl rounded-3xl border border-slate-700/50 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/20 p-8 sm:p-10 shadow-2xl shadow-black/30">
+        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-300 mb-4">
+          <Sparkles className="w-3.5 h-3.5" />
+          Product Update
+        </div>
+        <div className="flex items-start gap-3 mb-3">
+          <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+            <ImageIcon className="w-5 h-5 text-indigo-300" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-white">Galleries are currently unavailable</h1>
+            <p className="text-slate-300 mt-2 leading-relaxed">
+              We are polishing the gallery experience for better reliability and a smoother preview workflow.
+              It will be back soon.
+            </p>
+          </div>
+        </div>
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2.5 text-sm font-medium text-white transition-colors">
+            Back to dashboard <ArrowRight className="w-4 h-4" />
+          </Link>
+          <Link href="/transfers" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-600 hover:border-slate-500 px-4 py-2.5 text-sm text-slate-200 transition-colors">
+            Use Transfers instead
+          </Link>
+        </div>
+      </div>
+    </div>
   )
 }
