@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
-  MessagesSquare, X, Bot, Share2, Tags, GalleryHorizontal, RefreshCcw,
+  MessagesSquare, X, Bot, Share2, Tags, GalleryHorizontal, RefreshCcw, Minus, Plus,
 } from 'lucide-react'
 import { useSidebar }       from './DashboardShell'
 import { useUnreadCount }   from '@/hooks/useUnreadCount'
@@ -47,6 +47,7 @@ export function Sidebar() {
   const { mobileOpen, closeMobile } = useSidebar()
 
   const [collapsed, setCollapsed] = useState(false)
+  const [sizeMode,  setSizeMode]  = useState<'normal' | 'wide'>('normal')
   const [mounted,   setMounted]   = useState(false)
 
   const { total: commsCount, urgent: commsUrgent } = useUnreadCount({
@@ -56,7 +57,9 @@ export function Sidebar() {
 
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed')
+    const savedSize = localStorage.getItem('sidebar-size')
     if (saved === 'true') setCollapsed(true)
+    if (savedSize === 'wide') setSizeMode('wide')
     setMounted(true)
   }, [])
 
@@ -65,6 +68,27 @@ export function Sidebar() {
       localStorage.setItem('sidebar-collapsed', String(!c))
       return !c
     })
+  }
+
+  const reduceNavigation = () => {
+    if (collapsed) return
+    if (sizeMode === 'wide') {
+      setSizeMode('normal')
+      localStorage.setItem('sidebar-size', 'normal')
+      return
+    }
+    setCollapsed(true)
+    localStorage.setItem('sidebar-collapsed', 'true')
+  }
+
+  const increaseNavigation = () => {
+    if (collapsed) {
+      setCollapsed(false)
+      localStorage.setItem('sidebar-collapsed', 'false')
+      return
+    }
+    setSizeMode('wide')
+    localStorage.setItem('sidebar-size', 'wide')
   }
 
   // Avoid layout shift on first render — match server default (expanded).
@@ -84,7 +108,7 @@ export function Sidebar() {
         ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
         /* ── Desktop (md+): inline sidebar, no translate ── */
         md:relative md:inset-auto md:z-auto md:translate-x-0 md:shadow-none
-        ${isCollapsed ? 'md:w-16' : 'md:w-64'}
+        ${isCollapsed ? 'md:w-16' : sizeMode === 'wide' ? 'md:w-72' : 'md:w-64'}
       `}
     >
       {/* ── Mobile close button — pops outside the sidebar edge ── */}
@@ -205,6 +229,32 @@ export function Sidebar() {
 
       {/* User footer */}
       <div className={`border-t border-slate-800/70 ${isCollapsed ? 'px-1.5 py-3' : 'px-4 py-4'}`}>
+        <div className={`mb-2 ${isCollapsed ? 'flex justify-center' : 'flex items-center justify-between px-1'} `}>
+          {!isCollapsed && <span className="text-[11px] uppercase tracking-wide text-slate-500">Navigation size</span>}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={reduceNavigation}
+              disabled={collapsed}
+              title="Reduce navigation"
+              aria-label="Reduce navigation"
+              className="w-7 h-7 rounded-lg border border-slate-700 bg-slate-900/80 text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={increaseNavigation}
+              disabled={!collapsed && sizeMode === 'wide'}
+              title="Increase navigation"
+              aria-label="Increase navigation"
+              className="w-7 h-7 rounded-lg border border-slate-700 bg-slate-900/80 text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
         {data?.user && (
           <Link
             href="/profile"

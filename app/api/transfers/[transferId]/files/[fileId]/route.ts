@@ -3,12 +3,14 @@ import { getServerSession }           from 'next-auth'
 import { authOptions }                from '@/lib/auth'
 import { prisma }                     from '@/lib/prisma'
 import { getPresignedDownloadUrl }    from '@/lib/r2'
+import { log }                        from '@/lib/activityLog'
+import { logger }                     from '@/lib/logger'
 
 /**
  * GET /api/transfers/[transferId]/files/[fileId]
  *
  * Returns a short-lived presigned R2 download URL for a single file.
- * Only the assigned recipient or an ADMIN may access.
+ * Recipient, sender, or ADMIN may access.
  */
 export async function GET(
   _req: NextRequest,
@@ -24,15 +26,20 @@ export async function GET(
   // Verify transfer ownership / admin access
   const transfer = await prisma.transfer.findUnique({
     where:  { id: transferId },
-    select: { recipientId: true },
+    select: { recipientId: true, senderId: true, status: true, subject: true },
   })
   if (!transfer) {
     return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
   }
 
-  if (transfer.recipientId !== session.user.id) {
+  const canAccess =
+    transfer.recipientId === session.user.id ||
+    transfer.senderId === session.user.id ||
+    session.user.role === 'ADMIN'
+
+  if (!canAccess) {
     return NextResponse.json(
-      { error: 'This transfer is private. Only the recipient may access its files.' },
+      { error: 'This transfer is private. Only the sender/recipient may access its files.' },
       { status: 403 },
     )
   }
@@ -43,6 +50,27 @@ export async function GET(
   })
   if (!file) {
     return NextResponse.json({ error: 'File not found' }, { status: 404 })
+  }
+
+  // If recipient is downloading for the first time via single-file access,
+  // transition status and write a single TRANSFER_DOWNLOADED activity event.
+  const isRecipient = transfer.recipientId === session.user.id
+  if (isRecipient && transfer.status === 'PENDING') {
+    const updated = await prisma.transfer.updateMany({
+      where: { id: transferId, status: 'PENDING' },
+      data:  { status: 'DOWNLOADED' },
+    })
+
+    if (updated.count > 0) {
+      log('TRANSFER_DOWNLOADED', session.user.id, {
+        metadata: {
+          transferId,
+          subject:     transfer.subject,
+          senderId:    transfer.senderId,
+          recipientId: transfer.recipientId,
+        },
+      }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/[transferId]/files/[fileId]', transferId, error: (e as Error)?.message, message: 'Activity log failed' }))
+    }
   }
 
   const url = await getPresignedDownloadUrl(file.r2Key, 3600)

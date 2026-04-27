@@ -89,6 +89,7 @@ function formatBytes(bytes: number): string {
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function ShareUploadProvider({ children }: { children: React.ReactNode }) {
+  const MAX_BATCH_URL_TOKENS = 100
   const [state, setState]       = useState<UploadState>(defaultState)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const stateRef                = useRef(state)
@@ -329,7 +330,7 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
     // ── All files done ────────────────────────────────────────────────────
     postSw({ type: 'UPLOAD_COMPLETE', total: collected.length, tag: 'sharelink-upload' })
 
-    const batchUrl = collected.length > 1
+    const batchUrl = collected.length > 1 && collected.length <= MAX_BATCH_URL_TOKENS
       ? `${window.location.origin}/public-share/batch?tokens=${collected.map(r => r.token).join(',')}`
       : null
 
@@ -452,7 +453,7 @@ export function ShareUploadProvider({ children }: { children: React.ReactNode })
                     </p>
                   )}
                   <p className="text-xs text-slate-400 truncate">{state.files[state.currentIdx]?.name}</p>
-                  <p className="text-xs text-slate-600 mt-0.5">Running in background…</p>
+                  <p className="text-xs text-slate-600 mt-0.5">Upload continues while this tab is open (Android notification support depends on browser).</p>
                 </div>
               </div>
             )}

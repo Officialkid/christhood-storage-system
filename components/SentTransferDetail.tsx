@@ -300,29 +300,17 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
   const roleLabel = transfer.recipient.role.charAt(0) + transfer.recipient.role.slice(1).toLowerCase()
 
   // ── Download original files ZIP ──────────────────────────────────────────
-  const handleDownloadOriginals = useCallback(async () => {
-    if (downloadingOrigZip) return
-    setDownloadingOrigZip(true)
-    try {
-      const res = await fetch(`/api/transfers/${transfer.id}/download`)
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        alert(d.error ?? 'Download failed. Please try again.')
-        return
-      }
-      const blob = await res.blob()
-      const cd   = res.headers.get('Content-Disposition') ?? ''
-      const name = cd.match(/filename="([^"]+)"/)?.[1] ?? `${transfer.subject}.zip`
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href = url; a.download = name; a.click()
-      URL.revokeObjectURL(url)
-    } catch {
-      alert('Download failed. Please try again.')
-    } finally {
-      setDownloadingOrigZip(false)
-    }
-  }, [transfer.id, transfer.subject, downloadingOrigZip])
+    const handleDownloadOriginals = useCallback(() => {
+      if (downloadingOrigZip) return
+      setDownloadingOrigZip(true)
+
+      const a = document.createElement('a')
+      a.href = `/api/transfers/${transfer.id}/download`
+      a.rel = 'noopener noreferrer'
+      a.click()
+
+      setTimeout(() => setDownloadingOrigZip(false), 1200)
+    }, [transfer.id, downloadingOrigZip])
 
   // ── Download individual original file ────────────────────────────────────
   const handleDownloadOrigFile = useCallback(async (fileId: string, filename: string) => {
@@ -342,33 +330,17 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
   }, [transfer.id, downloadingOrigFile])
 
   // ── Download response files ZIP ──────────────────────────────────────────
-  const handleDownloadResponseZip = useCallback(async () => {
-    if (downloadingRespZip) return
-    setDownloadingRespZip(true)
-    try {
-      const res = await fetch(`/api/transfers/${transfer.id}/response/download`)
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        alert(d.error ?? 'Download failed. Please try again.')
-        return
-      }
-      const blob = await res.blob()
-      const cd   = res.headers.get('Content-Disposition') ?? ''
-      const name = cd.match(/filename="([^"]+)"/)?.[1] ?? `${transfer.subject}_response.zip`
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href = url; a.download = name; a.click()
-      URL.revokeObjectURL(url)
-      // Mark downloadedByAdmin locally
-      if (existingResponse && !existingResponse.downloadedByAdmin) {
-        setExistingResponse(r => r ? { ...r, downloadedByAdmin: true } : r)
-      }
-    } catch {
-      alert('Download failed. Please try again.')
-    } finally {
-      setDownloadingRespZip(false)
-    }
-  }, [transfer.id, transfer.subject, downloadingRespZip, existingResponse])
+    const handleDownloadResponseZip = useCallback(() => {
+      if (downloadingRespZip) return
+      setDownloadingRespZip(true)
+
+      const a = document.createElement('a')
+      a.href = `/api/transfers/${transfer.id}/response/download`
+      a.rel = 'noopener noreferrer'
+      a.click()
+
+      setTimeout(() => setDownloadingRespZip(false), 1200)
+    }, [transfer.id, downloadingRespZip])
 
   // ── Download individual response file ────────────────────────────────────
   const handleDownloadRespFile = useCallback(async (fileId: string, filename: string) => {

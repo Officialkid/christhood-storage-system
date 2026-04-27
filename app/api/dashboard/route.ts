@@ -3,6 +3,7 @@ import { getToken }                  from 'next-auth/jwt'
 import { prisma }                    from '@/lib/prisma'
 import { getPresignedDownloadUrl }   from '@/lib/r2'
 import { thumbnailKey }              from '@/lib/thumbnail'
+import { filterTransferActivityForViewer } from '@/lib/transferActivityPrivacy'
 import { logger }                    from '@/lib/logger'
 
 export const dynamic = 'force-dynamic'
@@ -66,7 +67,8 @@ export async function GET(req: NextRequest) {
       take: 12,
     }),
 
-    // Activity feed — uploaders see only their own; editors/admins see all
+    // Activity feed — uploaders see only their own; editors/admins see all,
+    // then private transfer actions are filtered to sender/recipient only.
     prisma.activityLog.findMany({
       where: role === 'UPLOADER' ? { userId } : {},
       select: {
@@ -79,7 +81,7 @@ export async function GET(req: NextRequest) {
         event:     { select: { name: true } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 25,
+      take: 100,
     }),
 
     // Upcoming events (admin + editor only)
@@ -140,16 +142,19 @@ export async function GET(req: NextRequest) {
     }),
   )
 
+  const activityFiltered = await filterTransferActivityForViewer(activityRaw, userId)
+  const activity = activityFiltered.slice(0, 25)
+
   // ── Storage summary ────────────────────────────────────────────────────────
   const storage = isAdmin ? buildStorageSummary(storageGroupsRaw) : null
 
-  logger.info('DASHBOARD_STATS', { userId, userRole: role, route: '/api/dashboard', message: 'Dashboard queries completed', metadata: { recentUploadsCount: recentUploads.length, activityCount: activityRaw.length, upcomingEventsCount: upcomingEventsRaw.length, stats: statsRaw as Record<string, unknown> } })
+  logger.info('DASHBOARD_STATS', { userId, userRole: role, route: '/api/dashboard', message: 'Dashboard queries completed', metadata: { recentUploadsCount: recentUploads.length, activityCount: activity.length, upcomingEventsCount: upcomingEventsRaw.length, stats: statsRaw as Record<string, unknown> } })
 
   return NextResponse.json({
     role,
     stats:          statsRaw,
     recentUploads,
-    activity:       activityRaw,
+    activity,
     upcomingEvents: upcomingEventsRaw,
     storage,
     onboarding:     onboardingRaw,

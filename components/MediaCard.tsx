@@ -54,6 +54,7 @@ export function MediaCard({
   const [archiveBusy,   setArchiveBusy]   = useState(false)
   const [showDeleteDlg, setShowDeleteDlg] = useState(false)
   const [showShareDlg,  setShowShareDlg]  = useState(false)
+  const [thumbLoadErr,  setThumbLoadErr]  = useState(false)
   const [videoThumbErr, setVideoThumbErr] = useState(false)
   const [videoDuration, setVideoDuration] = useState<string | null>(null)
   const [menuPos,       setMenuPos]       = useState<{ right: number; bottom: number } | null>(null)
@@ -70,6 +71,11 @@ export function MediaCard({
   }, [])
 
   const isVideo = media.fileType === 'VIDEO'
+
+  useEffect(() => {
+    setThumbLoadErr(false)
+    setVideoThumbErr(false)
+  }, [media.id, media.thumbnailUrl])
 
   // ── Video duration detection ───────────────────────────────────────────────
   // Programmatic createElement is reliable on mobile; hidden DOM elements are
@@ -368,13 +374,14 @@ export function MediaCard({
       >
         {/* Full-bleed thumbnail */}
         <div className="absolute inset-0">
-          {media.thumbnailUrl ? (
+          {media.thumbnailUrl && !thumbLoadErr ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={media.thumbnailUrl}
               alt={media.originalName}
               className="w-full h-full object-cover"
               loading="lazy"
+              onError={() => setThumbLoadErr(true)}
             />
           ) : isVideo && !videoThumbErr ? (
             <video

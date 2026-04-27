@@ -42,6 +42,7 @@ export default function ShareLinkDialog({
   const [maxDownloads, setMaxDownloads] = useState('')
   const [generating,    setGenerating]    = useState(false)
   const [error,         setError]         = useState<string | null>(null)
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null)
   const [result,        setResult]        = useState<{ url: string; pin?: string; expiresAt: string } | null>(null)
   const [copied,        setCopied]        = useState(false)
   const [supportsShare, setSupportsShare] = useState(false)
@@ -85,21 +86,34 @@ export default function ShareLinkDialog({
     if (!result) return
     await navigator.clipboard.writeText(result.url)
     setCopied(true)
+    setShareFeedback('Link copied to clipboard.')
     setTimeout(() => setCopied(false), 2000)
   }
 
   async function handleShare() {
     if (!result) return
+    setShareFeedback(null)
     const shareData = {
       title: defaultTitle,
       text:  `Here is a shared link from the Christhood CMMS: ${defaultTitle}`,
       url:   result.url,
     }
     try {
-      await navigator.share(shareData)
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
+      if (!navigator.share) {
         await copyUrl()
+        return
+      }
+      await navigator.share(shareData)
+      setShareFeedback('Shared successfully.')
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        setShareFeedback('Share was cancelled.')
+        return
+      }
+      try {
+        await copyUrl()
+      } catch {
+        setShareFeedback('Sharing failed. Please copy the link manually.')
       }
     }
   }
@@ -134,6 +148,10 @@ export default function ShareLinkDialog({
               {copied ? 'Copied!' : 'Copy link'}
             </button>
           </div>
+
+          {shareFeedback && (
+            <p className="text-xs text-slate-400 text-center">{shareFeedback}</p>
+          )}
 
           {result.pin && (
             <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3">

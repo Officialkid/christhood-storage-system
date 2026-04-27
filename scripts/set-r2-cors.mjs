@@ -37,19 +37,17 @@ const corsConfig = {
   CORSConfiguration: {
     CORSRules: [
       {
-        // Allow direct browser uploads from the production domain
-        AllowedOrigins: ['https://cmmschristhood.org'],
-        AllowedMethods: ['PUT', 'GET', 'HEAD'],
+        // Allow direct browser uploads from all production domains + dev
+        AllowedOrigins: [
+          'https://cmmschristhood.org',
+          'https://sharelink.cmmschristhood.org',
+          'https://gallery.cmmschristhood.org',
+          'http://localhost:3000',
+          'http://localhost:3001',
+        ],
+        AllowedMethods: ['PUT', 'GET', 'HEAD', 'DELETE'],
         AllowedHeaders: ['*'],
-        ExposeHeaders:  ['ETag'],   // Required for multipart-upload ETag tracking
-        MaxAgeSeconds:  3600,
-      },
-      {
-        // Allow localhost for development
-        AllowedOrigins: ['http://localhost:3000', 'http://localhost:3001'],
-        AllowedMethods: ['PUT', 'GET', 'HEAD'],
-        AllowedHeaders: ['*'],
-        ExposeHeaders:  ['ETag'],
+        ExposeHeaders:  ['ETag', 'Content-Length'],
         MaxAgeSeconds:  3600,
       },
     ],

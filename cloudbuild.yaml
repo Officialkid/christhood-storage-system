@@ -100,4 +100,3 @@ images:
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: 'E2_HIGHCPU_8'   # Faster builds (8 vCPU) — billed per build-minute
-  dynamic_substitutions: true

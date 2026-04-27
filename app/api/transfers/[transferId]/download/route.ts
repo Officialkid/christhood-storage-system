@@ -20,7 +20,8 @@ const STORE_EXTENSIONS = new Set([
  * GET /api/transfers/[transferId]/download
  *
  * Streams a ZIP archive of all TransferFiles to the browser.
- * Only the assigned recipient or an ADMIN may download.
+ * Recipient, sender, or ADMIN may download.
+ * Status/action TRANSFER_DOWNLOADED is only recorded on first recipient download.
  * On first download: sets Transfer.status → DOWNLOADED and logs the action.
  */
 export async function GET(
@@ -43,10 +44,15 @@ export async function GET(
     return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
   }
 
-  // Access check — recipient only (transfers are private)
-  if (transfer.recipientId !== session.user.id) {
+  // Access check — recipient, sender, or admin
+  const canAccess =
+    transfer.recipientId === session.user.id ||
+    transfer.senderId === session.user.id ||
+    session.user.role === 'ADMIN'
+
+  if (!canAccess) {
     return NextResponse.json(
-      { error: 'This transfer is private. Only the recipient may download it.' },
+      { error: 'This transfer is private. Only the sender/recipient may download it.' },
       { status: 403 },
     )
   }
@@ -130,22 +136,26 @@ export async function GET(
     },
   })
 
-  // Mark as DOWNLOADED on first download (non-blocking)
-  if (transfer.status === 'PENDING') {
-    prisma.transfer.update({
-      where: { id: transferId },
+  // Only recipient-first download transitions status and writes TRANSFER_DOWNLOADED.
+  const isRecipient = transfer.recipientId === session.user.id
+  if (isRecipient && transfer.status === 'PENDING') {
+    const updated = await prisma.transfer.updateMany({
+      where: { id: transferId, status: 'PENDING' },
       data:  { status: 'DOWNLOADED' },
-    }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/download', transferId, error: (e as Error)?.message, message: 'Status update to DOWNLOADED failed' }))
-  }
+    })
 
-  // Activity log (non-blocking)
-  log('TRANSFER_DOWNLOADED', session.user.id, {
-    metadata: {
-      transferId,
-      subject:   transfer.subject,
-      fileCount: transfer.files.length,
-    },
-  }).catch(e => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/download', transferId, error: (e as Error)?.message, message: 'Activity log failed' }))
+    if (updated.count > 0) {
+      log('TRANSFER_DOWNLOADED', session.user.id, {
+        metadata: {
+          transferId,
+          subject:     transfer.subject,
+          fileCount:   transfer.files.length,
+          senderId:    transfer.senderId,
+          recipientId: transfer.recipientId,
+        },
+      }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/download', transferId, error: (e as Error)?.message, message: 'Activity log failed' }))
+    }
+  }
 
   const senderLabel = transfer.sender.username ?? transfer.sender.name ?? 'transfer'
   const dateLabel   = new Date().toISOString().slice(0, 10).replace(/-/g, '')

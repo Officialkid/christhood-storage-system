@@ -1,14 +1,16 @@
 'use client'
 
-import { useState, useRef, useCallback, DragEvent, ChangeEvent } from 'react'
+import { useState, useRef, useCallback, useEffect, DragEvent, ChangeEvent } from 'react'
 import Link from 'next/link'
 import {
   Upload, X, Eye, EyeOff, CheckCircle2, Copy, Check, ExternalLink,
-  Send, FileText, Mail, Lock, RefreshCw, Plus, WifiOff, AlertCircle,
+  Send, FileText, Mail, Lock, RefreshCw, Plus, WifiOff, AlertCircle, Share2,
 } from 'lucide-react'
 import { useShareUpload } from '@/contexts/ShareUploadContext'
 
 // --- Helpers -----------------------------------------------------------------
+
+const MAX_SHARE_FILES = 1000
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024)        return `${bytes} B`
@@ -34,8 +36,31 @@ export default function PublicSharePage() {
   const [copiedIdx,   setCopiedIdx]   = useState<number | null>(null)
   const [allCopied,   setAllCopied]   = useState(false)
   const [batchCopied, setBatchCopied] = useState(false)
+  const [supportsShare, setSupportsShare] = useState(false)
+  const [supportsBackgroundUpload, setSupportsBackgroundUpload] = useState(false)
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setSupportsShare(typeof navigator !== 'undefined' && !!navigator.share)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      try {
+        if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+        const reg = await navigator.serviceWorker.ready
+        if (!active) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setSupportsBackgroundUpload(!!(reg && 'backgroundFetch' in (reg as any)))
+      } catch {
+        if (active) setSupportsBackgroundUpload(false)
+      }
+    })()
+    return () => { active = false }
+  }, [])
 
   // -- Upload state from global context --------------------------------------
   const {
@@ -55,10 +80,14 @@ export default function PublicSharePage() {
     const arr = Array.from(incoming)
     setFiles(prev => {
       const existing = new Set(prev.map(f => f.name + f.size))
-      const fresh    = arr.filter(f => !existing.has(f.name + f.size))
-      return [...prev, ...fresh].slice(0, 20)
+      const fresh = arr.filter(f => !existing.has(f.name + f.size))
+      const next = [...prev, ...fresh]
+      if (next.length > MAX_SHARE_FILES) {
+        setFormError(`You can upload up to ${MAX_SHARE_FILES} files in one ShareLink batch.`)
+      }
+      return next.slice(0, MAX_SHARE_FILES)
     })
-    setFormError(null)
+    setFormError(curr => (curr?.includes('up to') ? curr : null))
   }, [])
 
   const removeFile = (idx: number) => setFiles(prev => prev.filter((_, i) => i !== idx))
@@ -89,6 +118,7 @@ export default function PublicSharePage() {
   async function copyLink(url: string, idx: number) {
     await navigator.clipboard.writeText(url)
     setCopiedIdx(idx)
+    setShareFeedback('Link copied to clipboard.')
     setTimeout(() => setCopiedIdx(null), 2500)
   }
 
@@ -96,6 +126,7 @@ export default function PublicSharePage() {
     const text = results.map((r, i) => `File ${i + 1}: ${r.name}\n${r.shareUrl}`).join('\n\n')
     await navigator.clipboard.writeText(text)
     setAllCopied(true)
+    setShareFeedback('All links copied to clipboard.')
     setTimeout(() => setAllCopied(false), 2500)
   }
 
@@ -103,7 +134,36 @@ export default function PublicSharePage() {
     if (!batchUrl) return
     await navigator.clipboard.writeText(batchUrl)
     setBatchCopied(true)
+    setShareFeedback('Batch link copied to clipboard.')
     setTimeout(() => setBatchCopied(false), 2500)
+  }
+
+  async function shareLink(url: string, name: string) {
+    setShareFeedback(null)
+    try {
+      if (!navigator.share) {
+        await navigator.clipboard.writeText(url)
+        setShareFeedback('Share is not supported on this browser. Link copied instead.')
+        return
+      }
+      await navigator.share({
+        title: `Christhood ShareLink - ${name}`,
+        text: `Shared via Christhood ShareLink: ${name}`,
+        url,
+      })
+      setShareFeedback('Shared successfully.')
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        setShareFeedback('Share was cancelled.')
+        return
+      }
+      try {
+        await navigator.clipboard.writeText(url)
+        setShareFeedback('Sharing failed. Link copied instead.')
+      } catch {
+        setShareFeedback('Sharing failed. Please copy the link manually.')
+      }
+    }
   }
 
   function handleReset() {
@@ -187,6 +247,14 @@ export default function PublicSharePage() {
                     className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition">
                     {batchCopied ? <><Check className="w-3.5 h-3.5" />Copied!</> : <><Copy className="w-3.5 h-3.5" />Copy</>}
                   </button>
+                  {supportsShare && (
+                    <button
+                      onClick={() => shareLink(batchUrl, `${results.length} files`)}
+                      className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-700/80 text-white text-xs font-semibold hover:bg-slate-700 transition"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />Share
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -204,6 +272,14 @@ export default function PublicSharePage() {
                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/60 text-slate-300 text-xs font-medium hover:bg-slate-700 transition-colors">
                       <ExternalLink className="w-3.5 h-3.5" />Open
                     </a>
+                    {supportsShare && (
+                      <button
+                        onClick={() => shareLink(r.shareUrl, r.name)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-700/80 text-white text-xs font-medium hover:bg-slate-700 transition-colors"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />Share
+                      </button>
+                    )}
                     <button onClick={() => copyLink(r.shareUrl, i)}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-600/80 text-white text-xs font-medium hover:bg-indigo-600 transition-colors">
                       {copiedIdx === i
@@ -229,6 +305,10 @@ export default function PublicSharePage() {
                 <RefreshCw className="w-4 h-4" />Send another transfer
               </button>
             </div>
+
+            {shareFeedback && (
+              <p className="text-center text-slate-400 text-xs mt-4">{shareFeedback}</p>
+            )}
 
             <p className="text-center text-slate-600 text-xs mt-6">
               Links expire in 7 days ╖ Files are permanently deleted after expiry
@@ -301,7 +381,9 @@ export default function PublicSharePage() {
                     {uploadFiles[currentIdx]?.name}
                   </p>
                   <p className="text-xs text-slate-600 mt-1">
-                    You can navigate away ù upload continues in the background
+                    {supportsBackgroundUpload
+                      ? 'You can keep using this site while upload continues. On supported Android browsers, upload keeps running in the background and progress appears in the notification bar.'
+                      : 'You can keep using this site while upload continues. On browsers without background upload support, keep this tab open until completion for best reliability.'}
                   </p>
                 </div>
               )}
@@ -369,7 +451,7 @@ export default function PublicSharePage() {
                     <p className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">
                       Drop files here or <span className="text-indigo-400">browse</span>
                     </p>
-                    <p className="text-xs text-slate-600">Up to 20 files ╖ any size</p>
+                    <p className="text-xs text-slate-600">Up to 1000 files per batch ╖ any size</p>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
@@ -398,6 +480,12 @@ export default function PublicSharePage() {
                     </li>
                   ))}
                 </ul>
+              )}
+
+              {files.length >= 100 && (
+                <p className="text-xs text-slate-500 -mt-1">
+                  Large batch detected. For best results on mobile, keep the app open. Android browsers with background upload support can continue in the background.
+                </p>
               )}
 
               {/* Title */}

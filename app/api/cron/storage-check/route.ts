@@ -5,7 +5,7 @@ import { sendStorageThresholdEmail } from '@/lib/email'
 export const dynamic = 'force-dynamic'
 
 const STORAGE_THRESHOLD_PERCENT = parseInt(process.env.STORAGE_THRESHOLD_PERCENT ?? '80')
-const STORAGE_LIMIT_GB          = parseFloat(process.env.STORAGE_LIMIT_GB         ?? '50')
+const STORAGE_LIMIT_GB          = parseFloat(process.env.STORAGE_LIMIT_GB         ?? '100')
 // Only the chief admin receives critical system alert emails
 const CHIEF_ADMIN_EMAIL         = process.env.CHIEF_ADMIN_EMAIL ?? 'danielmwalili1@gmail.com'
 
@@ -13,7 +13,7 @@ const CHIEF_ADMIN_EMAIL         = process.env.CHIEF_ADMIN_EMAIL ?? 'danielmwalil
  * GET /api/cron/storage-check
  *
  * Sums all non-purged file sizes in the DB (a reliable proxy for R2 usage).
- * If usage ≥ STORAGE_THRESHOLD_PERCENT (default 80%) of STORAGE_LIMIT_GB (default 50 GB),
+ * If usage ≥ STORAGE_THRESHOLD_PERCENT (default 80%) of STORAGE_LIMIT_GB (default 100 GB),
  * sends an alert email to all ADMIN users who haven't opted out.
  *
  * Secured by Bearer token: Authorization: Bearer <CRON_SECRET>

@@ -851,31 +851,19 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
 
   // ── Download handlers ──────────────────────────────────────────────────────
 
-  const handleDownloadZip = useCallback(async () => {
+  const handleDownloadZip = useCallback(() => {
     if (downloadingZip) return
     setDownloadingZip(true)
-    try {
-      const res = await fetch(`/api/transfers/${transfer.id}/download`)
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        alert(d.error ?? 'Download failed. Please try again.')
-        return
-      }
-      const blob = await res.blob()
-      const cd   = res.headers.get('Content-Disposition') ?? ''
-      const name = cd.match(/filename="([^"]+)"/)?.[1] ?? `transfer_${transfer.id}.zip`
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href = url; a.download = name; a.click()
-      URL.revokeObjectURL(url)
-      // Status transitions to DOWNLOADED after first ZIP download
-      if (currentStatus === 'PENDING') setCurrentStatus('DOWNLOADED')
-    } catch {
-      alert('Download failed. Please try again.')
-    } finally {
-      setDownloadingZip(false)
-    }
-  }, [downloadingZip, transfer.id, currentStatus])
+
+    // Use a direct browser download instead of fetch+blob to avoid mobile memory/
+    // user-activation issues for large transfer archives.
+    const a = document.createElement('a')
+    a.href = `/api/transfers/${transfer.id}/download`
+    a.rel = 'noopener noreferrer'
+    a.click()
+
+    setTimeout(() => setDownloadingZip(false), 1200)
+  }, [downloadingZip, transfer.id])
 
   const handleDownloadFile = useCallback(async (file: TransferFileItem) => {
     if (downloadingFile) return

@@ -133,7 +133,7 @@ export async function sendAccountCreatedEmail(
   role:             string,
   setPasswordToken: string,
 ): Promise<void> {
-  const link      = `${APP_URL}/auth/reset-password?token=${setPasswordToken}`
+  const link      = `${APP_URL}/reset-password?token=${setPasswordToken}`
   const roleLabel = role.charAt(0) + role.slice(1).toLowerCase()
 
   const body = `
@@ -199,7 +199,7 @@ export async function sendPasswordResetEmail(
   username: string,
   token:    string,
 ): Promise<void> {
-  const link = `${APP_URL}/auth/reset-password?token=${token}`
+  const link = `${APP_URL}/reset-password?token=${token}`
 
   const body = `
     <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#6366f1;text-transform:uppercase;letter-spacing:0.6px;">Security</p>

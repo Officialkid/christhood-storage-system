@@ -55,10 +55,12 @@ if (isConfigured) {
     analytics: false,
   })
 
-  // Public share upload: 5 uploads per IP per hour
+  // Public share upload: allow high-volume media batches while still limiting abuse.
+  // This is per file (presign is called once per file), so the budget must support
+  // large real-world batches.
   publicShareLimiter = new Ratelimit({
     redis,
-    limiter:   Ratelimit.slidingWindow(5, '60 m'),
+    limiter:   Ratelimit.slidingWindow(1500, '60 m'),
     prefix:    'christhood:rl:pubshare:ip',
     analytics: false,
   })

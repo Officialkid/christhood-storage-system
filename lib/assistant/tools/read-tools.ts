@@ -21,6 +21,7 @@
 
 import { FunctionDeclaration, SchemaType } from '@google/generative-ai'
 import { prisma }  from '@/lib/prisma'
+import { filterTransferActivityForViewer } from '@/lib/transferActivityPrivacy'
 import type { AppRole } from '@/types'
 
 // ── Caller context passed to every tool implementation ───────────────────────
@@ -394,7 +395,7 @@ async function getUserActivity(
     }
   }
 
-  const logs = await prisma.activityLog.findMany({
+  const logsRaw = await prisma.activityLog.findMany({
     where: {
       userId: user.id,
       ...(args.actionTypes?.length ? { action: { in: args.actionTypes } } : {}),
@@ -406,6 +407,8 @@ async function getUserActivity(
     orderBy: { createdAt: 'desc' },
     take:    limit,
   })
+
+  const logs = await filterTransferActivityForViewer(logsRaw, caller.userId)
 
   const lastActive = user.activityLogs[0]?.createdAt?.toISOString() ?? null
 
@@ -601,7 +604,7 @@ async function getRecentActivity(
     filterUserId = u.id
   }
 
-  const logs = await prisma.activityLog.findMany({
+  const logsRaw = await prisma.activityLog.findMany({
     where: {
       ...(filterUserId ? { userId: filterUserId } : {}),
       ...(args.actionType ? { action: args.actionType } : {}),
@@ -614,6 +617,8 @@ async function getRecentActivity(
     orderBy: { createdAt: 'desc' },
     take:    limit,
   })
+
+  const logs = await filterTransferActivityForViewer(logsRaw, caller.userId)
 
   return {
     totalEntries: logs.length,

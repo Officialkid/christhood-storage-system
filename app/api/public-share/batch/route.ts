@@ -3,12 +3,12 @@ import { prisma }                    from '@/lib/prisma'
 
 /**
  * GET /api/public-share/batch?tokens=tok1,tok2,...
- * Returns metadata for up to 20 share tokens in one round-trip.
+ * Returns metadata for up to 100 share tokens in one round-trip.
  * Used by the batch download page to render all files in a transfer.
  */
 export async function GET(req: NextRequest) {
   const raw    = req.nextUrl.searchParams.get('tokens') ?? ''
-  const tokens = raw.split(',').map(t => t.trim()).filter(Boolean).slice(0, 20)
+  const tokens = raw.split(',').map(t => t.trim()).filter(Boolean).slice(0, 100)
 
   if (tokens.length === 0) {
     return NextResponse.json({ error: 'tokens query param is required.' }, { status: 400 })

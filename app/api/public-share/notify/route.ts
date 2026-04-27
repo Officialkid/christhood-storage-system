@@ -3,6 +3,8 @@ import { prisma }                    from '@/lib/prisma'
 import { sendEmail }                 from '@/lib/email'
 
 const SHARE_BASE = process.env.NEXT_PUBLIC_APP_URL ?? 'https://cmmschristhood.org'
+const MAX_NOTIFY_TOKENS = 1000
+const MAX_BATCH_URL_TOKENS = 100
 
 function formatBytes(bytes: bigint): string {
   const n = Number(bytes)
@@ -22,8 +24,8 @@ export async function POST(req: NextRequest) {
   if (typeof recipientEmail !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
     return NextResponse.json({ error: 'Valid recipientEmail is required.' }, { status: 400 })
   }
-  if (!Array.isArray(tokens) || tokens.length === 0 || tokens.length > 20) {
-    return NextResponse.json({ error: 'tokens must be a non-empty array (max 20).' }, { status: 400 })
+  if (!Array.isArray(tokens) || tokens.length === 0 || tokens.length > MAX_NOTIFY_TOKENS) {
+    return NextResponse.json({ error: `tokens must be a non-empty array (max ${MAX_NOTIFY_TOKENS}).` }, { status: 400 })
   }
   if (!tokens.every((t: unknown) => typeof t === 'string')) {
     return NextResponse.json({ error: 'Each token must be a string.' }, { status: 400 })
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
   const label    = typeof senderTitle === 'string' && senderTitle.trim() ? senderTitle.trim() : 'Someone'
   const expiry   = records[0].expiresAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
   const noun     = records.length > 1 ? `${records.length} files` : 'a file'
-  const batchUrl = records.length > 1
+  const batchUrl = records.length > 1 && records.length <= MAX_BATCH_URL_TOKENS
     ? SHARE_BASE + '/public-share/batch?tokens=' + records.map(r => r.token).join(',')
     : null
 

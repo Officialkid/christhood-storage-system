@@ -9,7 +9,7 @@ function toNum(v: unknown): number {
   return typeof v === 'bigint' ? Number(v) : Number(v ?? 0)
 }
 
-const LIMIT_GB = parseFloat(process.env.STORAGE_LIMIT_GB ?? '50')
+const LIMIT_GB = parseFloat(process.env.STORAGE_LIMIT_GB ?? '100')
 
 export async function GET() {
   const session = await getServerSession(authOptions)
