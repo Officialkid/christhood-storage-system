@@ -94,6 +94,9 @@ jobs:
           echo "DATABASE_URL scheme prefix: ${DB_URL:0:25}"
           echo "DIRECT_URL scheme prefix:   ${DIRECT:0:25}"
           npm ci --ignore-scripts
+          # If the initial migration exists in failed state from older deploys,
+          # mark it rolled back so Prisma can continue applying valid migrations.
+          DATABASE_URL="$DB_URL" DIRECT_URL="$DIRECT" npx prisma migrate resolve --rolled-back "20260330050926_init" || true
           # If migration 8 was left in a failed state, mark it as rolled back
           # so Prisma will re-attempt it with the fixed (idempotent) SQL.
           DATABASE_URL="$DB_URL" DIRECT_URL="$DIRECT" npx prisma migrate resolve --rolled-back "8_zara_tables" || true
