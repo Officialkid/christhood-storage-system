@@ -64,6 +64,8 @@ export interface MultipartUploadOptions {
   file:              File
   eventId:           string
   subfolderId?:      string | null
+  /** Explicit MIME type for platforms where file.type is empty (e.g. some iOS videos). */
+  mimeType?:         string
   /** Override the filename sent to the server (used for 'Keep both' duplicate resolution). */
   filenameOverride?: string
   /** Skip the server-side duplicate check (used for 'Replace' duplicate resolution). */
@@ -240,7 +242,7 @@ function runConcurrent<T>(
 export async function runMultipartUpload(opts: MultipartUploadOptions): Promise<MultipartUploadResult> {
   const {
     file, eventId, subfolderId, resume, filenameOverride, force,
-    onCreate, onPartDone, onCompleting, onProgress, signal, versionOf,
+    onCreate, onPartDone, onCompleting, onProgress, signal, versionOf, mimeType,
   } = opts
   // Enforce R2's 5 MB minimum part size; cap at CHUNK_SIZE default if not supplied.
   const effectiveChunkSize = Math.max(5 * 1024 * 1024, opts.chunkSize ?? CHUNK_SIZE)
@@ -263,7 +265,7 @@ export async function runMultipartUpload(opts: MultipartUploadOptions): Promise<
     const created = await apiPost('/api/upload/multipart/create', {
       fileName:    effectiveFilename,
       fileSize:    file.size,
-      mimeType:    file.type || 'application/octet-stream',
+      mimeType:    mimeType || file.type || 'application/octet-stream',
       eventId,
       subfolderId,
       force:       force ?? false,

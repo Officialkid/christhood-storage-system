@@ -29,6 +29,7 @@ const MULTIPART_THRESHOLD = 10 * 1024 * 1024  // 10 MB – files above this use 
 const MAX_CONCURRENT      = 5                  // file-level concurrency; chunk concurrency = 4 (inside runMultipartUpload)
 // Throttle PWA notification updates: post to SW every NOTIF_THROTTLE_PCT % change
 const NOTIF_THROTTLE_PCT  = 5
+const CONNECTIVITY_PROBE_TIMEOUT_MS = 4000
 
 // ──────────────────────────── Types ──────────────────────────────────────────
 export interface DestinationInfo {
@@ -129,6 +130,28 @@ function formatEta(bytesLeft: number, bps: number): string {
 function isVideo(file: File) { return file.type.startsWith('video/') }
 
 /**
+ * Browser online events can be noisy on mobile; confirm with a fast server probe
+ * before classifying an upload as "offline".
+ */
+async function hasReliableConnection(): Promise<boolean> {
+  if (typeof navigator === 'undefined' || !navigator.onLine) return false
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), CONNECTIVITY_PROBE_TIMEOUT_MS)
+  try {
+    const res = await fetch('/api/ping', {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    return res.ok
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+/**
  * Resolve a reliable MIME type from the browser-supplied file.type and the
  * file extension. Browsers on iOS often return an empty string for .mov and
  * some .mp4 files, which causes the server to reject the upload with 415.
@@ -154,8 +177,8 @@ function resolveMimeType(fileName: string, browserType: string): string {
 
 // ──────────────────────────── Sub-components ─────────────────────────────────
 function FileRow({
-  uf, onRemove, onRetry,
-}: { uf: UploadFile; onRemove: () => void; onRetry: () => void }) {
+  uf, isOnline, onRemove, onRetry,
+}: { uf: UploadFile; isOnline: boolean; onRemove: () => void; onRetry: () => void }) {
   const Icon = isVideo(uf.file) ? Film : ImageIcon
   const pct  = uf.progress
 
@@ -212,7 +235,11 @@ function FileRow({
           <p className="text-xs text-red-400 mt-0.5 truncate">{uf.error}</p>
         )}
         {uf.status === 'paused' && (
-          <p className="text-xs text-amber-400 mt-0.5">Paused — will resume when online ({uf.progress}% saved)</p>
+          <p className="text-xs text-amber-400 mt-0.5">
+            {isOnline
+              ? `Paused — retrying connection (${uf.progress}% saved)`
+              : `Paused — will resume when online (${uf.progress}% saved)`}
+          </p>
         )}
         {uf.status === 'queued-offline' && (
           <p className="text-xs text-amber-500 mt-0.5">Saved — will upload when online</p>
@@ -485,9 +512,6 @@ export function UploadZone({ defaultDestination, events }: Props) {
       })
     }
 
-    // Auto-retry files that errored during a mid-upload connection drop
-    if (filesRef.current.some(f => f.status === 'error')) uploadAll()
-
     // Register Background Sync (Chrome/Android) — gracefully ignores on iOS/Firefox
     navigator.serviceWorker?.ready.then(reg => {
       ;(reg as any).sync?.register('cmms-upload-sync').catch(() => {
@@ -679,7 +703,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
   // Called when the device comes back online. Retrieves all queued items from
   // IndexedDB, adds them to the UI as pending files, and kicks off an upload.
   async function drainOfflineQueue() {
-    if (!navigator.onLine) return
+    if (!(await hasReliableConnection())) return
     let queued: QueuedUpload[]
     try { queued = await getQueue() } catch { return }
     if (!queued.length) return
@@ -737,7 +761,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
     updateFile(uid, { status: 'starting' })
 
     // ── Offline guard — save to IndexedDB queue and bail ───────────────────
-    if (!navigator.onLine) {
+    if (!(await hasReliableConnection())) {
       try {
         await queueUpload({
           uid,
@@ -925,6 +949,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
           subfolderId: hasResume ? (storedSession!.subfolderId ?? null) : destination.subfolderId,
           filenameOverride: mpFilenameOverride,
           force:            mpForce,
+          mimeType:         contentType,
           chunkSize:        effectiveChunkSize,
           versionOf:        uf.versionOf ?? undefined,
 
@@ -1035,9 +1060,9 @@ export function UploadZone({ defaultDestination, events }: Props) {
               })
               return
             } catch (retryErr: any) {
-              if ((retryErr instanceof NetworkError) || !navigator.onLine) {
+              if (retryErr instanceof NetworkError) {
                 void updateSession(effectiveSid, { status: 'paused' })
-                throw new NetworkError('Connection lost — upload paused. Will resume when online.')
+                throw new NetworkError('Upload paused due to a network interruption. Will resume automatically.')
               }
               if (mpCtx.session) void abortMultipartSession(mpCtx.session.uploadId, mpCtx.session.key)
               void deleteSession(effectiveSid)
@@ -1045,13 +1070,13 @@ export function UploadZone({ defaultDestination, events }: Props) {
             }
           }
 
-          const isNetworkDrop = (err instanceof NetworkError) || !navigator.onLine
+          const isNetworkDrop = err instanceof NetworkError
 
           if (isNetworkDrop) {
             // Chunks already uploaded are safe in R2. Pause without aborting.
             // Mark session as paused in IDB so the resume banner shows on next visit.
             void updateSession(effectiveSid, { status: 'paused' })
-            throw new NetworkError('Connection lost — upload paused. Will resume when online.')
+            throw new NetworkError('Upload paused due to a network interruption. Will resume automatically.')
           }
 
           // Genuine failure — abort the R2 session to free orphaned chunk storage.
@@ -1067,12 +1092,22 @@ export function UploadZone({ defaultDestination, events }: Props) {
     } catch (err: any) {
       const isNetworkDrop = (err instanceof NetworkError) || !navigator.onLine
       if (isNetworkDrop) {
-        // Paused, not errored — don't show a red X
-        updateFile(uid, {
-          status: 'paused',
-          error:  undefined,
-          speed:  undefined,
-        })
+        const stillOffline = !(await hasReliableConnection())
+        if (stillOffline) {
+          // Paused, not errored — don't show a red X when connectivity is truly down.
+          updateFile(uid, {
+            status: 'paused',
+            error:  undefined,
+            speed:  undefined,
+          })
+        } else {
+          // Network blip recovered: show actionable error instead of offline messaging.
+          updateFile(uid, {
+            status: 'error',
+            error:  err.message ?? 'Upload interrupted. Tap Retry to continue.',
+            speed:  undefined,
+          })
+        }
       } else {
         updateFile(uid, { status: 'error', error: err.message ?? 'Upload failed' })
       }
@@ -1646,6 +1681,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
               <FileRow
                 key={uf.uid}
                 uf={uf}
+                isOnline={isOnline}
                 onRemove={() => removeFile(uf.uid)}
                 onRetry={() => retryFile(uf.uid)}
               />
