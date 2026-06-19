@@ -11,7 +11,7 @@ const FROM_NAME    = process.env.FROM_NAME  ?? 'CMMS Platform'
 const FROM         = FROM_ADDRESS.includes('<')
   ? FROM_ADDRESS
   : `${FROM_NAME} <${FROM_ADDRESS}>`
-const APP_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3001'
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3001'
 const APP     = 'Christhood CMMS'
 
 // ─────────────────────────────────────────────────────────────────────────────

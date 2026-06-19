@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { sendEmail } from '@/lib/email'
 import { getPublicShareBaseUrl } from '@/lib/publicShareBaseUrl'
+import { sendPublicShareEmail } from '@/lib/publicShareEmailDelivery'
 
 const SHARE_BASE = getPublicShareBaseUrl()
 const MAX_NOTIFY_TOKENS = 1000
@@ -126,14 +126,16 @@ export async function POST(req: NextRequest) {
     '</body></html>',
   ].join('')
 
-  const sent = await sendEmail({
+  const sent = await sendPublicShareEmail({
     to: recipientEmail,
     subject: `${label} shared ${noun} with you`,
     html,
   })
 
-  if (!sent) {
-    return NextResponse.json({ error: 'The transfer was created, but the email could not be sent.' }, { status: 503 })
+  if (!sent.ok) {
+    return NextResponse.json({
+      error: sent.error ?? 'The transfer was created, but the email could not be sent.',
+    }, { status: 503 })
   }
 
   return NextResponse.json({ ok: true, sent: records.length, transferUrl })
