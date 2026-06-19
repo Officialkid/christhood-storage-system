@@ -15,6 +15,7 @@ import { prisma }                     from '@/lib/prisma'
 import { putObject }                  from '@/lib/r2'
 import { checkPublicShareRateLimit }  from '@/lib/rate-limit'
 import { buildPublicShareR2Key, normalizeFolderPath } from '@/lib/publicSharePaths'
+import { buildTransferCode } from '@/lib/publicShareTransfers'
 
 // Allow up to 300 s for large file uploads on Cloud Run
 export const maxDuration = 300
@@ -75,6 +76,8 @@ export async function POST(req: NextRequest) {
   const message       = formData.get('message')
   const pin           = formData.get('pin')
   const recipientEmail = formData.get('recipientEmail')
+  const transferToken = formData.get('transferToken')
+  const transferCode = formData.get('transferCode')
 
   // ── Validate ──────────────────────────────────────────────────────────────
   if (!(fileBlob instanceof Blob)) {
@@ -108,6 +111,14 @@ export async function POST(req: NextRequest) {
   const sanitizedEmail   = typeof recipientEmail === 'string' && recipientEmail.trim()
     ? recipientEmail.trim().toLowerCase().slice(0, 320)
     : null
+  const sanitizedTransferToken =
+    typeof transferToken === 'string' && transferToken.trim()
+      ? transferToken.trim().slice(0, 64)
+      : null
+  const sanitizedTransferCode =
+    typeof transferCode === 'string' && transferCode.trim()
+      ? transferCode.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)
+      : (sanitizedTransferToken ? buildTransferCode(sanitizedTransferToken) : null)
   if (sanitizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sanitizedEmail)) {
     return NextResponse.json({ error: 'Invalid recipient email address.' }, { status: 400 })
   }
@@ -134,6 +145,8 @@ export async function POST(req: NextRequest) {
   await prisma.publicShareUpload.create({
     data: {
       token,
+      transferToken:   sanitizedTransferToken,
+      transferCode:    sanitizedTransferCode,
       r2Key,
       originalName:   filename.slice(0, 500),
       folderPath:     normalizedFolderPath,

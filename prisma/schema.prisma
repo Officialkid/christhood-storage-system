@@ -941,6 +941,10 @@ model PublicShareUpload {
   id            String   @id @default(cuid())
   /// crypto.randomUUID() — used as the public share token in the URL
   token         String   @unique
+  /// Groups many uploaded files into one shareable transfer
+  transferToken String?
+  /// Short public code used in external transfer URLs
+  transferCode  String?
   /// R2 object key — always under "public-shares/{token}/{filename}"
   r2Key         String   @unique
   originalName  String
@@ -964,6 +968,8 @@ model PublicShareUpload {
   createdAt     DateTime @default(now())
 
   @@index([token])
+  @@index([transferToken])
+  @@index([transferCode])
   @@index([expiresAt])
   @@index([isReady])
 }

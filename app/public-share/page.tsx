@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowUpFromLine, CheckCircle2, Loader2, Mail, Shield, UploadCloud } from 'lucide-react'
 import { useToast } from '@/lib/toast'
+import { buildTransferCode } from '@/lib/publicShareTransfers'
 
 type UploadedItem = {
   token: string
@@ -19,6 +20,7 @@ type SelectedShareItem = {
 
 type CompletedShare = {
   tokens: string[]
+  transferCode: string
   recipientEmail: string | null
   pinProtected: boolean
 }
@@ -72,11 +74,9 @@ export default function PublicSharePage() {
     return new URL(`/public-share/${token}`, window.location.origin).toString()
   }
 
-  function buildBatchShareUrl(tokens: string[]): string {
-    if (tokens.length === 1) return buildShareUrl(tokens[0])
-    const joined = tokens.join(',')
-    if (typeof window === 'undefined') return `/public-share/batch?tokens=${encodeURIComponent(joined)}`
-    return new URL(`/public-share/batch?tokens=${encodeURIComponent(joined)}`, window.location.origin).toString()
+  function buildTransferShareUrl(transferCode: string): string {
+    if (typeof window === 'undefined') return `/t/${transferCode}`
+    return new URL(`/t/${transferCode}`, window.location.origin).toString()
   }
 
   async function copyLink(label: string, value: string) {
@@ -95,7 +95,7 @@ export default function PublicSharePage() {
   async function uploadViaPresign(
     file: File,
     folderPath: string | null,
-    sharedMeta: { title: string; message: string; recipientEmail: string; pin: string },
+    sharedMeta: { title: string; message: string; recipientEmail: string; pin: string; transferToken: string; transferCode: string },
   ) {
     const presignRes = await fetch('/api/public-share/presign', {
       method: 'POST',
@@ -109,6 +109,8 @@ export default function PublicSharePage() {
         message: sharedMeta.message || null,
         recipientEmail: sharedMeta.recipientEmail || null,
         pin: sharedMeta.pin || null,
+        transferToken: sharedMeta.transferToken,
+        transferCode: sharedMeta.transferCode,
       }),
     })
 
@@ -144,7 +146,7 @@ export default function PublicSharePage() {
   async function uploadViaFallback(
     file: File,
     folderPath: string | null,
-    sharedMeta: { title: string; message: string; recipientEmail: string; pin: string },
+    sharedMeta: { title: string; message: string; recipientEmail: string; pin: string; transferToken: string; transferCode: string },
   ) {
     const form = new FormData()
     form.append('file', file)
@@ -156,6 +158,8 @@ export default function PublicSharePage() {
     if (sharedMeta.message) form.append('message', sharedMeta.message)
     if (sharedMeta.recipientEmail) form.append('recipientEmail', sharedMeta.recipientEmail)
     if (sharedMeta.pin) form.append('pin', sharedMeta.pin)
+    form.append('transferToken', sharedMeta.transferToken)
+    form.append('transferCode', sharedMeta.transferCode)
 
     const res = await fetch('/api/public-share/upload', { method: 'POST', body: form })
     const body = await res.json().catch(() => ({})) as { error?: string; token?: string }
@@ -192,7 +196,10 @@ export default function PublicSharePage() {
       message: message.trim(),
       recipientEmail: recipientEmail.trim(),
       pin: pin.trim(),
+      transferToken: crypto.randomUUID(),
+      transferCode: '',
     }
+    meta.transferCode = buildTransferCode(meta.transferToken)
 
     const uploadedRows: UploadedItem[] = []
     const tokens: string[] = []
@@ -236,6 +243,7 @@ export default function PublicSharePage() {
       setProgress('')
       setCompletedShare({
         tokens,
+        transferCode: meta.transferCode,
         recipientEmail: meta.recipientEmail || null,
         pinProtected: Boolean(meta.pin),
       })
@@ -269,8 +277,8 @@ export default function PublicSharePage() {
         <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
           <form onSubmit={handleSubmit} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/20">
             <div className="mb-6">
-              <p className="text-sm text-slate-400">
-                Use ShareLink for people outside your team. Upload files or whole folders, optionally email the recipient, and keep the transfer protected with an expiry window and optional PIN.
+                  <p className="text-sm text-slate-400">
+                Use ShareLink for people outside your team. Upload files or whole folders, optionally email the recipient, and send one short secure transfer link instead of many separate file links.
               </p>
             </div>
 
@@ -380,7 +388,7 @@ export default function PublicSharePage() {
                 <div className="rounded-2xl border border-slate-700 bg-slate-800/40 px-4 py-3">
                   <p className="text-sm font-medium text-white">Recipient experience</p>
                   <p className="mt-1 text-sm text-slate-400">
-                    They&apos;ll receive a secure external link and download the files in their original format.
+                    They'll receive one secure external link and can download the whole transfer together.
                   </p>
                 </div>
               </div>
@@ -411,8 +419,8 @@ export default function PublicSharePage() {
               <ol className="mt-4 space-y-3 text-sm text-slate-400">
                 <li>1. Select one or more files.</li>
                 <li>2. Add recipient details if you want us to email them.</li>
-                <li>3. We upload and generate secure download links.</li>
-                <li>4. Recipients download the original files directly.</li>
+                <li>3. We upload everything and create one short transfer link.</li>
+                <li>4. Recipients download the full transfer together.</li>
               </ol>
             </div>
 
@@ -425,7 +433,7 @@ export default function PublicSharePage() {
                     Share complete
                   </p>
                   <p className="text-sm text-slate-300">
-                    The upload worked. Use the link below to open, copy, or send the share.
+                    The upload worked. Use the short transfer link below to open, copy, or send the full share.
                   </p>
 
                   {completedShare && (
@@ -441,14 +449,14 @@ export default function PublicSharePage() {
 
                       <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-3">
                         <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
-                          {completedShare.tokens.length > 1 ? 'Transfer link' : 'Share link'}
+                          Transfer link
                         </p>
                         <p className="mt-2 break-all text-sm text-slate-200">
-                          {buildBatchShareUrl(completedShare.tokens)}
+                          {buildTransferShareUrl(completedShare.transferCode)}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Link
-                            href={buildBatchShareUrl(completedShare.tokens)}
+                            href={buildTransferShareUrl(completedShare.transferCode)}
                             target="_blank"
                             className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
                           >
@@ -456,7 +464,7 @@ export default function PublicSharePage() {
                           </Link>
                           <button
                             type="button"
-                            onClick={() => copyLink('transfer', buildBatchShareUrl(completedShare.tokens))}
+                            onClick={() => copyLink('transfer', buildTransferShareUrl(completedShare.transferCode))}
                             className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-700"
                           >
                             {copiedLink === 'transfer' ? 'Copied' : 'Copy link'}
@@ -467,6 +475,9 @@ export default function PublicSharePage() {
                   )}
 
                   <div className="space-y-2">
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">
+                      Individual file links (optional)
+                    </p>
                     {uploaded.map((item) => (
                       <div
                         key={item.token}

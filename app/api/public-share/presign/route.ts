@@ -22,6 +22,7 @@ import { prisma }                     from '@/lib/prisma'
 import { getPresignedUploadUrl }       from '@/lib/r2'
 import { checkPublicShareRateLimit }   from '@/lib/rate-limit'
 import { buildPublicShareR2Key, normalizeFolderPath } from '@/lib/publicSharePaths'
+import { buildTransferCode } from '@/lib/publicShareTransfers'
 
 export const maxDuration = 30
 
@@ -63,7 +64,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  const { filename, mimeType, fileSize, title, message, recipientEmail, pin, folderPath } = body
+  const {
+    filename,
+    mimeType,
+    fileSize,
+    title,
+    message,
+    recipientEmail,
+    pin,
+    folderPath,
+    transferToken,
+    transferCode,
+  } = body
 
   if (typeof filename !== 'string' || !filename.trim()) {
     return NextResponse.json({ error: 'filename is required.' }, { status: 400 })
@@ -89,6 +101,14 @@ export async function POST(req: NextRequest) {
   const sanitizedMessage = typeof message === 'string' ? message.trim().slice(0, 1000) : null
   const rawEmail         = typeof recipientEmail === 'string' ? recipientEmail.trim() : ''
   const sanitizedEmail   = rawEmail ? rawEmail.toLowerCase().slice(0, 320) : null
+  const sanitizedTransferToken =
+    typeof transferToken === 'string' && transferToken.trim()
+      ? transferToken.trim().slice(0, 64)
+      : null
+  const sanitizedTransferCode =
+    typeof transferCode === 'string' && transferCode.trim()
+      ? transferCode.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)
+      : (sanitizedTransferToken ? buildTransferCode(sanitizedTransferToken) : null)
 
   if (sanitizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sanitizedEmail)) {
     return NextResponse.json({ error: 'Invalid recipient email address.' }, { status: 400 })
@@ -110,6 +130,8 @@ export async function POST(req: NextRequest) {
   await prisma.publicShareUpload.create({
     data: {
       token,
+      transferToken:   sanitizedTransferToken,
+      transferCode:    sanitizedTransferCode,
       r2Key,
       originalName:   (filename as string).slice(0, 500),
       folderPath:     normalizedFolderPath,

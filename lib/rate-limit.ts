@@ -17,9 +17,24 @@
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis }     from '@upstash/redis'
 
+function hasUsableUpstashConfig(): boolean {
+  const url = process.env.UPSTASH_REDIS_REST_URL?.trim()
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim()
+
+  if (!url || !token) return false
+  if (/your-[^.\s]+/i.test(url) || /example/i.test(url)) return false
+  if (/your[_-]?token/i.test(token) || /example/i.test(token)) return false
+
+  try {
+    const parsed = new URL(url)
+    return /^https?:$/.test(parsed.protocol) && Boolean(parsed.hostname)
+  } catch {
+    return false
+  }
+}
+
 const isConfigured = Boolean(
-  process.env.UPSTASH_REDIS_REST_URL &&
-  process.env.UPSTASH_REDIS_REST_TOKEN
+  hasUsableUpstashConfig()
 )
 
 let ipLimiter:          Ratelimit | null = null

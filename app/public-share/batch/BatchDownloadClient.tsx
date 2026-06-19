@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useToast } from '@/lib/toast'
 
@@ -43,35 +43,26 @@ function expiryDate(iso: string): string {
   })
 }
 
+function fullName(file: FileItem): string {
+  return file.folderPath ? `${file.folderPath}/${file.originalName}` : file.originalName
+}
+
 export default function BatchDownloadClient({ tokens }: { tokens: string }) {
   const toast = useToast()
   const [files, setFiles] = useState<FileItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [downloading, setDownloading] = useState(false)
-  const [requested, setRequested] = useState<Set<string>>(new Set())
+  const [pin, setPin] = useState('')
+  const [pinError, setPinError] = useState('')
 
-  const eligible = files.filter(f => !f.pinRequired)
-  const hasFolders = files.some(f => !!f.folderPath)
+  const hasProtectedFiles = files.some(file => file.pinRequired)
+  const hasFolders = files.some(file => !!file.folderPath)
   const totalSize = files.reduce((sum, file) => sum + parseInt(file.fileSize, 10), 0)
   const transferTitle = files[0]?.title ?? null
   const transferMsg = files[0]?.message ?? null
   const expiry = files[0] ? expiryCountdown(files[0].expiresAt) : ''
   const expiryDateStr = files[0] ? expiryDate(files[0].expiresAt) : ''
-
-  function fullName(file: FileItem): string {
-    return file.folderPath ? `${file.folderPath}/${file.originalName}` : file.originalName
-  }
-
-  async function fetchDownloadUrl(token: string): Promise<string> {
-    const res = await fetch(`/api/public-share/${token}/download`)
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({})) as { error?: string }
-      throw new Error(d.error ?? `Error ${res.status}`)
-    }
-    const { downloadUrl } = await res.json() as { downloadUrl: string }
-    return downloadUrl
-  }
 
   useEffect(() => {
     if (!tokens) {
@@ -81,83 +72,94 @@ export default function BatchDownloadClient({ tokens }: { tokens: string }) {
     }
 
     fetch(`/api/public-share/batch?tokens=${encodeURIComponent(tokens)}`)
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) setFiles(data)
-        else setError((data as { error?: string }).error ?? 'Failed to load files.')
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          throw new Error((body as { error?: string }).error ?? 'Failed to load files.')
+        }
+        return body
       })
-      .catch(() => setError('Network error. Please try again.'))
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setFiles(data)
+        } else {
+          setError((data as { error?: string }).error ?? 'Failed to load files.')
+        }
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Network error. Please try again.'))
       .finally(() => setLoading(false))
   }, [tokens])
 
-  const downloadOne = useCallback(async (token: string) => {
-    try {
-      const downloadUrl = await fetchDownloadUrl(token)
-      window.location.href = downloadUrl
-      setRequested(prev => new Set(prev).add(token))
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Download failed. Please try again.')
-    }
-  }, [])
-
-  const downloadAll = async () => {
-    if (eligible.length === 0) return
-    setDownloading(true)
-    try {
-      for (const file of eligible) {
-        const downloadUrl = await fetchDownloadUrl(file.token)
-        const a = document.createElement('a')
-        a.href = downloadUrl
-        a.download = file.originalName
-        a.target = '_blank'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        await new Promise(r => setTimeout(r, 700))
-        setRequested(prev => new Set(prev).add(file.token))
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Download failed. Please try again.')
-    } finally {
-      setDownloading(false)
-    }
+  function buildBundleDownloadUrl(): string {
+    const params = new URLSearchParams({ tokens })
+    if (pin) params.set('pin', pin)
+    return `/api/public-share/batch/download?${params.toString()}`
   }
 
-  const downloadWithFolders = async () => {
-    if (eligible.length === 0) return
-    const picker = (window as unknown as {
-      showDirectoryPicker?: (options?: { mode?: 'readwrite' }) => Promise<FileSystemDirectoryHandle>
-    }).showDirectoryPicker
-    if (typeof picker !== 'function') {
-      toast.error('This browser cannot save folders directly. Use Download all instead.')
+  function startBundleDownload() {
+    if (hasProtectedFiles && !/^\d{4,8}$/.test(pin)) {
+      setPinError('Enter the correct 4-8 digit PIN to download this transfer.')
       return
     }
 
+    setPinError('')
     setDownloading(true)
+    window.location.href = buildBundleDownloadUrl()
+    window.setTimeout(() => setDownloading(false), 3000)
+  }
+
+  async function downloadWithFolders() {
+    const picker = (window as unknown as {
+      showDirectoryPicker?: (options?: { mode?: 'readwrite' }) => Promise<FileSystemDirectoryHandle>
+    }).showDirectoryPicker
+
+    if (typeof picker !== 'function') {
+      toast.error('This browser cannot save folders directly. Use the ZIP download instead.')
+      return
+    }
+
+    if (hasProtectedFiles && !/^\d{4,8}$/.test(pin)) {
+      setPinError('Enter the correct 4-8 digit PIN to save this transfer.')
+      return
+    }
+
+    setPinError('')
+    setDownloading(true)
+
     try {
       const root = await picker({ mode: 'readwrite' })
-      for (const file of eligible) {
-        const downloadUrl = await fetchDownloadUrl(file.token)
-        const res = await fetch(downloadUrl)
-        if (!res.ok) continue
-        const blob = await res.blob()
 
-        let dir: FileSystemDirectoryHandle = root
+      for (const file of files) {
+        const itemUrl = `/api/public-share/${file.token}/download${pin ? `?pin=${encodeURIComponent(pin)}` : ''}`
+        const response = await fetch(itemUrl)
+        if (!response.ok) {
+          throw new Error('One or more files could not be prepared for download.')
+        }
+
+        const { downloadUrl } = await response.json() as { downloadUrl: string }
+        const objectResponse = await fetch(downloadUrl)
+        if (!objectResponse.ok) {
+          throw new Error(`Could not fetch ${file.originalName}.`)
+        }
+
+        const blob = await objectResponse.blob()
+        let directory = root
+
         if (file.folderPath) {
           for (const segment of file.folderPath.split('/').filter(Boolean)) {
-            dir = await dir.getDirectoryHandle(segment, { create: true })
+            directory = await directory.getDirectoryHandle(segment, { create: true })
           }
         }
 
-        const handle = await dir.getFileHandle(file.originalName, { create: true })
+        const handle = await directory.getFileHandle(file.originalName, { create: true })
         const writable = await handle.createWritable()
         await writable.write(blob)
         await writable.close()
-        setRequested(prev => new Set(prev).add(file.token))
       }
-      toast.success('Files saved with folder structure.')
+
+      toast.success('Transfer saved with folder structure.')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Folder save failed. Please try again.')
+      toast.error(err instanceof Error ? err.message : 'Transfer save failed.')
     } finally {
       setDownloading(false)
     }
@@ -166,29 +168,18 @@ export default function BatchDownloadClient({ tokens }: { tokens: string }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
       <header className="border-b border-slate-800/60 sticky top-0 z-10 bg-slate-950/80 backdrop-blur-sm">
-        <div className="max-w-2xl mx-auto px-5 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
-              <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-              </svg>
-            </div>
-            <span className="text-sm font-bold text-white">Christhood ShareLink</span>
+        <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-indigo-300">Christhood ShareLink</p>
+            <h1 className="text-xl font-bold text-white">Transfer ready to download</h1>
           </div>
-          <Link
-            href="/public-share"
-            className="text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-1"
-          >
-            Share files
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-            </svg>
+          <Link href="/public-share" className="text-sm text-slate-400 hover:text-white transition">
+            Send files
           </Link>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-10 space-y-6">
+      <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         {loading && (
           <div className="flex items-center justify-center py-20">
             <div className="w-8 h-8 border-4 border-indigo-800 border-t-indigo-400 rounded-full animate-spin" />
@@ -196,154 +187,109 @@ export default function BatchDownloadClient({ tokens }: { tokens: string }) {
         )}
 
         {!loading && error && (
-          <div className="text-center py-20 space-y-3">
-            <div className="w-14 h-14 bg-red-900/30 border border-red-800/50 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-7 h-7 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-8 text-center">
             <h2 className="text-xl font-bold text-white">Files not found</h2>
-            <p className="text-slate-400 text-sm">{error}</p>
-            <p className="text-slate-600 text-xs">These links may have expired or been deleted.</p>
-          </div>
-        )}
-
-        {!loading && !error && files.length === 0 && (
-          <div className="text-center py-20 space-y-3">
-            <div className="w-14 h-14 bg-slate-800/60 border border-slate-700/50 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-7 h-7 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-bold text-white">No files available</h2>
-            <p className="text-slate-400 text-sm">These links may have expired.</p>
+            <p className="mt-3 text-sm text-slate-400">{error}</p>
           </div>
         )}
 
         {!loading && !error && files.length > 0 && (
-          <>
-            <div className="text-center space-y-2 pb-2">
-              <div className="w-16 h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                    d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
-              </div>
-              <h1 className="text-2xl font-bold text-white">
-                {transferTitle ?? `${files.length} file${files.length !== 1 ? 's' : ''} shared with you`}
-              </h1>
-              {transferMsg && (
-                <p className="text-slate-400 text-sm max-w-md mx-auto leading-relaxed">{transferMsg}</p>
-              )}
-              <div className="flex items-center justify-center gap-4 text-xs text-slate-500 pt-1">
-                <span className="flex items-center gap-1">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Expires {expiryDateStr}
-                </span>
-                <span className="font-medium text-indigo-400">{expiry}</span>
-                <span>{files.length} file{files.length !== 1 ? 's' : ''} · {formatBytes(totalSize)}</span>
-              </div>
-              <p className="text-xs text-slate-500">
-                If a file came from a folder, you can use “Save with folder structure” on supported browsers.
-              </p>
-            </div>
-
-            {eligible.length > 1 && (
-              <div className="space-y-3">
-                <button
-                  onClick={downloadAll}
-                  disabled={downloading}
-                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-500 disabled:opacity-60 active:scale-[.99] transition shadow-lg shadow-indigo-900/30"
-                >
-                  {downloading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                      Downloading files…
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      Download all {eligible.length} files · {formatBytes(totalSize)}
-                    </>
+          <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+            <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-black/20">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.14em] text-indigo-300">
+                    {transferTitle || 'Shared transfer'}
+                  </p>
+                  <h2 className="mt-2 text-3xl font-bold text-white">
+                    {files.length} file{files.length !== 1 ? 's' : ''} shared with you
+                  </h2>
+                  {transferMsg && (
+                    <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300">{transferMsg}</p>
                   )}
+                </div>
+                <div className="rounded-2xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-right">
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Download</p>
+                  <p className="mt-1 text-lg font-semibold text-white">{formatBytes(totalSize)}</p>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Files</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{files.length}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Expires</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{expiry}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Packaging</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{hasFolders ? 'Folders preserved' : 'One ZIP folder'}</p>
+                </div>
+              </div>
+
+              {hasProtectedFiles && (
+                <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+                  <p className="text-sm font-medium text-amber-200">This transfer is PIN protected.</p>
+                  <p className="mt-1 text-sm text-amber-100/80">
+                    Enter the correct PIN once to unlock the whole transfer.
+                  </p>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                    placeholder="4-8 digit PIN"
+                    className="mt-3 w-full rounded-xl border border-amber-400/30 bg-slate-950/60 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-amber-300 focus:outline-none"
+                  />
+                  {pinError && <p className="mt-2 text-sm text-red-300">{pinError}</p>}
+                </div>
+              )}
+
+              <div className="mt-6 rounded-2xl border border-indigo-500/20 bg-indigo-500/10 p-4">
+                <p className="text-sm text-indigo-100">
+                  Use the main button below to download everything together in one ZIP folder. You do not need to click every file one by one anymore.
+                </p>
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3">
+                <button
+                  onClick={startBundleDownload}
+                  disabled={downloading}
+                  className="w-full rounded-2xl bg-indigo-600 px-5 py-4 text-base font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  {downloading ? 'Preparing download...' : `Download all ${files.length} files together`}
                 </button>
+
                 {hasFolders && (
                   <button
                     onClick={downloadWithFolders}
                     disabled={downloading}
-                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl border border-slate-700 bg-slate-900/70 text-slate-100 font-semibold text-sm hover:bg-slate-800 disabled:opacity-60 active:scale-[.99] transition"
+                    className="w-full rounded-2xl border border-slate-700 bg-slate-950/60 px-5 py-4 text-sm font-semibold text-slate-100 transition hover:bg-slate-800 disabled:opacity-50"
                   >
-                    Save with folder structure
+                    Save with original folder structure
                   </button>
                 )}
               </div>
-            )}
 
-            <div className="bg-slate-900/70 border border-slate-700/50 rounded-2xl divide-y divide-slate-800/60 overflow-hidden backdrop-blur-sm">
-              {files.map((f) => (
-                <div key={f.token} className="flex items-center gap-4 px-5 py-4">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
-                    <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+              <p className="mt-4 text-xs text-slate-500">
+                Files are permanently deleted after {expiryDateStr}.
+              </p>
+            </section>
+
+            <aside className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+              <h3 className="text-lg font-semibold text-white">Included files</h3>
+              <div className="mt-4 max-h-[32rem] space-y-2 overflow-auto">
+                {files.map((file) => (
+                  <div key={file.token} className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3">
+                    <p className="truncate text-sm font-medium text-white">{fullName(file)}</p>
+                    <p className="mt-1 text-xs text-slate-500">{formatBytes(file.fileSize)}</p>
                   </div>
-
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{fullName(f)}</p>
-                    <p className="text-xs text-slate-500">{formatBytes(f.fileSize)}</p>
-                  </div>
-
-                  {f.pinRequired ? (
-                    <Link
-                      href={`/public-share/${f.token}`}
-                      className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-900/30 text-amber-400 text-xs font-semibold border border-amber-700/50 hover:bg-amber-900/50 transition"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                      Enter PIN
-                    </Link>
-                  ) : requested.has(f.token) ? (
-                    <span className="shrink-0 flex items-center gap-1 px-4 py-2 rounded-lg bg-emerald-900/30 text-emerald-400 text-xs font-semibold border border-emerald-700/50">
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Download started
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => downloadOne(f.token)}
-                      className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 active:scale-95 transition"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      Download
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <p className="text-center text-xs text-slate-600">
-              Shared via{' '}
-              <a href="https://cmmschristhood.org" className="text-indigo-500/70 hover:text-indigo-400 transition">
-                Christhood CMMS
-              </a>
-              {' '}· Files are permanently deleted after {expiryDateStr}
-            </p>
-          </>
+                ))}
+              </div>
+            </aside>
+          </div>
         )}
       </main>
     </div>
