@@ -67,7 +67,9 @@ export async function POST(req: NextRequest) {
   const pinProtected = records.some(record => Boolean(record.pinHash))
 
   const fileRows = records.map((record) => {
-    const itemUrl = `${SHARE_BASE}/public-share/${record.token}`
+    const itemUrl = transferCode
+      ? transferUrl
+      : `${SHARE_BASE}/public-share/${record.token}`
     return [
       '<tr>',
       '  <td style="padding:12px 0;border-bottom:1px solid #e5e7eb;">',
@@ -75,7 +77,7 @@ export async function POST(req: NextRequest) {
       `    <span style="font-size:12px;color:#9ca3af;">${formatBytes(record.fileSize)}</span>`,
       '  </td>',
       '  <td style="padding:12px 0;border-bottom:1px solid #e5e7eb;text-align:right;">',
-      `    <a href="${itemUrl}" style="display:inline-block;background:#4f46e5;color:white;padding:7px 18px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">Open file</a>`,
+      `    <a href="${itemUrl}" style="display:inline-block;background:#4f46e5;color:white;padding:7px 18px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">${transferCode ? 'Open transfer' : 'Open file'}</a>`,
       '  </td>',
       '</tr>',
     ].join('')
