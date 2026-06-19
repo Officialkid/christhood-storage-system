@@ -13,6 +13,8 @@ import type { HierarchyYear, HierarchyEvent, HierarchySubfolder } from '@/types'
 interface Creating {
   type: 'event' | 'subfolder'
   eventId?: string        // for subfolder
+  initialCategoryName?: string
+  initialYear?: number
 }
 interface Editing {
   type: 'event' | 'subfolder'
@@ -42,17 +44,21 @@ function CreateEventModal({
   years,
   onClose,
   onCreated,
+  initialCategoryName,
+  initialYear,
 }: {
   years:     HierarchyYear[]
   onClose:   () => void
   onCreated: () => void
+  initialCategoryName?: string
+  initialYear?: number
 }) {
   const currentYear = new Date().getFullYear()
   const [name, setName]                     = useState('')
   const [date, setDate]                     = useState('')
-  const [categoryValue, setCategoryValue]   = useState<string>(OFFICIAL_CATEGORY_NAMES[0])
+  const [categoryValue, setCategoryValue]   = useState<string>(initialCategoryName ?? OFFICIAL_CATEGORY_NAMES[0])
   const [customCategoryName, setCustomCat]  = useState('')
-  const [year, setYear]                     = useState(String(currentYear))
+  const [year, setYear]                     = useState(String(initialYear ?? currentYear))
   const [saving, setSaving]                 = useState(false)
   const [error, setError]                   = useState('')
 
@@ -98,7 +104,7 @@ function CreateEventModal({
       <div className="w-full max-w-md bg-slate-900 border border-slate-700/60 rounded-2xl
                       shadow-2xl shadow-black/60 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-semibold text-white">Create Event</h2>
+          <h2 className="text-base font-semibold text-white">Create Month Folder</h2>
           <button onClick={onClose} className="text-slate-500 hover:text-white transition">
             <X className="w-4 h-4" />
           </button>
@@ -108,13 +114,13 @@ function CreateEventModal({
           {/* Name */}
           <div>
             <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Event Name
+              Month Folder Name
             </label>
             <input
               autoFocus
               value={name}
               onChange={e => setName(e.target.value)}
-              placeholder="e.g. Easter Convention 2025"
+              placeholder="e.g. June 2026"
               className="mt-1.5 w-full bg-slate-800 border border-slate-700 rounded-xl
                          px-3.5 py-2.5 text-sm text-white placeholder:text-slate-600
                          focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -124,7 +130,7 @@ function CreateEventModal({
           {/* Date */}
           <div>
             <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Event Date
+              Month / Anchor Date
             </label>
             <input
               type="date"
@@ -139,7 +145,7 @@ function CreateEventModal({
           {/* Category */}
           <div>
             <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Category
+              Major Category
             </label>
             <select
               value={categoryValue}
@@ -175,12 +181,12 @@ function CreateEventModal({
                 value={customCategoryName}
                 onChange={e => setCustomCat(e.target.value)}
                 maxLength={80}
-                placeholder="e.g. Leadership Retreat"
+                placeholder="e.g. Fellowship, Outreach, Media Training"
                 className="mt-1.5 w-full bg-slate-800 border border-indigo-600/60 rounded-xl
                            px-3.5 py-2.5 text-sm text-white placeholder:text-slate-600
                            focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
-              <p className="mt-1 text-xs text-slate-500">This will become a new category for future events.</p>
+              <p className="mt-1 text-xs text-slate-500">This becomes a real top-level category for future uploads.</p>
             </div>
           )}
 
@@ -223,7 +229,7 @@ function CreateEventModal({
                          hover:from-indigo-500 hover:to-violet-500
                          disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Create Event'}
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Create Month Folder'}
             </button>
           </div>
         </form>
@@ -272,19 +278,19 @@ function CreateSubfolderModal({
       <div className="w-full max-w-sm bg-slate-900 border border-slate-700/60 rounded-2xl
                       shadow-2xl shadow-black/60 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-white">Add Subfolder</h2>
+          <h2 className="text-base font-semibold text-white">Add Week / Date Folder</h2>
           <button onClick={onClose} className="text-slate-500 hover:text-white transition">
             <X className="w-4 h-4" />
           </button>
         </div>
-        <p className="text-xs text-slate-500 mb-4">For event: <span className="text-slate-300">{eventName}</span></p>
+        <p className="text-xs text-slate-500 mb-4">Within month folder: <span className="text-slate-300">{eventName}</span></p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
             autoFocus
             value={label}
             onChange={e => setLabel(e.target.value)}
-            placeholder="e.g. Day 1, Sunday Service..."
+            placeholder="e.g. Week 1 - Jun 7, 2026"
             className="w-full bg-slate-800 border border-slate-700 rounded-xl
                        px-3.5 py-2.5 text-sm text-white placeholder:text-slate-600
                        focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -465,8 +471,8 @@ export default function AdminHierarchyPage() {
             <FolderTree className="w-5 h-5 text-violet-400" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white">Hierarchy Manager</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Create and manage years, events, and subfolders</p>
+            <h1 className="text-xl font-bold text-white">Media Hierarchy Manager</h1>
+            <p className="text-xs text-slate-500 mt-0.5">Manage years, major categories, month folders, and week/date folders</p>
           </div>
         </div>
 
@@ -477,7 +483,7 @@ export default function AdminHierarchyPage() {
                      hover:from-indigo-500 hover:to-violet-500 transition shadow shadow-indigo-500/20"
         >
           <Plus className="w-4 h-4" />
-          New Event
+          New Month Folder
         </button>
       </div>
 
@@ -491,7 +497,7 @@ export default function AdminHierarchyPage() {
         ) : years.length === 0 ? (
           <div className="text-center py-12 text-slate-600">
             <FolderTree className="w-10 h-10 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">No events yet. Create one to get started.</p>
+            <p className="text-sm">No month folders yet. Create one to get started.</p>
           </div>
         ) : (
           <div className="space-y-1">
@@ -508,6 +514,9 @@ export default function AdminHierarchyPage() {
                 onRenameSubfolder={renameSubfolder}
                 onDeleteEvent={deleteEvent}
                 onDeleteSubfolder={deleteSubfolder}
+                onAddEventInCategory={(categoryName: string, yearValue: number) =>
+                  setCreating({ type: 'event', initialCategoryName: categoryName, initialYear: yearValue })
+                }
                 onAddSubfolder={(evtId: string) =>
                   setCreating({ type: 'subfolder', eventId: evtId })
                 }
@@ -524,6 +533,8 @@ export default function AdminHierarchyPage() {
       {creating?.type === 'event' && (
         <CreateEventModal
           years={years}
+          initialCategoryName={creating.initialCategoryName}
+          initialYear={creating.initialYear}
           onClose={() => setCreating(null)}
           onCreated={async () => {
             setCreating(null)
@@ -563,7 +574,7 @@ export default function AdminHierarchyPage() {
 function YearNode({
   year, editing, deleting, collapsed, onToggle,
   onSetEditing, onRenameEvent, onRenameSubfolder,
-  onDeleteEvent, onDeleteSubfolder, onAddSubfolder,
+  onDeleteEvent, onDeleteSubfolder, onAddEventInCategory, onAddSubfolder,
   addSubfolderTarget,
 }: any) {
   const open = !collapsed.has(year.id)
@@ -588,6 +599,7 @@ function YearNode({
             <CategoryNode
               key={cat.id}
               category={cat}
+              yearValue={year.year}
               editing={editing}
               deleting={deleting}
               collapsed={collapsed}
@@ -597,6 +609,7 @@ function YearNode({
               onRenameSubfolder={onRenameSubfolder}
               onDeleteEvent={onDeleteEvent}
               onDeleteSubfolder={onDeleteSubfolder}
+              onAddEventInCategory={onAddEventInCategory}
               onAddSubfolder={onAddSubfolder}
               addSubfolderTarget={addSubfolderTarget}
             />
@@ -608,28 +621,37 @@ function YearNode({
 }
 
 function CategoryNode({
-  category, editing, deleting, collapsed, onToggle,
+  category, yearValue, editing, deleting, collapsed, onToggle,
   onSetEditing, onRenameEvent, onRenameSubfolder,
-  onDeleteEvent, onDeleteSubfolder, onAddSubfolder,
+  onDeleteEvent, onDeleteSubfolder, onAddEventInCategory, onAddSubfolder,
   addSubfolderTarget,
 }: any) {
   const open = !collapsed.has(category.id)
   return (
     <div>
-      <button
-        onClick={() => onToggle(category.id)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-left
-                   hover:bg-slate-800/50 transition"
-      >
-        {open
-          ? <ChevronDown className="w-3 h-3 text-slate-600 shrink-0" />
-          : <ChevronRight className="w-3 h-3 text-slate-600 shrink-0" />
-        }
-        <span className="text-xs font-semibold tracking-wider uppercase text-slate-500">
-          {category.name}
-        </span>
-        <span className="ml-auto text-xs text-slate-700">{category.events.length}</span>
-      </button>
+      <div className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-800/50 transition">
+        <button
+          onClick={() => onToggle(category.id)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          {open
+            ? <ChevronDown className="w-3 h-3 text-slate-600 shrink-0" />
+            : <ChevronRight className="w-3 h-3 text-slate-600 shrink-0" />
+          }
+          <span className="text-xs font-semibold tracking-wider uppercase text-slate-500">
+            {category.name}
+          </span>
+          <span className="ml-auto text-xs text-slate-700">{category.events.length} month{category.events.length !== 1 ? 's' : ''}</span>
+        </button>
+
+        <button
+          title="Add month folder"
+          onClick={() => onAddEventInCategory(category.name, yearValue)}
+          className="p-1 rounded text-slate-500 hover:text-indigo-400 hover:bg-indigo-900/30"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
+      </div>
 
       {open && (
         <div className="ml-4 border-l border-slate-800/50 pl-3 space-y-0.5 mt-0.5">
@@ -714,7 +736,7 @@ function EventNode({
         {!isEditing && (
           <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shrink-0 ml-1">
             <button
-              title="Add subfolder"
+              title="Add week/date folder"
               onClick={() => onAddSubfolder(event.id, event.name)}
               className="p-1 rounded text-slate-500 hover:text-indigo-400 hover:bg-indigo-900/30"
             >

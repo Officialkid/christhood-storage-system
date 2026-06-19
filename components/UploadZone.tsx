@@ -28,6 +28,7 @@ import {
   isVideoFile as isSharedVideoFile,
   resolveUploadMimeType as resolveSharedMimeType,
 } from '@/lib/upload/client-utils'
+import { OFFICIAL_CATEGORY_NAMES } from '@/lib/hierarchyConstants'
 import DuplicateCheckDialog, {
   type DuplicateEntry, type DuplicateResolution,
 } from './DuplicateCheckDialog'
@@ -315,6 +316,8 @@ export function UploadZone({ defaultDestination, events }: Props) {
   const [destination, setDestination]   = useState<DestinationInfo | null>(
     defaultDestination ?? null,
   )
+  const [selYear,     setSelYear]       = useState('')
+  const [selCategory, setSelCategory]   = useState('')
   const [selEventId,  setSelEventId]    = useState('')
   const [selSubId,    setSelSubId]      = useState('')
   const [isUploading, setIsUploading]   = useState(false)
@@ -719,7 +722,26 @@ export function UploadZone({ defaultDestination, events }: Props) {
   }
 
   // ── Destination helpers ─────────────────────────────────────────────────────
-  const selectedEvent = events.find(e => e.id === selEventId)
+  const selectedYearNumber = selYear ? Number(selYear) : null
+  const selectedYearEvents = selectedYearNumber
+    ? events.filter(e => e.category.year.year === selectedYearNumber)
+    : []
+  const availableCategories = [...new Set(selectedYearEvents.map(e => e.category.name))].sort((a, b) => {
+    const ai = OFFICIAL_CATEGORY_NAMES.indexOf(a as (typeof OFFICIAL_CATEGORY_NAMES)[number])
+    const bi = OFFICIAL_CATEGORY_NAMES.indexOf(b as (typeof OFFICIAL_CATEGORY_NAMES)[number])
+
+    if (ai !== -1 || bi !== -1) {
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
+    }
+
+    return a.localeCompare(b)
+  })
+  const selectedCategoryEvents = selCategory
+    ? selectedYearEvents.filter(e => e.category.name === selCategory)
+    : []
+  const selectedEvent = selectedCategoryEvents.find(e => e.id === selEventId)
 
   function applyEventSelection() {
     if (!selectedEvent) return
@@ -1260,13 +1282,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
   })
 
   // ── Grouped event options ──────────────────────────────────────────────────
-  const yearMap = new Map<number, EventOption[]>()
-  for (const ev of events) {
-    const yr = ev.category.year.year
-    if (!yearMap.has(yr)) yearMap.set(yr, [])
-    yearMap.get(yr)!.push(ev)
-  }
-  const sortedYears = [...yearMap.keys()].sort((a, b) => b - a)
+  const sortedYears = [...new Set(events.map(ev => ev.category.year.year))].sort((a, b) => b - a)
 
   return (
     <div className="space-y-5">
@@ -1518,10 +1534,10 @@ export function UploadZone({ defaultDestination, events }: Props) {
               <FolderOpen className="w-4 h-4 text-indigo-400 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-white">
-                  {destination.year} · {destination.categoryName} · {destination.eventName}
+                  {destination.year} · {destination.categoryName} · Month: {destination.eventName}
                 </p>
                 {destination.subfolderLabel && (
-                  <p className="text-xs text-slate-500">{destination.subfolderLabel}</p>
+                  <p className="text-xs text-slate-500">Week / date folder: {destination.subfolderLabel}</p>
                 )}
               </div>
               <button
@@ -1532,42 +1548,77 @@ export function UploadZone({ defaultDestination, events }: Props) {
               </button>
             </div>
           ) : (
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="flex-1">
+            <div className="grid gap-3 lg:grid-cols-[0.8fr_1fr_1fr_0.9fr_auto]">
+              <div>
                 <select
-                  value={selEventId}
-                  onChange={e => { setSelEventId(e.target.value); setSelSubId('') }}
+                  value={selYear}
+                  onChange={e => {
+                    setSelYear(e.target.value)
+                    setSelCategory('')
+                    setSelEventId('')
+                    setSelSubId('')
+                  }}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl
                              px-3 py-2 text-sm text-white focus:outline-none focus:ring-2
-                             focus:ring-indigo-500"
+                             focus:ring-indigo-500 disabled:opacity-50"
                 >
-                  <option value="">— Select an event —</option>
+                  <option value="">- Select year -</option>
                   {sortedYears.map(yr => (
-                    <optgroup key={yr} label={String(yr)}>
-                      {yearMap.get(yr)!.map(ev => (
-                        <option key={ev.id} value={ev.id}>{ev.name}</option>
-                      ))}
-                    </optgroup>
+                    <option key={yr} value={String(yr)}>{yr}</option>
                   ))}
                 </select>
               </div>
 
-              {selectedEvent && selectedEvent.subfolders.length > 0 && (
-                <div className="sm:w-48">
-                  <select
-                    value={selSubId}
-                    onChange={e => setSelSubId(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl
-                               px-3 py-2 text-sm text-white focus:outline-none focus:ring-2
-                               focus:ring-indigo-500"
-                  >
-                    <option value="">No subfolder</option>
-                    {selectedEvent.subfolders.map(s => (
-                      <option key={s.id} value={s.id}>{s.label}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div>
+                <select
+                  value={selCategory}
+                  onChange={e => {
+                    setSelCategory(e.target.value)
+                    setSelEventId('')
+                    setSelSubId('')
+                  }}
+                  disabled={!selYear}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl
+                             px-3 py-2 text-sm text-white focus:outline-none focus:ring-2
+                             focus:ring-indigo-500 disabled:opacity-50"
+                >
+                  <option value="">- Select major category -</option>
+                  {availableCategories.map(category => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1">
+                <select
+                  value={selEventId}
+                  onChange={e => { setSelEventId(e.target.value); setSelSubId('') }}
+                  disabled={!selCategory}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl
+                             px-3 py-2 text-sm text-white focus:outline-none focus:ring-2
+                             focus:ring-indigo-500 disabled:opacity-50"
+                >
+                  <option value="">- Select month folder -</option>
+                  {selectedCategoryEvents.map(ev => (
+                    <option key={ev.id} value={ev.id}>{ev.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="sm:w-48">
+                <select
+                  value={selSubId}
+                  onChange={e => setSelSubId(e.target.value)}
+                  disabled={!selectedEvent}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl
+                             px-3 py-2 text-sm text-white focus:outline-none focus:ring-2
+                             focus:ring-indigo-500 disabled:opacity-50"
+                >
+                  <option value="">No week/date folder</option>
+                  {selectedEvent?.subfolders.map(s => (
+                    <option key={s.id} value={s.id}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
 
               <button
                 onClick={applyEventSelection}
@@ -1591,9 +1642,9 @@ export function UploadZone({ defaultDestination, events }: Props) {
           <div className="flex-1 min-w-0 text-sm">
             <span className="text-slate-400">{defaultDestination.year} · </span>
             <span className="text-slate-400">{defaultDestination.categoryName} · </span>
-            <span className="text-white font-medium">{defaultDestination.eventName}</span>
+            <span className="text-white font-medium">Month: {defaultDestination.eventName}</span>
             {defaultDestination.subfolderLabel && (
-              <span className="text-slate-500"> / {defaultDestination.subfolderLabel}</span>
+              <span className="text-slate-500"> / Week: {defaultDestination.subfolderLabel}</span>
             )}
           </div>
         </div>

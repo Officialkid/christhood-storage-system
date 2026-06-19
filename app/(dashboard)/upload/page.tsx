@@ -57,16 +57,16 @@ export default async function UploadPage(props: Props) {
               <Upload className="h-5 w-5 text-indigo-400" />
             </div>
             <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Fast upload flow</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Structured upload flow</p>
               <h1 className="text-2xl font-bold text-white sm:text-3xl">Upload Media</h1>
               <p className="max-w-2xl text-sm text-slate-400">
-                Add files to the right event, keep large uploads resumable, and follow the progress clearly from one simple screen.
+                Add files to the right year, category, month folder, and week/date folder, while keeping large uploads resumable and easy to track.
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 sm:flex sm:flex-wrap sm:justify-end">
-            <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Choose destination</span>
+            <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Choose year → category → month → week</span>
             <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Add files or folders</span>
             <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Track progress</span>
             <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Resume if interrupted</span>

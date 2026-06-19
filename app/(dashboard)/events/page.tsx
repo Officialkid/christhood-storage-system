@@ -31,7 +31,7 @@ export default async function EventsPage() {
       <div>
         <h1 className="text-2xl font-bold text-white">Event Library</h1>
         <p className="mt-1 text-slate-400 text-sm">
-          Browse events and their media by selecting a year or event in the panel on the left.
+          Browse media by year, major category, month folder, and week/date folder from the panel on the left.
         </p>
       </div>
 
