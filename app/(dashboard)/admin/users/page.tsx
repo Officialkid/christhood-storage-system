@@ -195,13 +195,22 @@ export default function AdminUsersPage() {
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
   const [approvingId,    setApprovingId]    = useState<string | null>(null)
   const [approveRoles,   setApproveRoles]   = useState<Record<string, Role>>({})
+  const [error,          setError]          = useState<string | null>(null)
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
-    const res  = await fetch('/api/admin/users')
-    const data = await res.json()
-    setUsers(data.users ?? [])
-    setLoading(false)
+    setError(null)
+    try {
+      const res  = await fetch('/api/admin/users')
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to load users.')
+      setUsers(data.users ?? [])
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to load users.')
+      setUsers([])
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -227,38 +236,51 @@ export default function AdminUsersPage() {
 
   async function handleDeactivate(user: User) {
     setDeactivatingId(user.id)
+    setError(null)
     const action = user.isActive ? 'deactivate' : 'reactivate'
-    await fetch(`/api/admin/users/${user.id}/deactivate`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ action }),
-    })
-   
 
-  async function handleApprove(user: User) {
-    const role = approveRoles[user.id] ?? 'UPLOADER'
-    setApprovingId(user.id)
-    await fetch(`/api/admin/users/${user.id}`, {
-      method:  'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ role, approve: true }),
-    })
-    setApprovingId(null)
-    fetchUsers()
-  } setDeactivatingId(null)
-    fetchUsers()
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}/deactivate`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ action }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? `Failed to ${action} user.`)
+      await fetchUsers()
+    } catch (err: any) {
+      setError(err.message ?? `Failed to ${action} user.`)
+    } finally {
+      setDeactivatingId(null)
+    }
   }
 
   async function handleApprove(user: User) {
     const role = approveRoles[user.id] ?? 'UPLOADER'
     setApprovingId(user.id)
-    await fetch(`/api/admin/users/${user.id}`, {
-      method:  'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ role, approve: true }),
-    })
-    setApprovingId(null)
-    fetchUsers()
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ role, approve: true }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Failed to approve user.')
+      await fetchUsers()
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to approve user.')
+    } finally {
+      setApprovingId(null)
+    }
+  }
+
+  if (status === 'authenticated' && session?.user?.role !== 'ADMIN') {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-sm text-slate-500">Redirecting to your dashboard…</p>
+      </div>
+    )
   }
 
   if (status === 'loading' || loading) {
@@ -289,52 +311,69 @@ export default function AdminUsersPage() {
         />
       )}
 
-      <div className="p-8 max-w-6xl mx-auto">
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+        {error && (
+          <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            {error}
+          </div>
+        )}
+
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
-              <Shield className="w-5 h-5 text-violet-400" />
+        <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-violet-500/20 bg-violet-500/10">
+                <Shield className="h-5 w-5 text-violet-400" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-white">User Management</h1>
+                <p className="mt-1 text-sm text-slate-400">
+                  Review access, approve users, and keep the platform easy to manage.
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-white">User Management</h1>
-              <p className="text-sm text-slate-500">{users.length} total users
-                {users.filter(u => !u.isActive && !u.deactivatedAt).length > 0 && (
-                  <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold
-                                   bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                    {users.filter(u => !u.isActive && !u.deactivatedAt).length} pending approval
-                  </span>
-                )}
-              </p>
+            <button
+              onClick={() => { setEditUser(null); setModal('create') }}
+              className="flex items-center gap-2 self-start rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600
+                         px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition
+                         hover:from-indigo-500 hover:to-violet-500"
+            >
+              <UserPlus className="w-4 h-4" />
+              Add User
+            </button>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-800/70 bg-slate-950/60 px-4 py-3">
+              <p className="text-2xl font-semibold text-white">{users.length}</p>
+              <p className="mt-1 text-xs text-slate-500">Total users</p>
+            </div>
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+              <p className="text-2xl font-semibold text-amber-300">{users.filter(u => !u.isActive && !u.deactivatedAt).length}</p>
+              <p className="mt-1 text-xs text-amber-200/70">Pending approval</p>
+            </div>
+            <div className="rounded-xl border border-slate-800/70 bg-slate-950/60 px-4 py-3">
+              <p className="text-2xl font-semibold text-white">{users.filter(u => u.role === 'ADMIN').length}</p>
+              <p className="mt-1 text-xs text-slate-500">Admins</p>
             </div>
           </div>
-          <button
-            onClick={() => { setEditUser(null); setModal('create') }}
-            className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600
-                       hover:from-indigo-500 hover:to-violet-500 text-white text-sm
-                       font-semibold px-4 py-2.5 rounded-xl transition shadow-lg shadow-indigo-500/20"
-          >
-            <UserPlus className="w-4 h-4" />
-            Add User
-          </button>
         </div>
 
         {/* Search */}
-        <div className="relative mb-6">
+        <div className="relative">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by username, email or role…"
-            className="w-full bg-slate-800/60 border border-slate-700/50 rounded-xl
+            className="w-full rounded-xl border border-slate-700/50 bg-slate-800/60
                        pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500
                        focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition"
           />
         </div>
 
         {/* Table — desktop (md+) */}
-        <div className="hidden md:block bg-slate-900/60 border border-slate-800/60 rounded-2xl overflow-hidden">
+        <div className="hidden overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-950/60 md:block">
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-800/80">

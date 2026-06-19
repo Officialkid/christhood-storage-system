@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Trash2, Loader2 } from 'lucide-react'
 import { invalidateFileCache } from '@/lib/cache'
+import { useToast } from '@/lib/toast'
 
 interface Props {
   fileId:    string
@@ -22,6 +23,7 @@ interface Props {
  * Render this only when session.user.role === 'ADMIN'.
  */
 export function DeleteButton({ fileId, fileName, eventId, onDeleted, variant = 'button' }: Props) {
+  const toast = useToast()
   const [loading, setLoading] = useState(false)
 
   async function handleDelete() {
@@ -33,15 +35,16 @@ export function DeleteButton({ fileId, fileName, eventId, onDeleted, variant = '
       const body = await res.json()
 
       if (!res.ok) {
-        alert(`Delete failed: ${body.error ?? 'Unknown error'}`)
+        toast.error(body.error ?? 'Failed to move the file to trash.')
         return
       }
 
       // Immediately revalidate sidebar counts and dashboard stats
       await invalidateFileCache(eventId)
       onDeleted?.(fileId)
+      toast.success(`"${fileName}" moved to trash.`)
     } catch {
-      alert('Network error — please try again.')
+      toast.error('Network error while deleting the file. Please try again.')
     } finally {
       setLoading(false)
     }

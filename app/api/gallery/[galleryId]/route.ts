@@ -15,6 +15,7 @@ import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { logger }                    from '@/lib/logger'
 import { log }                       from '@/lib/activityLog'
+import { ApiError, handleApiError }  from '@/lib/apiError'
 
 export async function GET(req: NextRequest, props: { params: Promise<{ galleryId: string }> }) {
   const params = await props.params;
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ galleryId
 
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+    if (!session?.user) throw new ApiError(401, 'Please log in to continue.')
 
     const { role, id: userId } = session.user
 
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ galleryId
       },
     })
 
-    if (!gallery) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!gallery) throw new ApiError(404, 'Gallery not found.')
 
     // Enforce role-based visibility
     const isOwner = gallery.createdById === userId
@@ -53,7 +54,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ galleryId
       gallery.status !== 'PUBLISHED' &&
       !(role === 'EDITOR' && isOwner)
     ) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, "You don't have permission to view this gallery.")
     }
 
     return NextResponse.json({ gallery })
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ galleryId
       error:     err instanceof Error ? err.message : String(err),
       message:   'Unexpected error fetching gallery',
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err, `/api/gallery/${galleryId} GET`)
   }
 }
 
@@ -75,11 +76,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
 
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+    if (!session?.user) throw new ApiError(401, 'Please log in to continue.')
 
     const { role, id: userId } = session.user
     if (role !== 'EDITOR' && role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, "You don't have permission to edit galleries.")
     }
 
     const gallery = await prisma.publicGallery.findUnique({
@@ -87,14 +88,14 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
       select: { id: true, status: true, createdById: true },
     })
 
-    if (!gallery) return NextResponse.json({ error: 'Gallery not found' }, { status: 404 })
+    if (!gallery) throw new ApiError(404, 'Gallery not found.')
 
     if (gallery.status === 'ARCHIVED') {
-      return NextResponse.json({ error: 'Cannot edit an archived gallery' }, { status: 409 })
+      throw new ApiError(409, 'Archived galleries cannot be edited.')
     }
 
     if (role === 'EDITOR' && gallery.createdById !== userId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, "You can only edit your own galleries.")
     }
 
     const body = await req.json()
@@ -111,7 +112,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
         select: { id: true },
       })
       if (conflict) {
-        return NextResponse.json({ error: 'Slug is already in use' }, { status: 409 })
+        throw new ApiError(409, 'That gallery link is already in use.')
       }
     }
 
@@ -154,7 +155,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
       error:     err instanceof Error ? err.message : String(err),
       message:   'Unexpected error updating gallery',
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err, `/api/gallery/${galleryId} PATCH`)
   }
 }
 
@@ -171,11 +172,11 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ galler
 
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+    if (!session?.user) throw new ApiError(401, 'Please log in to continue.')
 
     const { role, id: userId } = session.user
     if (role !== 'EDITOR' && role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, "You don't have permission to delete galleries.")
     }
 
     const gallery = await prisma.publicGallery.findUnique({
@@ -183,21 +184,18 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ galler
       select: { id: true, title: true, status: true, createdById: true },
     })
 
-    if (!gallery) return NextResponse.json({ error: 'Gallery not found' }, { status: 404 })
+    if (!gallery) throw new ApiError(404, 'Gallery not found.')
     if (gallery.status === 'DELETED' || gallery.status === 'PURGED') {
-      return NextResponse.json({ error: 'Gallery is already deleted' }, { status: 409 })
+      throw new ApiError(409, 'This gallery is already in trash.')
     }
 
     // EDITOR: only own DRAFT galleries
     if (role === 'EDITOR') {
       if (gallery.createdById !== userId) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        throw new ApiError(403, "You can only delete your own draft galleries.")
       }
       if (gallery.status !== 'DRAFT') {
-        return NextResponse.json(
-          { error: 'Editors can only delete DRAFT galleries' },
-          { status: 409 },
-        )
+        throw new ApiError(409, 'Editors can only delete draft galleries.')
       }
     }
 
@@ -241,6 +239,6 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ galler
       error:    err instanceof Error ? err.message : String(err),
       message:  'Unexpected error deleting gallery',
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err, `/api/gallery/${galleryId} DELETE`)
   }
 }

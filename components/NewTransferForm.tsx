@@ -46,6 +46,7 @@ const PENDING_KEY = 'cmms_pending_transfer'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const WARN_SIZE = 2 * 1024 * 1024 * 1024  // 2 GB
+const TRANSFER_UPLOAD_CONCURRENCY = 4
 
 const ACCEPTED_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.tiff', '.tif', '.raw', '.heic',
@@ -73,6 +74,34 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 ** 2)   return `${(bytes / 1024).toFixed(1)} KB`
   if (bytes < 1024 ** 3)   return `${(bytes / 1024 ** 2).toFixed(1)} MB`
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`
+}
+
+async function uploadWithConcurrency<T>(
+  items: StagedFile[],
+  limit: number,
+  worker: (item: StagedFile, index: number) => Promise<T>,
+  onDone: (completed: number, total: number) => void,
+): Promise<T[]> {
+  const results = new Array<T>(items.length)
+  const total = items.length
+  let nextIndex = 0
+  let completed = 0
+
+  async function runWorker() {
+    while (true) {
+      const index = nextIndex++
+      if (index >= total) return
+      results[index] = await worker(items[index], index)
+      completed += 1
+      onDone(completed, total)
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, total) }, () => runWorker()),
+  )
+
+  return results
 }
 
 function FileTypeIcon({ file }: { file: File }) {
@@ -324,52 +353,51 @@ export function NewTransferForm() {
     setErrorMsg(null)
 
     try {
-      const uploadedFiles: PendingTransfer['files'] = []
-
-      for (const sf of staged) {
-        // 1. Get presigned URL from server
-        const presignRes = await fetch('/api/transfers/presign', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({
-            transferId,
-            filename:    sf.file.name,
-            folderPath:  sf.folderPath,
-            contentType: sf.file.type || 'application/octet-stream',
-          }),
-        })
-        if (!presignRes.ok) {
-          const d = await presignRes.json().catch(() => ({}) as { error?: string })
-          throw new Error((d as { error?: string }).error ?? `Could not prepare upload for "${sf.file.name}" — please try again.`)
-        }
-        const { presignedUrl, r2Key } = await presignRes.json()
-
-        // 2. Compute SHA-256 (guarantees byte-for-byte integrity on download)
-        const checksum = await computeSHA256(sf.file)
-
-        // 3. PUT directly to R2 — no compression, no resampling
-        let putRes: Response
-        try {
-          putRes = await fetch(presignedUrl, {
-            method:  'PUT',
-            body:    sf.file,
-            headers: { 'Content-Type': sf.file.type || 'application/octet-stream' },
+      const uploadedFiles = await uploadWithConcurrency(
+        staged,
+        TRANSFER_UPLOAD_CONCURRENCY,
+        async (sf) => {
+          const presignRes = await fetch('/api/transfers/presign', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+              transferId,
+              filename:    sf.file.name,
+              folderPath:  sf.folderPath,
+              contentType: sf.file.type || 'application/octet-stream',
+            }),
           })
-        } catch {
-          throw new Error(`Network error while uploading "${sf.file.name}" — please check your connection and try again.`)
-        }
-        if (!putRes.ok) throw new Error(`Upload failed for "${sf.file.name}" (HTTP ${putRes.status}) — please try again.`)
+          if (!presignRes.ok) {
+            const d = await presignRes.json().catch(() => ({}) as { error?: string })
+            throw new Error((d as { error?: string }).error ?? `Could not prepare upload for "${sf.file.name}" — please try again.`)
+          }
+          const { presignedUrl, r2Key } = await presignRes.json()
 
-        uploadedFiles.push({
-          originalName: sf.file.name,
-          r2Key,
-          fileSize:     sf.file.size,
-          mimeType:     sf.file.type || 'application/octet-stream',
-          folderPath:   sf.folderPath,
-          checksum,
-        })
-        setProgress(p => ({ ...p, done: p.done + 1 }))
-      }
+          const checksum = await computeSHA256(sf.file)
+
+          let putRes: Response
+          try {
+            putRes = await fetch(presignedUrl, {
+              method:  'PUT',
+              body:    sf.file,
+              headers: { 'Content-Type': sf.file.type || 'application/octet-stream' },
+            })
+          } catch {
+            throw new Error(`Network error while uploading "${sf.file.name}" — please check your connection and try again.`)
+          }
+          if (!putRes.ok) throw new Error(`Upload failed for "${sf.file.name}" (HTTP ${putRes.status}) — please try again.`)
+
+          return {
+            originalName: sf.file.name,
+            r2Key,
+            fileSize:     sf.file.size,
+            mimeType:     sf.file.type || 'application/octet-stream',
+            folderPath:   sf.folderPath,
+            checksum,
+          }
+        },
+        (done, total) => setProgress({ done, total }),
+      )
 
       // All files are safely in R2. Persist the create payload so we can retry
       // if the network drops before the DB write completes.
@@ -466,7 +494,7 @@ export function NewTransferForm() {
   const busy = sendStatus === 'uploading' || sendStatus === 'creating'
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
 
       {/* ── Offline / interrupted transfer recovery banner ────────────────── */}
       {pendingCreate && sendStatus === 'idle' && (

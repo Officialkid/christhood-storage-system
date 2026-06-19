@@ -6,6 +6,15 @@ import { getPresignedDownloadUrl }    from '@/lib/r2'
 import { log }                        from '@/lib/activityLog'
 import { logger }                     from '@/lib/logger'
 
+function toFlatDownloadName(originalName: string, folderPath: string | null) {
+  if (!folderPath) return originalName
+  const prefix = folderPath
+    .replace(/[\\/]+/g, ' - ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return `${prefix} - ${originalName}`
+}
+
 /**
  * GET /api/transfers/[transferId]/files/[fileId]
  *
@@ -46,7 +55,7 @@ export async function GET(
 
   const file = await prisma.transferFile.findFirst({
     where:  { id: fileId, transferId },
-    select: { r2Key: true, originalName: true },
+    select: { r2Key: true, originalName: true, folderPath: true },
   })
   if (!file) {
     return NextResponse.json({ error: 'File not found' }, { status: 404 })
@@ -74,5 +83,9 @@ export async function GET(
   }
 
   const url = await getPresignedDownloadUrl(file.r2Key, 3600)
-  return NextResponse.json({ url, filename: file.originalName })
+  return NextResponse.json({
+    url,
+    filename: file.originalName,
+    downloadName: toFlatDownloadName(file.originalName, file.folderPath ?? null),
+  })
 }

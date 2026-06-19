@@ -165,6 +165,16 @@ export default function AnalyticsPage() {
     )
   }
 
+  if (!session?.user || session.user.role !== 'ADMIN') {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
+        <Bot className="w-8 h-8 text-amber-400" />
+        <p className="text-sm font-medium text-white">Admin access is required for analytics.</p>
+        <p className="text-sm text-slate-500">Redirecting to your dashboard…</p>
+      </div>
+    )
+  }
+
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-3 text-red-400">
@@ -186,6 +196,9 @@ export default function AnalyticsPage() {
 
   const usedGB  = (overview.totalBytes / 1_073_741_824).toFixed(2)
   const trashGB = (overview.trashBytes / 1_073_741_824).toFixed(3)
+  const freeBytes = Math.max(0, overview.limitBytes - overview.totalBytes)
+  const overageBytes = Math.max(0, overview.totalBytes - overview.limitBytes)
+  const isOverCapacity = overageBytes > 0
 
   // Prepare pie sectors for file-type donut
   const pieData = byFileType.map(r => ({
@@ -297,7 +310,8 @@ export default function AnalyticsPage() {
             Storage capacity
           </h2>
           <span className={`text-lg font-bold ${
-            overview.usedPct >= 90 ? 'text-red-400'
+            overview.usedPct >= 100 ? 'text-red-400'
+            : overview.usedPct >= 90 ? 'text-red-400'
             : overview.usedPct >= 75 ? 'text-amber-400'
             : 'text-indigo-400'
           }`}>
@@ -310,11 +324,12 @@ export default function AnalyticsPage() {
           {/* Used */}
           <div
             className={`absolute inset-y-0 left-0 rounded-full transition-all duration-700 ${
-              overview.usedPct >= 90 ? 'bg-gradient-to-r from-red-600 to-rose-500'
+              overview.usedPct >= 100 ? 'bg-gradient-to-r from-red-600 to-rose-500'
+              : overview.usedPct >= 90 ? 'bg-gradient-to-r from-red-600 to-rose-500'
               : overview.usedPct >= 75 ? 'bg-gradient-to-r from-amber-500 to-yellow-400'
               : 'bg-gradient-to-r from-indigo-600 to-violet-500'
             }`}
-            style={{ width: `${overview.usedPct}%` }}
+            style={{ width: `${Math.min(100, overview.usedPct)}%` }}
           />
           {/* Trash sub-bar */}
           {overview.trashBytes > 0 && (
@@ -331,7 +346,9 @@ export default function AnalyticsPage() {
             <span className="mx-2 text-slate-700">·</span>
             <span className="text-rose-400 font-medium">{trashGB} GB</span> in trash
           </span>
-          <span>{((overview.limitBytes - overview.totalBytes) / 1_073_741_824).toFixed(2)} GB free</span>
+          <span className={isOverCapacity ? 'text-red-400' : 'text-slate-500'}>
+            {isOverCapacity ? `${fmtBytes(overageBytes)} over capacity` : `${(freeBytes / 1_073_741_824).toFixed(2)} GB free`}
+          </span>
         </div>
       </div>
 

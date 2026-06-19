@@ -173,54 +173,56 @@ export default function AdminLogsPage() {
   const hasFilters = !!(action || userId || from || to)
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-violet-600/20 border border-violet-600/30 rounded-xl">
-            <ActivitySquare className="w-5 h-5 text-violet-400" />
+      <div className="rounded-2xl border border-slate-800/70 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-5 shadow-lg shadow-black/20">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="rounded-2xl border border-violet-500/20 bg-violet-600/15 p-3">
+              <ActivitySquare className="h-5 w-5 text-violet-400" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Audit trail</p>
+              <h1 className="text-2xl font-bold text-white sm:text-3xl">Activity Log</h1>
+              <p className="max-w-2xl text-sm text-slate-400">
+                A read-only record of important actions, grouped here so admin review is quick and easy to scan.
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">Activity Log</h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Tamper-evident audit trail &mdash; read-only for all roles
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1.5 text-xs text-amber-400
-                           bg-amber-400/10 border border-amber-400/20 px-3 py-1.5 rounded-lg">
-            <ShieldAlert className="w-3.5 h-3.5" />
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1.5 text-xs text-amber-300">
+              <ShieldAlert className="h-3.5 w-3.5" />
             Logs cannot be deleted
-          </span>
-          <button
-            onClick={() => fetchLogs(page)}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+            </span>
+            <button
+              onClick={() => fetchLogs(page)}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white transition"
+              title="Refresh"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
       {/* ── Filters ─────────────────────────────────────────────────────────── */}
-      <div className="bg-slate-900/60 border border-slate-800/60 rounded-2xl p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Filter className="w-3.5 h-3.5 text-slate-500" />
+      <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Filter className="h-3.5 w-3.5 text-slate-500" />
           <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Filters</span>
           {hasFilters && (
             <button
               onClick={clearFilters}
-              className="ml-auto flex items-center gap-1 text-xs text-slate-500
-                         hover:text-white transition"
+              className="ml-auto flex items-center gap-1 text-xs text-slate-500 hover:text-white transition"
             >
-              <X className="w-3 h-3" /> Clear
+              <X className="h-3 w-3" /> Clear
             </button>
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {/* Action */}
           <div>
             <label className="text-xs text-slate-500 mb-1 block">Action type</label>
@@ -280,13 +282,17 @@ export default function AdminLogsPage() {
           </div>
         </div>
 
-        <button
-          onClick={applyFilters}
-          className="mt-3 px-5 py-2 rounded-xl text-sm font-medium text-white
-                     bg-indigo-600 hover:bg-indigo-500 transition"
-        >
-          Apply filters
-        </button>
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <button
+            onClick={applyFilters}
+            className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+          >
+            Apply filters
+          </button>
+          <p className="text-xs text-slate-500">
+            Use filters to narrow down file uploads, downloads, transfers, and account activity.
+          </p>
+        </div>
       </div>
 
       {/* ── Results summary ──────────────────────────────────────────────────── */}

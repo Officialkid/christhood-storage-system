@@ -394,8 +394,9 @@ export async function sendTransferReceivedEmail(opts: {
   message:    string | null
   fileCount:  number
   totalSize:  number
+  transferId: string
 }): Promise<void> {
-  const link      = `${APP_URL}/transfers/inbox`
+  const link      = `${APP_URL}/transfers/inbox/${opts.transferId}`
   const sizeLabel = opts.totalSize < 1024 ** 2
     ? `${(opts.totalSize / 1024).toFixed(1)} KB`
     : opts.totalSize < 1024 ** 3
@@ -418,7 +419,7 @@ export async function sendTransferReceivedEmail(opts: {
     <p style="margin:0 0 4px;font-size:15px;color:#334155;line-height:1.6;">
       Download the files, make your edits, then upload your completed work back through your inbox.
     </p>
-    ${btn('Go to My Inbox →', link)}
+    ${btn('Open This Transfer →', link)}
     <p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">
       Files are stored securely and will expire after 60 days.
     </p>`

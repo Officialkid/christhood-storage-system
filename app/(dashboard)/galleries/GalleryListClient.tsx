@@ -9,6 +9,7 @@ import {
   Trash2, Pencil, Globe,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { useToast } from '@/lib/toast'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -537,6 +538,7 @@ function GalleryCard({
   userId:    string
   onAction:  () => void
 }) {
+  const toast = useToast()
   const [gallery,           setGallery]           = useState(initialGallery)
   const [pending,           startTransition]      = useTransition()
   const [busy,              setBusy]              = useState(false)
@@ -558,10 +560,14 @@ function GalleryCard({
       const res = await fetch(`/api/gallery/${gallery.id}/${endpoint}`, { method: 'PATCH' })
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
-        alert(d.error ?? `Action failed (${res.status})`)
+        toast.error(d.error ?? `Gallery action failed (${res.status}).`)
         return
       }
+      if (endpoint === 'archive') toast.success(`"${gallery.title}" archived.`)
+      if (endpoint === 'submit')  toast.success(`"${gallery.title}" submitted for review.`)
       startTransition(() => { router.refresh(); onAction() })
+    } catch {
+      toast.error('Network error while updating the gallery. Please try again.')
     } finally { setBusy(false) }
   }
 
@@ -571,13 +577,16 @@ function GalleryCard({
       const res = await fetch(`/api/gallery/${gallery.id}/publish`, { method: 'PATCH' })
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
-        alert(d.error ?? 'Failed to publish gallery')
+        toast.error(d.error ?? 'Failed to publish gallery.')
         return
       }
       const url = `https://gallery.cmmschristhood.org/${gallery.slug}`
       setGallery(g => ({ ...g, status: 'PUBLISHED' }))
       setPublishedUrl(url)
+      toast.success(`"${gallery.title}" published successfully.`)
       startTransition(() => { router.refresh(); onAction() })
+    } catch {
+      toast.error('Network error while publishing the gallery. Please try again.')
     } finally {
       setPublishing(false)
       setShowPublishDialog(false)

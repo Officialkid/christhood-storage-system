@@ -20,6 +20,14 @@ import {
   requestNotificationPermission, notifyUploadProgress,
   notifyUploadComplete, notifyUploadFailed, dismissUploadNotification,
 } from '@/lib/upload/upload-notifications'
+import {
+  xhrPut as uploadWithProgress,
+  formatUploadSize as formatSharedSize,
+  formatUploadSpeed as formatSharedSpeed,
+  formatUploadEta as formatSharedEta,
+  isVideoFile as isSharedVideoFile,
+  resolveUploadMimeType as resolveSharedMimeType,
+} from '@/lib/upload/client-utils'
 import DuplicateCheckDialog, {
   type DuplicateEntry, type DuplicateResolution,
 } from './DuplicateCheckDialog'
@@ -71,25 +79,6 @@ interface UploadFile {
 }
 
 /** XHR-based PUT that reports upload progress. */
-function xhrPut(
-  url:         string,
-  data:        Blob,
-  contentType: string,
-  onProgress:  (pct: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('PUT', url)
-    xhr.setRequestHeader('Content-Type', contentType)
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
-    })
-    xhr.addEventListener('load',  () => xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`)))
-    xhr.addEventListener('error', () => reject(new Error('Network error')))
-    xhr.send(data)
-  })
-}
-
 /** Fetch a part and return its ETag. */
 async function uploadPart(
   url: string, chunk: Blob,
@@ -179,7 +168,7 @@ function resolveMimeType(fileName: string, browserType: string): string {
 function FileRow({
   uf, isOnline, onRemove, onRetry,
 }: { uf: UploadFile; isOnline: boolean; onRemove: () => void; onRetry: () => void }) {
-  const Icon = isVideo(uf.file) ? Film : ImageIcon
+  const Icon = isSharedVideoFile(uf.file) ? Film : ImageIcon
   const pct  = uf.progress
 
   return (
@@ -190,7 +179,7 @@ function FileRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline justify-between gap-2">
           <p className="text-sm text-white truncate max-w-[260px]">{uf.file.name}</p>
-          <span className="text-xs text-slate-500 shrink-0">{formatSize(uf.file.size)}</span>
+          <span className="text-xs text-slate-500 shrink-0">{formatSharedSize(uf.file.size)}</span>
         </div>
 
         {/* Show the saved-as name only when a suffix was added (e.g. "IMG_6063 (1).jpg") */}
@@ -217,13 +206,13 @@ function FileRow({
                     <span className="text-violet-500">⎇ chunked</span>
                   )}
                   {uf.speed && uf.speed > 0 && (
-                    <span>· {formatSpeed(uf.speed)}</span>
+                    <span>· {formatSharedSpeed(uf.speed)}</span>
                   )}
                 </span>
                 {/* Right: ETA */}
                 {uf.speed && uf.speed > 0 && (
                   <span className="text-[10px] text-slate-600">
-                    ~{formatEta(uf.file.size - (uf.bytesLoaded ?? 0), uf.speed)} left
+                    ~{formatSharedEta(uf.file.size - (uf.bytesLoaded ?? 0), uf.speed)} left
                   </span>
                 )}
               </div>
@@ -755,7 +744,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
     // Resolve MIME type from file extension when file.type is empty (common on iOS
     // for .mov and some .mp4 files). This value is sent to the presign API AND used
     // as the PUT Content-Type header — they must be identical for R2 to accept the upload.
-    const contentType = resolveMimeType(file.name, file.type)
+    const contentType = resolveSharedMimeType(file.name, file.type)
     const isMultipart = file.size >= MULTIPART_THRESHOLD
 
     updateFile(uid, { status: 'starting' })
@@ -862,7 +851,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
         updateFile(uid, { status: 'uploading', mode: 'simple' })
 
         const startedAt = Date.now()
-        await xhrPut(uploadUrl, file, putContentType, pct => {
+        await uploadWithProgress(uploadUrl, file, putContentType, pct => {
           const bytesLoaded = Math.round((pct / 100) * file.size)
           const elapsed     = (Date.now() - startedAt) / 1000
           const speed       = elapsed > 0.3 ? Math.round(bytesLoaded / elapsed) : undefined
@@ -1265,7 +1254,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
     if (!isUploading) return
     if (overallPct - lastNotifPctRef.current >= NOTIF_THROTTLE_PCT) {
       lastNotifPctRef.current = overallPct
-      const speed = avgUploadSpeed > 0 ? formatSpeed(avgUploadSpeed) : undefined
+      const speed = avgUploadSpeed > 0 ? formatSharedSpeed(avgUploadSpeed) : undefined
       notifyUploadProgress(activeCount, filesState.length, overallPct, speed)
     }
   })
@@ -1644,7 +1633,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
                 </span>
                 {avgUploadSpeed > 0 && remainingBytes > 0 && (
                   <span className="text-slate-500 shrink-0 ml-3">
-                    {formatSpeed(avgUploadSpeed)} · ~{formatEta(remainingBytes, avgUploadSpeed)} left
+                    {formatSharedSpeed(avgUploadSpeed)} · ~{formatSharedEta(remainingBytes, avgUploadSpeed)} left
                   </span>
                 )}
               </div>

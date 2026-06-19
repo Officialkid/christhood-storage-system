@@ -2,26 +2,26 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useToast } from '@/lib/toast'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 interface FileItem {
-  token:         string
-  originalName:  string
-  fileSize:      string
-  mimeType:      string
-  title:         string | null
-  message:       string | null
-  expiresAt:     string
+  token: string
+  originalName: string
+  folderPath: string | null
+  fileSize: string
+  mimeType: string
+  title: string | null
+  message: string | null
+  expiresAt: string
   downloadCount: number
-  pinRequired:   boolean
+  pinRequired: boolean
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function formatBytes(bytes: string | number): string {
   const n = typeof bytes === 'string' ? parseInt(bytes, 10) : bytes
-  if (n < 1024)       return `${n} B`
-  if (n < 1024 ** 2)  return `${(n / 1024).toFixed(1)} KB`
-  if (n < 1024 ** 3)  return `${(n / 1024 ** 2).toFixed(1)} MB`
+  if (n < 1024) return `${n} B`
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`
   return `${(n / 1024 ** 3).toFixed(2)} GB`
 }
 
@@ -37,20 +37,48 @@ function expiryCountdown(iso: string): string {
 
 function expiryDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
-    day: 'numeric', month: 'long', year: 'numeric',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
   })
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
 export default function BatchDownloadClient({ tokens }: { tokens: string }) {
-  const [files,       setFiles]       = useState<FileItem[]>([])
-  const [loading,     setLoading]     = useState(true)
-  const [error,       setError]       = useState('')
+  const toast = useToast()
+  const [files, setFiles] = useState<FileItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [downloading, setDownloading] = useState(false)
-  const [downloaded,  setDownloaded]  = useState<Set<string>>(new Set())
+  const [requested, setRequested] = useState<Set<string>>(new Set())
+
+  const eligible = files.filter(f => !f.pinRequired)
+  const hasFolders = files.some(f => !!f.folderPath)
+  const totalSize = files.reduce((sum, file) => sum + parseInt(file.fileSize, 10), 0)
+  const transferTitle = files[0]?.title ?? null
+  const transferMsg = files[0]?.message ?? null
+  const expiry = files[0] ? expiryCountdown(files[0].expiresAt) : ''
+  const expiryDateStr = files[0] ? expiryDate(files[0].expiresAt) : ''
+
+  function fullName(file: FileItem): string {
+    return file.folderPath ? `${file.folderPath}/${file.originalName}` : file.originalName
+  }
+
+  async function fetchDownloadUrl(token: string): Promise<string> {
+    const res = await fetch(`/api/public-share/${token}/download`)
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({})) as { error?: string }
+      throw new Error(d.error ?? `Error ${res.status}`)
+    }
+    const { downloadUrl } = await res.json() as { downloadUrl: string }
+    return downloadUrl
+  }
 
   useEffect(() => {
-    if (!tokens) { setError('No files specified.'); setLoading(false); return }
+    if (!tokens) {
+      setError('No files specified.')
+      setLoading(false)
+      return
+    }
 
     fetch(`/api/public-share/batch?tokens=${encodeURIComponent(tokens)}`)
       .then(r => r.json())
@@ -64,57 +92,82 @@ export default function BatchDownloadClient({ tokens }: { tokens: string }) {
 
   const downloadOne = useCallback(async (token: string) => {
     try {
-      const res = await fetch(`/api/public-share/${token}/download`)
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(d.error ?? `Error ${res.status}`)
-      }
-      const { downloadUrl } = await res.json() as { downloadUrl: string }
+      const downloadUrl = await fetchDownloadUrl(token)
       window.location.href = downloadUrl
-      setDownloaded(prev => new Set(prev).add(token))
+      setRequested(prev => new Set(prev).add(token))
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Download failed. Please try again.')
+      toast.error(err instanceof Error ? err.message : 'Download failed. Please try again.')
     }
   }, [])
 
   const downloadAll = async () => {
-    const eligible = files.filter(f => !f.pinRequired)
     if (eligible.length === 0) return
     setDownloading(true)
-    for (const file of eligible) {
-      try {
-        const res = await fetch(`/api/public-share/${file.token}/download`)
-        if (!res.ok) continue
-        const { downloadUrl } = await res.json() as { downloadUrl: string }
+    try {
+      for (const file of eligible) {
+        const downloadUrl = await fetchDownloadUrl(file.token)
         const a = document.createElement('a')
-        a.href     = downloadUrl
+        a.href = downloadUrl
         a.download = file.originalName
-        a.target   = '_blank'
+        a.target = '_blank'
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
         await new Promise(r => setTimeout(r, 700))
-        setDownloaded(prev => new Set(prev).add(file.token))
-      } catch { /* continue with next file */ }
+        setRequested(prev => new Set(prev).add(file.token))
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Download failed. Please try again.')
+    } finally {
+      setDownloading(false)
     }
-    setDownloading(false)
   }
 
-  const totalSize   = files.reduce((s, f) => s + parseInt(f.fileSize, 10), 0)
-  const eligible    = files.filter(f => !f.pinRequired)
-  const transferTitle  = files[0]?.title ?? null
-  const transferMsg    = files[0]?.message ?? null
-  const expiry         = files[0] ? expiryCountdown(files[0].expiresAt) : ''
-  const expiryDateStr  = files[0] ? expiryDate(files[0].expiresAt) : ''
+  const downloadWithFolders = async () => {
+    if (eligible.length === 0) return
+    const picker = (window as unknown as {
+      showDirectoryPicker?: (options?: { mode?: 'readwrite' }) => Promise<FileSystemDirectoryHandle>
+    }).showDirectoryPicker
+    if (typeof picker !== 'function') {
+      toast.error('This browser cannot save folders directly. Use Download all instead.')
+      return
+    }
+
+    setDownloading(true)
+    try {
+      const root = await picker({ mode: 'readwrite' })
+      for (const file of eligible) {
+        const downloadUrl = await fetchDownloadUrl(file.token)
+        const res = await fetch(downloadUrl)
+        if (!res.ok) continue
+        const blob = await res.blob()
+
+        let dir: FileSystemDirectoryHandle = root
+        if (file.folderPath) {
+          for (const segment of file.folderPath.split('/').filter(Boolean)) {
+            dir = await dir.getDirectoryHandle(segment, { create: true })
+          }
+        }
+
+        const handle = await dir.getFileHandle(file.originalName, { create: true })
+        const writable = await handle.createWritable()
+        await writable.write(blob)
+        await writable.close()
+        setRequested(prev => new Set(prev).add(file.token))
+      }
+      toast.success('Files saved with folder structure.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Folder save failed. Please try again.')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
-
-      {/* ── Brand header ────────────────────────────────────────────────────── */}
       <header className="border-b border-slate-800/60 sticky top-0 z-10 bg-slate-950/80 backdrop-blur-sm">
         <div className="max-w-2xl mx-auto px-5 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            {/* Upload cloud icon */}
             <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
               <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
@@ -136,15 +189,12 @@ export default function BatchDownloadClient({ tokens }: { tokens: string }) {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-10 space-y-6">
-
-        {/* ── Loading ─────────────────────────────────────────────────────── */}
         {loading && (
           <div className="flex items-center justify-center py-20">
             <div className="w-8 h-8 border-4 border-indigo-800 border-t-indigo-400 rounded-full animate-spin" />
           </div>
         )}
 
-        {/* ── Error ───────────────────────────────────────────────────────── */}
         {!loading && error && (
           <div className="text-center py-20 space-y-3">
             <div className="w-14 h-14 bg-red-900/30 border border-red-800/50 rounded-full flex items-center justify-center mx-auto">
@@ -159,7 +209,6 @@ export default function BatchDownloadClient({ tokens }: { tokens: string }) {
           </div>
         )}
 
-        {/* ── Empty ───────────────────────────────────────────────────────── */}
         {!loading && !error && files.length === 0 && (
           <div className="text-center py-20 space-y-3">
             <div className="w-14 h-14 bg-slate-800/60 border border-slate-700/50 rounded-full flex items-center justify-center mx-auto">
@@ -173,10 +222,8 @@ export default function BatchDownloadClient({ tokens }: { tokens: string }) {
           </div>
         )}
 
-        {/* ── Content ─────────────────────────────────────────────────────── */}
         {!loading && !error && files.length > 0 && (
           <>
-            {/* Hero */}
             <div className="text-center space-y-2 pb-2">
               <div className="w-16 h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center mx-auto mb-4">
                 <svg className="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -201,37 +248,48 @@ export default function BatchDownloadClient({ tokens }: { tokens: string }) {
                 <span className="font-medium text-indigo-400">{expiry}</span>
                 <span>{files.length} file{files.length !== 1 ? 's' : ''} · {formatBytes(totalSize)}</span>
               </div>
+              <p className="text-xs text-slate-500">
+                If a file came from a folder, you can use “Save with folder structure” on supported browsers.
+              </p>
             </div>
 
-            {/* Download All button */}
             {eligible.length > 1 && (
-              <button
-                onClick={downloadAll}
-                disabled={downloading}
-                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-500 disabled:opacity-60 active:scale-[.99] transition shadow-lg shadow-indigo-900/30"
-              >
-                {downloading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                    Downloading files…
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    Download all {eligible.length} files &nbsp;·&nbsp; {formatBytes(totalSize)}
-                  </>
+              <div className="space-y-3">
+                <button
+                  onClick={downloadAll}
+                  disabled={downloading}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-500 disabled:opacity-60 active:scale-[.99] transition shadow-lg shadow-indigo-900/30"
+                >
+                  {downloading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      Downloading files…
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Download all {eligible.length} files · {formatBytes(totalSize)}
+                    </>
+                  )}
+                </button>
+                {hasFolders && (
+                  <button
+                    onClick={downloadWithFolders}
+                    disabled={downloading}
+                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl border border-slate-700 bg-slate-900/70 text-slate-100 font-semibold text-sm hover:bg-slate-800 disabled:opacity-60 active:scale-[.99] transition"
+                  >
+                    Save with folder structure
+                  </button>
                 )}
-              </button>
+              </div>
             )}
 
-            {/* File list */}
             <div className="bg-slate-900/70 border border-slate-700/50 rounded-2xl divide-y divide-slate-800/60 overflow-hidden backdrop-blur-sm">
               {files.map((f) => (
                 <div key={f.token} className="flex items-center gap-4 px-5 py-4">
-                  {/* Icon */}
                   <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
                     <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -239,13 +297,11 @@ export default function BatchDownloadClient({ tokens }: { tokens: string }) {
                     </svg>
                   </div>
 
-                  {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{f.originalName}</p>
+                    <p className="text-sm font-semibold text-white truncate">{fullName(f)}</p>
                     <p className="text-xs text-slate-500">{formatBytes(f.fileSize)}</p>
                   </div>
 
-                  {/* Action */}
                   {f.pinRequired ? (
                     <Link
                       href={`/public-share/${f.token}`}
@@ -257,12 +313,12 @@ export default function BatchDownloadClient({ tokens }: { tokens: string }) {
                       </svg>
                       Enter PIN
                     </Link>
-                  ) : downloaded.has(f.token) ? (
+                  ) : requested.has(f.token) ? (
                     <span className="shrink-0 flex items-center gap-1 px-4 py-2 rounded-lg bg-emerald-900/30 text-emerald-400 text-xs font-semibold border border-emerald-700/50">
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                       </svg>
-                      Downloaded
+                      Download started
                     </span>
                   ) : (
                     <button
@@ -280,7 +336,6 @@ export default function BatchDownloadClient({ tokens }: { tokens: string }) {
               ))}
             </div>
 
-            {/* Footer note */}
             <p className="text-center text-xs text-slate-600">
               Shared via{' '}
               <a href="https://cmmschristhood.org" className="text-indigo-500/70 hover:text-indigo-400 transition">

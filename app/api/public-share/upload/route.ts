@@ -14,6 +14,7 @@ import { hash }                       from 'bcryptjs'
 import { prisma }                     from '@/lib/prisma'
 import { putObject }                  from '@/lib/r2'
 import { checkPublicShareRateLimit }  from '@/lib/rate-limit'
+import { buildPublicShareR2Key, normalizeFolderPath } from '@/lib/publicSharePaths'
 
 // Allow up to 300 s for large file uploads on Cloud Run
 export const maxDuration = 300
@@ -69,6 +70,7 @@ export async function POST(req: NextRequest) {
   const filename      = formData.get('filename')
   const fileSizeRaw   = formData.get('fileSize')
   const mimeType      = formData.get('mimeType')
+  const folderPath    = formData.get('folderPath')
   const title         = formData.get('title')
   const message       = formData.get('message')
   const pin           = formData.get('pin')
@@ -95,6 +97,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Executable file types are not allowed.' }, { status: 400 })
   }
 
+  const normalizedFolderPath =
+    typeof folderPath === 'string' && folderPath.trim()
+      ? normalizeFolderPath(folderPath)
+      : null
+
   // Validate optional fields
   const sanitizedTitle   = typeof title   === 'string' ? title.trim().slice(0, 200)    : null
   const sanitizedMessage = typeof message === 'string' ? message.trim().slice(0, 1000) : null
@@ -116,8 +123,7 @@ export async function POST(req: NextRequest) {
 
   // ── Build R2 key + token ──────────────────────────────────────────────────
   const token    = crypto.randomUUID()
-  const safeName = filename.replace(/[^a-zA-Z0-9._\-() ]/g, '_').replace(/\.\./g, '_')
-  const r2Key    = `public-shares/${token}/${safeName}`
+  const r2Key    = buildPublicShareR2Key(token, filename, normalizedFolderPath)
   const expiresAt = new Date(Date.now() + EXPIRY_DAYS * 24 * 60 * 60 * 1000)
 
   // ── Upload to R2 server-side (no CORS required) ───────────────────────────
@@ -130,6 +136,7 @@ export async function POST(req: NextRequest) {
       token,
       r2Key,
       originalName:   filename.slice(0, 500),
+      folderPath:     normalizedFolderPath,
       fileSize:       BigInt(Math.floor(fileSize)),
       mimeType:       (mimeType ?? 'application/octet-stream').slice(0, 200),
       title:          sanitizedTitle,

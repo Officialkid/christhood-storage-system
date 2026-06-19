@@ -944,6 +944,8 @@ model PublicShareUpload {
   /// R2 object key — always under "public-shares/{token}/{filename}"
   r2Key         String   @unique
   originalName  String
+  /// Optional relative folder path when the share includes nested folders
+  folderPath    String?
   fileSize      BigInt
   mimeType      String
   title         String?

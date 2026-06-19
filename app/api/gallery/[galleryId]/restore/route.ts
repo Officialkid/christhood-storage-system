@@ -10,6 +10,7 @@ import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { logger }                    from '@/lib/logger'
 import { log }                       from '@/lib/activityLog'
+import { ApiError, handleApiError }  from '@/lib/apiError'
 
 export async function POST(req: NextRequest, props: { params: Promise<{ galleryId: string }> }) {
   const params = await props.params;
@@ -17,11 +18,11 @@ export async function POST(req: NextRequest, props: { params: Promise<{ galleryI
 
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+    if (!session?.user) throw new ApiError(401, 'Please log in to continue.')
 
     const { role, id: userId } = session.user
     if (role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Only admins can restore galleries' }, { status: 403 })
+      throw new ApiError(403, 'Only admins can restore galleries.')
     }
 
     const gallery = await prisma.publicGallery.findUnique({
@@ -29,9 +30,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ galleryI
       select: { id: true, title: true, status: true, preDeleteStatus: true },
     })
 
-    if (!gallery) return NextResponse.json({ error: 'Gallery not found' }, { status: 404 })
+    if (!gallery) throw new ApiError(404, 'Gallery not found.')
     if (gallery.status !== 'DELETED') {
-      return NextResponse.json({ error: 'Gallery is not in trash' }, { status: 409 })
+      throw new ApiError(409, 'This gallery is not currently in trash.')
     }
 
     const restoredStatus = gallery.preDeleteStatus ?? 'DRAFT'
@@ -72,6 +73,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ galleryI
       error:    err instanceof Error ? err.message : String(err),
       message:  'Unexpected error restoring gallery',
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err, `/api/gallery/${galleryId}/restore POST`)
   }
 }

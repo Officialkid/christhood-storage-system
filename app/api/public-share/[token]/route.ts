@@ -25,11 +25,12 @@ export async function GET(
 
   const record = await prisma.publicShareUpload.findUnique({
     where: { token },
-    select: {
-      id:            true,
-      originalName:  true,
-      fileSize:      true,
-      mimeType:      true,
+      select: {
+        id:            true,
+        originalName:  true,
+        folderPath:    true,
+        fileSize:      true,
+        mimeType:      true,
       title:         true,
       message:       true,
       pinHash:       true,
@@ -59,6 +60,7 @@ export async function GET(
 
   return NextResponse.json({
     originalName:  record.originalName,
+    folderPath:    record.folderPath,
     fileSize:      record.fileSize.toString(),   // BigInt → string for JSON
     mimeType:      record.mimeType,
     title:         record.title,

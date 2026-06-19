@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link                                           from 'next/link'
 import { Bell }                                       from 'lucide-react'
+import { useToast }                                   from '@/lib/toast'
 
 // Convert base64url → Uint8Array (required for PushManager.subscribe)
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -26,6 +27,7 @@ function playNotificationChime() {
 }
 
 export function NotificationBell() {
+  const toast = useToast()
   const [unreadCount, setUnreadCount] = useState(0)
   const [pushEnabled, setPushEnabled] = useState(false)
   // Track previous count so we can detect new arrivals and play a chime
@@ -64,11 +66,12 @@ export function NotificationBell() {
         refreshCount()
       }
     }
+    const invalidateHandler = () => refreshCount()
     window.addEventListener('messagemarkedread',       handler)
-    window.addEventListener('notifications:invalidate', () => refreshCount())
+    window.addEventListener('notifications:invalidate', invalidateHandler)
     return () => {
       window.removeEventListener('messagemarkedread',       handler)
-      window.removeEventListener('notifications:invalidate', () => refreshCount())
+      window.removeEventListener('notifications:invalidate', invalidateHandler)
     }
   }, [refreshCount])
 
@@ -89,15 +92,21 @@ export function NotificationBell() {
   // ── Subscribe to push notifications ───────────────────────────────────────
   async function enablePush() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      alert('Push notifications are not supported in this browser.')
+      toast.error('Push notifications are not supported in this browser.')
       return
     }
     try {
       const permission = await Notification.requestPermission()
-      if (permission !== 'granted') { alert('Notification permission denied.'); return }
+      if (permission !== 'granted') {
+        toast.error('Notification permission was not granted.')
+        return
+      }
 
       const keyRes = await fetch('/api/push/vapid-key')
-      if (!keyRes.ok) { alert('Push notifications are not configured on this server.'); return }
+      if (!keyRes.ok) {
+        toast.error('Push notifications are not configured on this server.')
+        return
+      }
       const { publicKey } = await keyRes.json()
 
       const reg = await navigator.serviceWorker.ready
@@ -115,8 +124,10 @@ export function NotificationBell() {
         }),
       })
       setPushEnabled(true)
+      toast.success('Push notifications enabled.')
     } catch (err) {
       console.error('[push] Subscribe failed:', err)
+      toast.error('Could not enable push notifications. Please try again.')
     }
   }
 
@@ -134,8 +145,10 @@ export function NotificationBell() {
         await sub.unsubscribe()
       }
       setPushEnabled(false)
+      toast.success('Push notifications disabled.')
     } catch (err) {
       console.error('[push] Unsubscribe failed:', err)
+      toast.error('Could not disable push notifications. Please try again.')
     }
   }
 

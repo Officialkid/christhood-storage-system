@@ -6,7 +6,16 @@ import {
   RefreshCw, ShieldAlert, FileImage, FileVideo, Info, XCircle,
   GalleryHorizontal, ArrowUpDown,
 } from 'lucide-react'
+import { TrashActionButton } from '@/components/admin/trash/TrashActionButton'
+import {
+  daysRemaining,
+  urgencyClass,
+  purgeLabel,
+  formatTrashDate,
+  formatTrashSize,
+} from '@/components/admin/trash/trash-utils'
 import { invalidateFileCache } from '@/lib/cache'
+import { useToast } from '@/lib/toast'
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Types
@@ -68,50 +77,14 @@ interface GalleryTrashData {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Helpers
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function daysRemaining(purgeAt: string): number {
-  const ms = new Date(purgeAt).getTime() - Date.now()
-  return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)))
-}
-
-function hoursRemaining(purgeAt: string): number {
-  const ms = new Date(purgeAt).getTime() - Date.now()
-  return Math.max(0, Math.floor(ms / (1000 * 60 * 60)))
-}
-
-function urgencyClass(purgeAt: string) {
-  const days = daysRemaining(purgeAt)
-  if (days <= 3)  return 'bg-red-500/15 text-red-300 border-red-500/30'
-  if (days <= 10) return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-  return                  'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-}
-
-function purgeLabel(purgeAt: string) {
-  const days  = daysRemaining(purgeAt)
-  const hours = hoursRemaining(purgeAt)
-  if (days === 0 && hours === 0) return 'Purge imminent'
-  if (days === 0)                return `${hours}h remaining`
-  if (days === 1)                return '1 day remaining'
-  return `${days} days remaining`
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  })
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024)       return `${bytes} B`
-  if (bytes < 1024 ** 2)  return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 ** 3)  return `${(bytes / 1024 ** 2).toFixed(1)} MB`
-  return                         `${(bytes / 1024 ** 3).toFixed(2)} GB`
-}
+const formatDate = formatTrashDate
+const formatSize = formatTrashSize
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Component
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function AdminTrashPage() {
+  const toast = useToast()
   const [data,         setData]         = useState<PageData | null>(null)
   const [loading,      setLoading]      = useState(true)
   const [fetchError,   setFetchError]   = useState('')
@@ -182,7 +155,7 @@ export default function AdminTrashPage() {
       const body = await res.json()
 
       if (!res.ok) {
-        alert(`Restore failed: ${body.error ?? 'Unknown error'}`)
+        toast.error(body.error ?? 'Failed to restore the file.')
         return
       }
 
@@ -191,8 +164,9 @@ export default function AdminTrashPage() {
         : prev
       )
       void invalidateFileCache()
+      toast.success(`"${fileName}" restored.`)
     } catch {
-      alert('Network error â€” please try again.')
+      toast.error('Network error while restoring the file. Please try again.')
     } finally {
       setRestoring('')
     }
@@ -210,7 +184,7 @@ export default function AdminTrashPage() {
       const body = await res.json()
 
       if (!res.ok) {
-        alert(`Purge failed: ${body.error ?? 'Unknown error'}`)
+        toast.error(body.error ?? 'Failed to permanently delete the file.')
         return
       }
 
@@ -218,8 +192,9 @@ export default function AdminTrashPage() {
         ? { ...prev, items: prev.items.filter(i => i.id !== trashItemId), total: prev.total - 1 }
         : prev
       )
+      toast.success(`"${fileName}" permanently deleted.`)
     } catch {
-      alert('Network error â€” please try again.')
+      toast.error('Network error while deleting the file. Please try again.')
     } finally {
       setPurging('')
     }
@@ -233,13 +208,14 @@ export default function AdminTrashPage() {
     try {
       const res  = await fetch(`/api/gallery/${galleryId}/restore`, { method: 'POST' })
       const body = await res.json()
-      if (!res.ok) { alert(`Restore failed: ${body.error ?? 'Unknown error'}`); return }
+      if (!res.ok) { toast.error(body.error ?? 'Failed to restore the gallery.'); return }
       setGData(prev => prev
         ? { ...prev, items: prev.items.filter(i => i.id !== galleryId), total: prev.total - 1 }
         : prev
       )
+      toast.success(`"${title}" restored.`)
     } catch {
-      alert('Network error â€” please try again.')
+      toast.error('Network error while restoring the gallery. Please try again.')
     } finally {
       setRestoringG('')
     }
@@ -255,13 +231,14 @@ export default function AdminTrashPage() {
     try {
       const res  = await fetch(`/api/admin/gallery-trash/${galleryId}`, { method: 'DELETE' })
       const body = await res.json()
-      if (!res.ok) { alert(`Purge failed: ${body.error ?? 'Unknown error'}`); return }
+      if (!res.ok) { toast.error(body.error ?? 'Failed to permanently delete the gallery.'); return }
       setGData(prev => prev
         ? { ...prev, items: prev.items.filter(i => i.id !== galleryId), total: prev.total - 1 }
         : prev
       )
+      toast.success(`"${title}" permanently deleted.`)
     } catch {
-      alert('Network error â€” please try again.')
+      toast.error('Network error while deleting the gallery. Please try again.')
     } finally {
       setPurgingG('')
     }
@@ -477,35 +454,25 @@ export default function AdminTrashPage() {
                           {purgeLabel(entry.scheduledPurgeAt)}
                         </span>
 
-                        <button
+                        <TrashActionButton
                           onClick={() => handleRestore(entry.id, file.originalName)}
                           disabled={isBusy}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
-                                     font-medium bg-emerald-600/20 text-emerald-300 border
-                                     border-emerald-600/30 hover:bg-emerald-600/40 transition
-                                     disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isRestoring
-                            ? <Loader2    className="w-3.5 h-3.5 animate-spin" />
-                            : <RotateCcw  className="w-3.5 h-3.5" />
-                          }
-                          {isRestoring ? 'Restoringâ€¦' : 'Restore'}
-                        </button>
+                          busy={isRestoring}
+                          idleLabel="Restore"
+                          busyLabel="Restoring…"
+                          icon={<RotateCcw className="w-3.5 h-3.5" />}
+                          tone="success"
+                        />
 
-                        <button
+                        <TrashActionButton
                           onClick={() => handlePurge(entry.id, file.originalName)}
                           disabled={isBusy}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
-                                     font-medium bg-red-600/20 text-red-400 border
-                                     border-red-600/30 hover:bg-red-600/40 transition
-                                     disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isPurging
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            : <Trash2  className="w-3.5 h-3.5" />
-                          }
-                          {isPurging ? 'Deletingâ€¦' : 'Delete Permanently'}
-                        </button>
+                          busy={isPurging}
+                          idleLabel="Delete Permanently"
+                          busyLabel="Deleting…"
+                          icon={<Trash2 className="w-3.5 h-3.5" />}
+                          tone="danger"
+                        />
                       </div>
                     </div>
 
@@ -658,35 +625,25 @@ export default function AdminTrashPage() {
                           {purgeLabel(item.purgesAt)}
                         </span>
 
-                        <button
+                        <TrashActionButton
                           onClick={() => handleRestoreGallery(item.id, item.title)}
                           disabled={isBusy}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
-                                     font-medium bg-emerald-600/20 text-emerald-300 border
-                                     border-emerald-600/30 hover:bg-emerald-600/40 transition
-                                     disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isRestoring
-                            ? <Loader2   className="w-3.5 h-3.5 animate-spin" />
-                            : <RotateCcw className="w-3.5 h-3.5" />
-                          }
-                          {isRestoring ? 'Restoringâ€¦' : 'Restore'}
-                        </button>
+                          busy={isRestoring}
+                          idleLabel="Restore"
+                          busyLabel="Restoring…"
+                          icon={<RotateCcw className="w-3.5 h-3.5" />}
+                          tone="success"
+                        />
 
-                        <button
+                        <TrashActionButton
                           onClick={() => handlePurgeGallery(item.id, item.title, item.fileCount)}
                           disabled={isBusy}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
-                                     font-medium bg-red-600/20 text-red-400 border
-                                     border-red-600/30 hover:bg-red-600/40 transition
-                                     disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isPurging
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            : <Trash2  className="w-3.5 h-3.5" />
-                          }
-                          {isPurging ? 'Deletingâ€¦' : 'Delete Permanently'}
-                        </button>
+                          busy={isPurging}
+                          idleLabel="Delete Permanently"
+                          busyLabel="Deleting…"
+                          icon={<Trash2 className="w-3.5 h-3.5" />}
+                          tone="danger"
+                        />
                       </div>
                     </div>
 

@@ -21,6 +21,7 @@ import { hash }                       from 'bcryptjs'
 import { prisma }                     from '@/lib/prisma'
 import { getPresignedUploadUrl }       from '@/lib/r2'
 import { checkPublicShareRateLimit }   from '@/lib/rate-limit'
+import { buildPublicShareR2Key, normalizeFolderPath } from '@/lib/publicSharePaths'
 
 export const maxDuration = 30
 
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  const { filename, mimeType, fileSize, title, message, recipientEmail, pin } = body
+  const { filename, mimeType, fileSize, title, message, recipientEmail, pin, folderPath } = body
 
   if (typeof filename !== 'string' || !filename.trim()) {
     return NextResponse.json({ error: 'filename is required.' }, { status: 400 })
@@ -73,6 +74,11 @@ export async function POST(req: NextRequest) {
   if (BLOCKED_MIME_TYPES.has(mimeType.toLowerCase())) {
     return NextResponse.json({ error: 'Executable file types are not allowed.' }, { status: 400 })
   }
+
+  const normalizedFolderPath =
+    typeof folderPath === 'string' && folderPath.trim()
+      ? normalizeFolderPath(folderPath)
+      : null
 
   const size = Number(fileSize)
   if (!Number.isFinite(size) || size <= 0) {
@@ -97,8 +103,7 @@ export async function POST(req: NextRequest) {
   }
 
   const token    = crypto.randomUUID()
-  const safeName = (filename as string).replace(/[^a-zA-Z0-9._\-() ]/g, '_').replace(/\.\./g, '_')
-  const r2Key    = `public-shares/${token}/${safeName}`
+  const r2Key    = buildPublicShareR2Key(token, filename as string, normalizedFolderPath)
   const expiresAt = new Date(Date.now() + EXPIRY_DAYS * 24 * 60 * 60 * 1000)
 
   // Create record as isReady=false; browser confirms after successful PUT
@@ -107,6 +112,7 @@ export async function POST(req: NextRequest) {
       token,
       r2Key,
       originalName:   (filename as string).slice(0, 500),
+      folderPath:     normalizedFolderPath,
       fileSize:       BigInt(Math.floor(size)),
       mimeType:       mimeType.slice(0, 200),
       title:          sanitizedTitle,

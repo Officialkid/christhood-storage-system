@@ -1,10 +1,10 @@
 ﻿'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter }            from 'next/navigation'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
 import Link                     from 'next/link'
 import {
-  FolderInput, MessageSquare, MessageSquarePlus, MessagesSquare,
+  FolderInput, MessageSquare, MessageSquarePlus, MessagesSquare, ArrowRight, ArrowLeftRight, Inbox,
 } from 'lucide-react'
 import { TransferInbox }         from './TransferInbox'
 import { SentTransfersList }     from './SentTransfersList'
@@ -36,6 +36,8 @@ interface ReceivedTransferItem {
 
 interface Props {
   initialTab:       MainTab
+  initialTransferSubTab?: TransferSubTab
+  initialMessageSubTab?: MessageSubTab
   isAdmin:          boolean
   /** true for ADMIN and EDITOR — controls New Transfer button + Sent sub-tab */
   canSendTransfer:  boolean
@@ -43,12 +45,48 @@ interface Props {
 
 // â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export function CommunicationsHub({ initialTab, isAdmin, canSendTransfer }: Props) {
+export function CommunicationsHub({
+  initialTab,
+  initialTransferSubTab = 'inbox',
+  initialMessageSubTab = 'inbox',
+  isAdmin,
+  canSendTransfer,
+}: Props) {
   const router = useRouter()
+  const pathname = usePathname()
+  const [mounted, setMounted] = useState(false)
 
-  const [activeTab,      setActiveTab]      = useState<MainTab>(initialTab)
-  const [transferSubTab, setTransferSubTab] = useState<TransferSubTab>('inbox')
-  const [msgSubTab,      setMsgSubTab]      = useState<MessageSubTab>('inbox')
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const routeState = useMemo(() => {
+    if (!mounted) {
+      return {
+        activeTab: initialTab,
+        transferSubTab: initialTransferSubTab,
+        msgSubTab: initialMessageSubTab,
+      }
+    }
+
+    const pathParts = pathname?.split('/').filter(Boolean) ?? []
+    const activeTab: MainTab =
+      pathParts[0] === 'communications'
+        ? (pathParts[1] === 'messages' ? 'messages' : 'transfers')
+        : initialTab
+    const transferSubTab: TransferSubTab =
+      pathParts[0] === 'communications' && activeTab === 'transfers'
+        ? (pathParts[2] === 'sent' ? 'sent' : 'inbox')
+        : initialTransferSubTab
+    const msgSubTab: MessageSubTab =
+      pathParts[0] === 'communications' && activeTab === 'messages'
+        ? (pathParts[2] === 'sent' ? 'sent' : 'inbox')
+        : initialMessageSubTab
+
+    return { activeTab, transferSubTab, msgSubTab }
+  }, [mounted, pathname, initialTab, initialTransferSubTab, initialMessageSubTab])
+
+  const { activeTab, transferSubTab, msgSubTab } = routeState
 
   // â”€â”€ Shared unread counts via the centralised hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // baseTitle is null here â€” the Sidebar instance owns the document.title update
@@ -112,9 +150,12 @@ export function CommunicationsHub({ initialTab, isAdmin, canSendTransfer }: Prop
 
   // â”€â”€â”€ Tab switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+  const syncUrl = useCallback((tab: MainTab, subTab: string) => {
+    router.replace(`/communications/${tab}/${subTab}`, { scroll: false })
+  }, [router])
+
   const switchTab = (tab: MainTab) => {
-    setActiveTab(tab)
-    router.replace(`/communications/${tab}`, { scroll: false })
+    syncUrl(tab, tab === 'transfers' ? transferSubTab : msgSubTab)
   }
 
   // â”€â”€â”€ Unified empty state for non-admin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -132,7 +173,6 @@ export function CommunicationsHub({ initialTab, isAdmin, canSendTransfer }: Prop
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col rounded-2xl overflow-hidden
                     border border-slate-800/70 bg-slate-900">
-
       {/* â”€â”€ Main tab bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="shrink-0 flex items-center justify-between gap-2
                       px-3 py-2 border-b border-slate-800/70 bg-slate-950/60">
@@ -181,6 +221,14 @@ export function CommunicationsHub({ initialTab, isAdmin, canSendTransfer }: Prop
 
       {/* â”€â”€ Content area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
+        <HubIntroCard
+          activeTab={activeTab}
+          transferSubTab={transferSubTab}
+          messageSubTab={msgSubTab}
+          transfersBadge={transfersBadge}
+          messagesBadge={messagesBadge}
+          canSendTransfer={canSendTransfer}
+        />
 
         {isUnifiedEmpty ? (
           <UnifiedEmptyState />
@@ -191,7 +239,7 @@ export function CommunicationsHub({ initialTab, isAdmin, canSendTransfer }: Prop
             canSendTransfer={canSendTransfer}
             subTab={transferSubTab}
             setSubTab={(s) => {
-              setTransferSubTab(s)
+              syncUrl('transfers', s)
               if (s === 'inbox') loadReceived()
               else               loadSent()
             }}
@@ -205,7 +253,9 @@ export function CommunicationsHub({ initialTab, isAdmin, canSendTransfer }: Prop
         ) : (
           <MessageTabContent
             subTab={msgSubTab}
-            setSubTab={setMsgSubTab}
+            setSubTab={(s) => {
+              syncUrl('messages', s)
+            }}
             messagesBadge={messagesBadge}
             hasUrgent={hasUrgent}
             fillClass={FILL_CLASS}
@@ -381,6 +431,76 @@ function UnifiedEmptyState() {
       <p className="text-sm text-slate-500 max-w-xs leading-relaxed">
         This is where your file transfers and messages from your admin will appear.
       </p>
+    </div>
+  )
+}
+
+function HubIntroCard({
+  activeTab,
+  transferSubTab,
+  messageSubTab,
+  transfersBadge,
+  messagesBadge,
+  canSendTransfer,
+}: {
+  activeTab: MainTab
+  transferSubTab: TransferSubTab
+  messageSubTab: MessageSubTab
+  transfersBadge: number
+  messagesBadge: number
+  canSendTransfer: boolean
+}) {
+  const copy =
+    activeTab === 'transfers'
+      ? transferSubTab === 'sent'
+        ? {
+            title: 'Track every file transfer clearly',
+            text: 'See what you have already sent, what still needs downloading, and which recipients have responded.',
+            badge: `${transfersBadge} active transfer alerts`,
+            icon: <ArrowLeftRight className="h-4 w-4" />,
+          }
+        : {
+            title: 'Files shared with you appear here first',
+            text: 'Open any transfer to download the files, respond, or continue editing work without hunting through the system.',
+            badge: `${transfersBadge} transfer alerts`,
+            icon: <Inbox className="h-4 w-4" />,
+          }
+      : messageSubTab === 'sent'
+        ? {
+            title: 'Review messages you have already sent',
+            text: 'Follow up on updates and keep your communication history easy to understand.',
+            badge: `${messagesBadge} message alerts`,
+            icon: <MessageSquare className="h-4 w-4" />,
+          }
+        : {
+            title: 'Important communication stays easy to find',
+            text: 'Unread and urgent messages surface here so normal users can act quickly.',
+            badge: `${messagesBadge} unread messages`,
+            icon: <MessageSquare className="h-4 w-4" />,
+          }
+
+  return (
+    <div className="border-b border-slate-800/60 bg-gradient-to-r from-indigo-500/10 via-slate-900 to-slate-900 px-4 py-4 sm:px-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2.5 py-1 text-xs font-medium text-indigo-300">
+            {copy.icon}
+            {copy.badge}
+          </div>
+          <h2 className="mt-3 text-lg font-semibold text-white">{copy.title}</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-400">{copy.text}</p>
+        </div>
+
+        {activeTab === 'transfers' && canSendTransfer && (
+          <Link
+            href="/transfers/new"
+            className="inline-flex items-center gap-2 self-start rounded-xl border border-indigo-500/20 bg-indigo-600/15 px-3.5 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-600/25"
+          >
+            Start a guided transfer
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        )}
+      </div>
     </div>
   )
 }

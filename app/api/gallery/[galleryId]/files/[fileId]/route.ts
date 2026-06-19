@@ -14,6 +14,7 @@ import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { logger }                    from '@/lib/logger'
 import { deleteFromGallery }         from '@/lib/gallery/gallery-r2'
+import { ApiError, handleApiError }  from '@/lib/apiError'
 
 export async function DELETE(
   req: NextRequest,
@@ -24,11 +25,11 @@ export async function DELETE(
 
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+    if (!session?.user) throw new ApiError(401, 'Please log in to continue.')
 
     const { role, id: userId } = session.user
     if (role !== 'EDITOR' && role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, "You don't have permission to remove gallery photos.")
     }
 
     const gallery = await prisma.publicGallery.findUnique({
@@ -36,14 +37,14 @@ export async function DELETE(
       select: { id: true, status: true, createdById: true },
     })
 
-    if (!gallery) return NextResponse.json({ error: 'Gallery not found' }, { status: 404 })
+    if (!gallery) throw new ApiError(404, 'Gallery not found.')
 
     if (gallery.status === 'ARCHIVED') {
-      return NextResponse.json({ error: 'Cannot modify an archived gallery' }, { status: 409 })
+      throw new ApiError(409, 'Archived galleries cannot be edited.')
     }
 
     if (role === 'EDITOR' && gallery.createdById !== userId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, "You can only edit your own galleries.")
     }
 
     const galleryFile = await prisma.galleryFile.findFirst({
@@ -51,7 +52,7 @@ export async function DELETE(
       select: { id: true, thumbnailKey: true, previewKey: true, originalKey: true, sectionId: true },
     })
 
-    if (!galleryFile) return NextResponse.json({ error: 'File not found' }, { status: 404 })
+    if (!galleryFile) throw new ApiError(404, 'Photo not found in this gallery.')
 
     // Delete R2 objects (non-fatal if some fail — log and continue)
     const r2Keys = [
@@ -95,7 +96,7 @@ export async function DELETE(
       error:     err instanceof Error ? err.message : String(err),
       message:   'Unexpected error removing gallery photo',
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err, `/api/gallery/${galleryId}/files/${fileId} DELETE`)
   }
 }
 
@@ -108,11 +109,11 @@ export async function PATCH(
 
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+    if (!session?.user) throw new ApiError(401, 'Please log in to continue.')
 
     const { role, id: userId } = session.user
     if (role !== 'EDITOR' && role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, "You don't have permission to update gallery photos.")
     }
 
     const gallery = await prisma.publicGallery.findUnique({
@@ -120,12 +121,12 @@ export async function PATCH(
       select: { id: true, status: true, createdById: true },
     })
 
-    if (!gallery) return NextResponse.json({ error: 'Gallery not found' }, { status: 404 })
+    if (!gallery) throw new ApiError(404, 'Gallery not found.')
     if (gallery.status === 'ARCHIVED') {
-      return NextResponse.json({ error: 'Cannot modify an archived gallery' }, { status: 409 })
+      throw new ApiError(409, 'Archived galleries cannot be edited.')
     }
     if (role === 'EDITOR' && gallery.createdById !== userId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, "You can only edit your own galleries.")
     }
 
     const body = await req.json()
@@ -134,7 +135,7 @@ export async function PATCH(
     if (body.sortOrder  !== undefined) data.sortOrder  = Number(body.sortOrder)
 
     if (!Object.keys(data).length) {
-      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+      throw new ApiError(400, 'No photo changes were provided.')
     }
 
     const updated = await prisma.galleryFile.update({
@@ -151,6 +152,6 @@ export async function PATCH(
       error:     err instanceof Error ? err.message : String(err),
       message:   'Unexpected error updating gallery file',
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err, `/api/gallery/${galleryId}/files/${fileId} PATCH`)
   }
 }

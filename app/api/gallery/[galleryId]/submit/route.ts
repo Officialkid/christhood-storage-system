@@ -10,6 +10,7 @@ import { authOptions }                from '@/lib/auth'
 import { prisma }                     from '@/lib/prisma'
 import { logger }                     from '@/lib/logger'
 import { createInAppNotification }    from '@/lib/notifications'
+import { ApiError, handleApiError }   from '@/lib/apiError'
 
 export async function PATCH(req: NextRequest, props: { params: Promise<{ galleryId: string }> }) {
   const params = await props.params;
@@ -17,13 +18,13 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
 
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+    if (!session?.user) throw new ApiError(401, 'Please log in to continue.')
 
     const { role, id: userId, name: userName } = session.user
 
     // Only EDITOR can submit (admins review/publish directly)
     if (role !== 'EDITOR') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, 'Only editors can submit galleries for review.')
     }
 
     const gallery = await prisma.publicGallery.findUnique({
@@ -31,24 +32,18 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
       select: { id: true, title: true, slug: true, status: true, createdById: true, totalPhotos: true },
     })
 
-    if (!gallery) return NextResponse.json({ error: 'Gallery not found' }, { status: 404 })
+    if (!gallery) throw new ApiError(404, 'Gallery not found.')
 
     if (gallery.createdById !== userId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, 'You can only submit your own galleries for review.')
     }
 
     if (gallery.status !== 'DRAFT') {
-      return NextResponse.json(
-        { error: `Gallery must be in DRAFT status to submit (current: ${gallery.status})` },
-        { status: 409 },
-      )
+      throw new ApiError(409, `Only draft galleries can be submitted. Current status: ${gallery.status}.`)
     }
 
     if ((gallery.totalPhotos ?? 0) < 1) {
-      return NextResponse.json(
-        { error: 'Gallery must have at least one photo before submitting for review' },
-        { status: 422 },
-      )
+      throw new ApiError(422, 'Add at least one photo before submitting this gallery for review.')
     }
 
     await prisma.publicGallery.update({
@@ -91,6 +86,6 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
       error:     err instanceof Error ? err.message : String(err),
       message:   'Unexpected error submitting gallery for review',
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err, `/api/gallery/${galleryId}/submit PATCH`)
   }
 }

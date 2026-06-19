@@ -24,7 +24,6 @@ const navItems: NavItem[] = [
   { label: 'Search',         href: '/search',           icon: Search          },
   { label: 'Communications', href: '/communications',   icon: MessagesSquare, badge: true },
   { label: 'Notifications',  href: '/notifications',    icon: Bell            },
-  { label: 'Share a File',   href: 'https://sharelink.cmmschristhood.org', icon: Share2, external: true },
   { label: 'User Guide',     href: '/docs',             icon: BookOpen        },
 ]
 
@@ -45,7 +44,6 @@ export function Sidebar() {
   const { data } = useSession()
   const isAdmin  = data?.user?.role === 'ADMIN'
   const { mobileOpen, closeMobile } = useSidebar()
-
   const [collapsed, setCollapsed] = useState(false)
   const [sizeMode,  setSizeMode]  = useState<'normal' | 'wide'>('normal')
   const [mounted,   setMounted]   = useState(false)
@@ -90,6 +88,12 @@ export function Sidebar() {
     setSizeMode('wide')
     localStorage.setItem('sidebar-size', 'wide')
   }
+
+  const items = navItems.concat({
+    label: 'Share a File',
+    href: '/public-share',
+    icon: Share2,
+  })
 
   // Avoid layout shift on first render — match server default (expanded).
   // On mobile overlay, ALWAYS show labels regardless of desktop collapsed state.
@@ -161,8 +165,8 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className={`flex-1 py-4 space-y-0.5 overflow-y-auto ${isCollapsed ? 'px-1.5' : 'px-3'}`}>
-        {navItems.map(({ label, href, icon: Icon, badge, external }) => {
-          const active       = !external && pathname.startsWith(href)
+        {items.map(({ label, href, icon: Icon, badge }) => {
+          const active       = pathname.startsWith(href)
           const badgeCount   = badge ? commsCount : 0
           const badgeUrgent  = badge ? commsUrgent : false
           const itemClass    = `flex items-center rounded-xl text-sm font-medium transition-all
@@ -185,14 +189,6 @@ export function Sidebar() {
               )}
             </>
           )
-          if (external) {
-            return (
-              <a key={href} href={href} target="_blank" rel="noopener noreferrer"
-                 title={isCollapsed ? label : undefined} className={itemClass}>
-                {content}
-              </a>
-            )
-          }
           return (
             <Link key={href} href={href} title={isCollapsed ? label : undefined} className={itemClass}>
               {content}

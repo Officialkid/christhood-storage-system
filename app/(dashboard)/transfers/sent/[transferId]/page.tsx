@@ -30,9 +30,10 @@ export default async function SentTransferDetailPage(props: Props) {
 
   if (!transfer) notFound()
 
-  // Only the sender (or any admin) may access
-  const isSender  = transfer.senderId === session.user.id
-  if (!isSender) redirect('/transfers/sent')
+  // Only the sender or any admin may access
+  const isSender = transfer.senderId === session.user.id
+  const isAdmin = session.user.role === 'ADMIN'
+  if (!isSender && !isAdmin) redirect('/transfers/sent')
 
   // Serialise BigInts and Dates for the client component
   const serialised = {

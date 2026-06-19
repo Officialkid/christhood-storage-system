@@ -9,6 +9,7 @@ import {
   CalendarDays, AlertTriangle, ShieldCheck, ShieldAlert, Loader2,
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
+import { useToast } from '@/lib/toast'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -279,6 +280,7 @@ function TimelineItem({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailData }) {
+  const toast = useToast()
   const [currentStatus,    setCurrentStatus]    = useState<TransferStatus>(transfer.status)
   const [existingResponse, setExistingResponse] = useState<ResponseData | null>(transfer.response)
   const [downloadingOrigZip,  setDownloadingOrigZip]  = useState(false)
@@ -318,28 +320,29 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
     setDownloadingOrigFile(fileId)
     try {
       const res = await fetch(`/api/transfers/${transfer.id}/files/${fileId}`)
-      if (!res.ok) { alert('Could not get download link.'); return }
-      const { url } = await res.json()
+      if (!res.ok) { toast.error('Could not get the download link for that file.'); return }
+      const { url, downloadName } = await res.json()
       const a = document.createElement('a')
-      a.href = url; a.download = filename; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click()
+      a.href = url; a.download = downloadName ?? filename; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click()
     } catch {
-      alert('Download failed.')
+      toast.error('Download failed. Please try again.')
     } finally {
       setDownloadingOrigFile(null)
     }
-  }, [transfer.id, downloadingOrigFile])
+  }, [transfer.id, downloadingOrigFile, toast])
 
   // ── Download response files ZIP ──────────────────────────────────────────
     const handleDownloadResponseZip = useCallback(() => {
       if (downloadingRespZip) return
       setDownloadingRespZip(true)
 
-      const a = document.createElement('a')
-      a.href = `/api/transfers/${transfer.id}/response/download`
-      a.rel = 'noopener noreferrer'
-      a.click()
+    const a = document.createElement('a')
+    a.href = `/api/transfers/${transfer.id}/response/download`
+    a.rel = 'noopener noreferrer'
+    a.click()
+    setExistingResponse(r => r ? { ...r, downloadedByAdmin: true } : r)
 
-      setTimeout(() => setDownloadingRespZip(false), 1200)
+    setTimeout(() => setDownloadingRespZip(false), 1200)
     }, [transfer.id, downloadingRespZip])
 
   // ── Download individual response file ────────────────────────────────────
@@ -348,16 +351,17 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
     setDownloadingRespFile(fileId)
     try {
       const res = await fetch(`/api/transfers/${transfer.id}/response/files/${fileId}`)
-      if (!res.ok) { alert('Could not get download link.'); return }
-      const { url } = await res.json()
+      if (!res.ok) { toast.error('Could not get the download link for that response file.'); return }
+      const { url, downloadName } = await res.json()
       const a = document.createElement('a')
-      a.href = url; a.download = filename; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click()
+      a.href = url; a.download = downloadName ?? filename; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click()
+      setExistingResponse(r => r ? { ...r, downloadedByAdmin: true } : r)
     } catch {
-      alert('Download failed.')
+      toast.error('Download failed. Please try again.')
     } finally {
       setDownloadingRespFile(null)
     }
-  }, [transfer.id, downloadingRespFile])
+  }, [transfer.id, downloadingRespFile, toast])
 
   // ── Mark as Completed ────────────────────────────────────────────────────
   const handleMarkComplete = useCallback(async () => {

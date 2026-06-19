@@ -8,6 +8,7 @@ import {
   EyeOff, Loader2, Calendar, Tag, Image as ImageIcon, Share2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { useToast } from '@/lib/toast'
 
 interface ReviewFile {
   id:           string
@@ -53,6 +54,7 @@ export function ReviewClient({
   isAdmin: boolean
 }) {
   const router = useRouter()
+  const toast = useToast()
   const [gallery,    setGallery]    = useState(initial)
   const [publishing,   setPublishing]   = useState(false)
   const [archiving,    setArchiving]     = useState(false)
@@ -73,10 +75,13 @@ export function ReviewClient({
         setGallery(g => ({ ...g, status: 'PUBLISHED' }))
         setPublished(true)
         setShowConfirm(false)
+        toast.success(`"${gallery.title}" published successfully.`)
       } else {
         const d = await res.json().catch(() => ({}))
-        alert(d.error ?? 'Failed to publish gallery')
+        toast.error(d.error ?? 'Failed to publish gallery.')
       }
+    } catch {
+      toast.error('Network error while publishing the gallery. Please try again.')
     } finally { setPublishing(false) }
   }
 
@@ -85,17 +90,27 @@ export function ReviewClient({
     setArchiving(true)
     try {
       const res = await fetch(`/api/gallery/${gallery.id}/archive`, { method: 'PATCH' })
-      if (res.ok) { router.push('/galleries') }
+      if (res.ok) {
+        toast.success(`"${gallery.title}" archived.`)
+        router.push('/galleries')
+      }
       else {
         const d = await res.json().catch(() => ({}))
-        alert(d.error ?? 'Failed to archive gallery')
+        toast.error(d.error ?? 'Failed to archive gallery.')
       }
+    } catch {
+      toast.error('Network error while archiving the gallery. Please try again.')
     } finally { setArchiving(false) }
   }
 
   async function copyLink() {
-    await navigator.clipboard.writeText(publicUrl).catch(() => {})
+    const copiedOk = await navigator.clipboard.writeText(publicUrl).then(() => true).catch(() => false)
+    if (!copiedOk) {
+      toast.error('Could not copy the gallery link.')
+      return
+    }
     setCopied(true)
+    toast.success('Gallery link copied.')
     setTimeout(() => setCopied(false), 2000)
   }
 

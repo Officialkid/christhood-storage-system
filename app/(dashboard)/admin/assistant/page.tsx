@@ -386,6 +386,16 @@ export default function AdminAssistantPage() {
     )
   }
 
+  if (!session?.user || session.user.role !== 'ADMIN') {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-2 text-center">
+        <Shield className="h-8 w-8 text-amber-400" />
+        <p className="text-sm font-medium text-white">Admin access is required for the assistant console.</p>
+        <p className="text-sm text-slate-500">Redirecting to your dashboard…</p>
+      </div>
+    )
+  }
+
   const previewPrompt = buildSystemPrompt({
     userName:    session?.user?.name ?? 'Admin Preview',
     userRole:    'ADMIN',

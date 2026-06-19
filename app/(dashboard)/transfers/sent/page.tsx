@@ -5,5 +5,5 @@ import { redirect } from 'next/navigation'
  * Redirect all visitors to the new destination.
  */
 export default function SentTransfersPage() {
-  redirect('/communications/transfers')
+  redirect('/communications/transfers/sent')
 }

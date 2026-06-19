@@ -10,6 +10,7 @@ import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { logger }                    from '@/lib/logger'
+import { ApiError, handleApiError }  from '@/lib/apiError'
 
 export async function PATCH(req: NextRequest, props: { params: Promise<{ galleryId: string }> }) {
   const params = await props.params;
@@ -17,11 +18,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
 
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+    if (!session?.user) throw new ApiError(401, 'Please log in to continue.')
 
     const { role, id: userId } = session.user
     if (role !== 'EDITOR' && role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, "You don't have permission to update gallery covers.")
     }
 
     const gallery = await prisma.publicGallery.findUnique({
@@ -29,20 +30,20 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
       select: { id: true, status: true, createdById: true },
     })
 
-    if (!gallery) return NextResponse.json({ error: 'Gallery not found' }, { status: 404 })
+    if (!gallery) throw new ApiError(404, 'Gallery not found.')
 
     if (gallery.status === 'ARCHIVED') {
-      return NextResponse.json({ error: 'Cannot modify an archived gallery' }, { status: 409 })
+      throw new ApiError(409, 'Archived galleries cannot be edited.')
     }
 
     if (role === 'EDITOR' && gallery.createdById !== userId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, "You can only edit your own galleries.")
     }
 
     const body = await req.json()
     const { fileId } = body
 
-    if (!fileId) return NextResponse.json({ error: 'fileId is required' }, { status: 400 })
+    if (!fileId) throw new ApiError(400, 'Choose a photo to use as the gallery cover.')
 
     const galleryFile = await prisma.galleryFile.findFirst({
       where:  { id: fileId, galleryId, isVisible: true },
@@ -50,7 +51,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
     })
 
     if (!galleryFile) {
-      return NextResponse.json({ error: 'File not found in this gallery' }, { status: 404 })
+      throw new ApiError(404, 'That visible photo could not be found in this gallery.')
     }
 
     await prisma.publicGallery.update({
@@ -76,6 +77,6 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
       error:     err instanceof Error ? err.message : String(err),
       message:   'Unexpected error setting gallery cover',
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err, `/api/gallery/${galleryId}/cover PATCH`)
   }
 }

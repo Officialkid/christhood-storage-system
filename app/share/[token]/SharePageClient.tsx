@@ -7,8 +7,7 @@ import {
   Loader2, X,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { useToast } from '@/lib/toast'
 
 interface ShareFile {
   id:         string
@@ -34,8 +33,6 @@ interface ShareLinkData {
   totalSizeLabel: string
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function fileIcon(mimeType: string, className = 'w-5 h-5') {
   if (mimeType.startsWith('image/') || /\.(jpe?g|png|gif|webp|svg)$/i.test(mimeType)) {
     return <FileImage className={`${className} text-sky-400`} />
@@ -47,10 +44,11 @@ function fileIcon(mimeType: string, className = 'w-5 h-5') {
 }
 
 function ExpiryBadge({ expiresAt }: { expiresAt: string }) {
-  const d  = new Date(expiresAt)
+  const d = new Date(expiresAt)
   const ms = d.getTime() - Date.now()
   const hoursLeft = ms / 1000 / 60 / 60
   const color = hoursLeft < 24 ? 'text-amber-400' : 'text-slate-400'
+
   return (
     <span className={`flex items-center gap-1 text-xs ${color}`}>
       <Clock className="w-3 h-3" />
@@ -59,33 +57,29 @@ function ExpiryBadge({ expiresAt }: { expiresAt: string }) {
   )
 }
 
-// Group files by folderPath for display
 function groupByFolder(files: ShareFile[]): Map<string, ShareFile[]> {
   const map = new Map<string, ShareFile[]>()
-  for (const f of files) {
-    const key = f.folderPath ?? ''
+  for (const file of files) {
+    const key = file.folderPath ?? ''
     if (!map.has(key)) map.set(key, [])
-    map.get(key)!.push(f)
+    map.get(key)!.push(file)
   }
   return map
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
-
 export default function SharePage({ token }: { token: string }) {
-  const [phase,          setPhase]          = useState<'loading' | 'pin' | 'ready' | 'error'>('loading')
-  const [errorMsg,       setErrorMsg]       = useState<string | null>(null)
-  const [data,           setData]           = useState<ShareLinkData | null>(null)
-  const [pin,            setPin]            = useState('')
-  const [pinError,       setPinError]       = useState<string | null>(null)
-  const [pinLoading,     setPinLoading]     = useState(false)
-  const [downloading,    setDownloading]    = useState<string | null>(null)  // fileId or 'all'
-  const [downloadDone,   setDownloadDone]   = useState<Set<string>>(new Set())
-  const [previewFile,    setPreviewFile]    = useState<ShareFile | null>(null)
-  const [previewUrl,     setPreviewUrl]     = useState<string | null>(null)
+  const toast = useToast()
+  const [phase, setPhase] = useState<'loading' | 'pin' | 'ready' | 'error'>('loading')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [data, setData] = useState<ShareLinkData | null>(null)
+  const [pin, setPin] = useState('')
+  const [pinError, setPinError] = useState<string | null>(null)
+  const [pinLoading, setPinLoading] = useState(false)
+  const [downloading, setDownloading] = useState<string | null>(null)
+  const [downloadDone, setDownloadDone] = useState<Set<string>>(new Set())
+  const [previewFile, setPreviewFile] = useState<ShareFile | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
-
-  // Validated PIN persisted in-component so user doesn't re-enter per-file
   const [verifiedPin, setVerifiedPin] = useState<string | null>(null)
 
   const fetchData = useCallback(async (pinValue?: string) => {
@@ -93,34 +87,52 @@ export default function SharePage({ token }: { token: string }) {
       ? `/api/share/${token}?pin=${encodeURIComponent(pinValue)}`
       : `/api/share/${token}`
     const res = await fetch(url)
-    if (res.status === 401) { setPhase('pin'); return }
+    if (res.status === 401) {
+      setPhase('pin')
+      return
+    }
     if (!res.ok) {
-      const d = await res.json().catch(() => ({})) as { error?: string }
-      setErrorMsg(d.error ?? 'This link is not available.')
+      const response = await res.json().catch(() => ({})) as { error?: string }
+      setErrorMsg(response.error ?? 'This link is not available.')
       setPhase('error')
       return
     }
+
     const json = await res.json() as ShareLinkData
     setData(json)
     if (pinValue) setVerifiedPin(pinValue)
     setPhase('ready')
   }, [token])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => {
+    void fetchData()
+  }, [fetchData])
 
   async function handlePinSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (pin.length !== 4) { setPinError('Please enter a 4-digit PIN.'); return }
-    setPinLoading(true)
-    setPinError(null)
-    const res = await fetch(`/api/share/${token}?pin=${encodeURIComponent(pin)}`)
-    if (res.status === 403) { setPinError('Incorrect PIN. Please try again.'); setPinLoading(false); return }
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({})) as { error?: string }
-      setErrorMsg(d.error ?? 'Link not available.')
-      setPhase('error')
+    if (pin.length !== 4) {
+      setPinError('Please enter a 4-digit PIN.')
       return
     }
+
+    setPinLoading(true)
+    setPinError(null)
+
+    const res = await fetch(`/api/share/${token}?pin=${encodeURIComponent(pin)}`)
+    if (res.status === 403) {
+      setPinError('Incorrect PIN. Please try again.')
+      setPinLoading(false)
+      return
+    }
+
+    if (!res.ok) {
+      const response = await res.json().catch(() => ({})) as { error?: string }
+      setErrorMsg(response.error ?? 'Link not available.')
+      setPhase('error')
+      setPinLoading(false)
+      return
+    }
+
     const json = await res.json() as ShareLinkData
     setData(json)
     setVerifiedPin(pin)
@@ -131,10 +143,16 @@ export default function SharePage({ token }: { token: string }) {
   async function downloadFile(file: ShareFile) {
     if (downloading) return
     setDownloading(file.id)
+
     try {
       const pinParam = verifiedPin ? `&pin=${encodeURIComponent(verifiedPin)}` : ''
       const res = await fetch(`/api/share/${token}/download?fileId=${file.id}${pinParam}`)
-      if (!res.ok) { alert('Download failed. Please try again.'); return }
+      if (!res.ok) {
+        const response = await res.json().catch(() => ({})) as { error?: string }
+        toast.error(response.error ?? 'Download failed. Please try again.')
+        return
+      }
+
       const { url, filename } = await res.json() as { url: string; filename: string }
       const a = document.createElement('a')
       a.href = url
@@ -145,17 +163,17 @@ export default function SharePage({ token }: { token: string }) {
       document.body.removeChild(a)
       setDownloadDone(prev => new Set([...prev, file.id]))
     } catch {
-      alert('Download failed — please check your connection.')
+      toast.error('Download failed — please check your connection.')
     } finally {
       setDownloading(null)
     }
   }
 
   async function downloadAll() {
-    if (downloading) return
-    if (!data?.files?.length) return
+    if (downloading || !data?.files?.length) return
     setDownloading('all')
     const failed: string[] = []
+
     try {
       const pinParam = verifiedPin ? `&pin=${encodeURIComponent(verifiedPin)}` : ''
       for (const file of data.files) {
@@ -165,6 +183,7 @@ export default function SharePage({ token }: { token: string }) {
             failed.push(file.name)
             continue
           }
+
           const { url, filename } = await res.json() as { url: string; filename: string }
           const a = document.createElement('a')
           a.href = url
@@ -179,11 +198,12 @@ export default function SharePage({ token }: { token: string }) {
           failed.push(file.name)
         }
       }
+
       if (failed.length) {
-        alert(`Some files could not be downloaded: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '...' : ''}`)
+        toast.error(`Some files could not be downloaded: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '...' : ''}`)
       }
     } catch {
-      alert('Download failed — please check your connection.')
+      toast.error('Download failed — please check your connection.')
     } finally {
       setDownloading(null)
     }
@@ -193,22 +213,26 @@ export default function SharePage({ token }: { token: string }) {
     setPreviewFile(file)
     setPreviewLoading(true)
     setPreviewUrl(null)
+
     try {
       const pinParam = verifiedPin ? `&pin=${encodeURIComponent(verifiedPin)}` : ''
       const res = await fetch(`/api/share/${token}/download?fileId=${file.id}${pinParam}`)
-      if (!res.ok) { setPreviewLoading(false); return }
+      if (!res.ok) {
+        setPreviewLoading(false)
+        return
+      }
+
       const { url } = await res.json() as { url: string }
       setPreviewUrl(url)
-    } catch { /* silent */ } finally {
+    } catch {
+      // Silent by design for preview fetch
+    } finally {
       setPreviewLoading(false)
     }
   }
 
-  // ── Render states ──────────────────────────────────────────────────────────
-
   const Shell = ({ children }: { children: React.ReactNode }) => (
     <div className="min-h-screen bg-slate-950 flex flex-col">
-      {/* Top bar */}
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm px-4 py-3 sm:px-6">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
@@ -221,12 +245,10 @@ export default function SharePage({ token }: { token: string }) {
         </div>
       </header>
 
-      {/* Content */}
       <main className="flex-1 flex items-start justify-center px-4 py-8 sm:py-12">
         <div className="w-full max-w-3xl">{children}</div>
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-slate-800 px-4 py-4 text-center">
         <p className="text-xs text-slate-600">
           Powered by Christhood CMMS — files shared via a time-limited secure link
@@ -235,7 +257,6 @@ export default function SharePage({ token }: { token: string }) {
     </div>
   )
 
-  // ── Loading ────────────────────────────────────────────────────────────────
   if (phase === 'loading') {
     return (
       <Shell>
@@ -246,7 +267,6 @@ export default function SharePage({ token }: { token: string }) {
     )
   }
 
-  // ── Error ──────────────────────────────────────────────────────────────────
   if (phase === 'error') {
     return (
       <Shell>
@@ -263,7 +283,6 @@ export default function SharePage({ token }: { token: string }) {
     )
   }
 
-  // ── PIN entry ──────────────────────────────────────────────────────────────
   if (phase === 'pin') {
     return (
       <Shell>
@@ -282,18 +301,18 @@ export default function SharePage({ token }: { token: string }) {
               pattern="[0-9]{4}"
               maxLength={4}
               value={pin}
-              onChange={e => { setPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setPinError(null) }}
+              onChange={e => {
+                setPin(e.target.value.replace(/\D/g, '').slice(0, 4))
+                setPinError(null)
+              }}
               placeholder="0000"
-              className="w-full text-center text-3xl font-mono tracking-[1rem] bg-slate-700/50 border border-slate-600
-                         rounded-xl py-4 text-white placeholder:text-slate-600 focus:outline-none
-                         focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50"
+              className="w-full text-center text-3xl font-mono tracking-[1rem] bg-slate-700/50 border border-slate-600 rounded-xl py-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50"
             />
             {pinError && <p className="text-sm text-red-400">{pinError}</p>}
             <button
               type="submit"
               disabled={pin.length !== 4 || pinLoading}
-              className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40
-                         text-white text-sm font-medium transition flex items-center justify-center gap-2"
+              className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-medium transition flex items-center justify-center gap-2"
             >
               {pinLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               Unlock files
@@ -304,16 +323,14 @@ export default function SharePage({ token }: { token: string }) {
     )
   }
 
-  // ── Ready — file list ─────────────────────────────────────────────────────
   if (!data) return null
+
   const grouped = groupByFolder(data.files)
   const folders = [...grouped.keys()].sort()
 
   return (
     <Shell>
       <div className="space-y-6">
-
-        {/* ── Header card ── */}
         <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 p-6 space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -336,10 +353,9 @@ export default function SharePage({ token }: { token: string }) {
               {data.totalFiles} file{data.totalFiles !== 1 ? 's' : ''} · {data.totalSizeLabel}
             </p>
             <button
-              onClick={downloadAll}
+              onClick={() => void downloadAll()}
               disabled={!!downloading}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500
-                         disabled:opacity-50 text-white text-sm font-medium transition shrink-0"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium transition shrink-0"
             >
               {downloading === 'all'
                 ? <Loader2 className="w-4 h-4 animate-spin" />
@@ -349,7 +365,6 @@ export default function SharePage({ token }: { token: string }) {
           </div>
         </div>
 
-        {/* ── File list ── */}
         <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 overflow-hidden">
           {folders.map((folder, fi) => (
             <div key={folder} className={fi > 0 ? 'border-t border-slate-700/40' : ''}>
@@ -362,8 +377,7 @@ export default function SharePage({ token }: { token: string }) {
               {grouped.get(folder)!.map((file, i) => (
                 <div
                   key={file.id}
-                  className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-700/20 transition
-                              ${i > 0 || folder ? 'border-t border-slate-700/30' : ''}`}
+                  className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-700/20 transition ${i > 0 || folder ? 'border-t border-slate-700/30' : ''}`}
                 >
                   <div className="shrink-0">{fileIcon(file.mimeType)}</div>
                   <div className="flex-1 min-w-0">
@@ -373,7 +387,7 @@ export default function SharePage({ token }: { token: string }) {
                   <div className="flex items-center gap-2 shrink-0">
                     {file.canPreview && (
                       <button
-                        onClick={() => openPreview(file)}
+                        onClick={() => void openPreview(file)}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/60 transition"
                         title="Preview"
                       >
@@ -384,11 +398,9 @@ export default function SharePage({ token }: { token: string }) {
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     )}
                     <button
-                      onClick={() => downloadFile(file)}
+                      onClick={() => void downloadFile(file)}
                       disabled={!!downloading}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-700/60
-                                  hover:bg-slate-700 disabled:opacity-40 text-slate-300 hover:text-white
-                                  text-xs font-medium transition"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-700 disabled:opacity-40 text-slate-300 hover:text-white text-xs font-medium transition"
                     >
                       {downloading === file.id
                         ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -402,7 +414,6 @@ export default function SharePage({ token }: { token: string }) {
           ))}
         </div>
 
-        {/* ── Contact footer ── */}
         <p className="text-center text-xs text-slate-600 pb-2">
           Questions about these files? Contact{' '}
           <a href={`mailto:${data.adminEmail}`} className="text-slate-500 hover:text-slate-300 underline underline-offset-2">
@@ -411,11 +422,13 @@ export default function SharePage({ token }: { token: string }) {
         </p>
       </div>
 
-      {/* ── Image preview modal ─────────────────────────────────────────────── */}
       {previewFile && (
         <div
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => { setPreviewFile(null); setPreviewUrl(null) }}
+          onClick={() => {
+            setPreviewFile(null)
+            setPreviewUrl(null)
+          }}
         >
           <div
             className="relative max-w-4xl w-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-700/50"
@@ -424,7 +437,10 @@ export default function SharePage({ token }: { token: string }) {
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
               <span className="text-sm font-medium text-slate-200 truncate">{previewFile.name}</span>
               <button
-                onClick={() => { setPreviewFile(null); setPreviewUrl(null) }}
+                onClick={() => {
+                  setPreviewFile(null)
+                  setPreviewUrl(null)
+                }}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/60 transition ml-2 shrink-0"
               >
                 <X className="w-4 h-4" />
@@ -433,7 +449,6 @@ export default function SharePage({ token }: { token: string }) {
             <div className="min-h-48 flex items-center justify-center bg-slate-950/60">
               {previewLoading && <Loader2 className="w-8 h-8 text-slate-500 animate-spin" />}
               {previewUrl && !previewLoading && (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={previewUrl}
                   alt={previewFile.name}

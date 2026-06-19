@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
+import { ApiError, handleApiError }  from '@/lib/apiError'
 import { prisma }                    from '@/lib/prisma'
 import { deleteFromGallery }         from '@/lib/gallery/gallery-r2'
 import { logger }                    from '@/lib/logger'
@@ -20,9 +21,9 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ galler
 
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+    if (!session?.user) throw new ApiError(401, 'Please log in to continue.')
     if (session.user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, 'Only admins can permanently delete galleries.')
     }
 
     const { id: userId } = session.user
@@ -38,9 +39,9 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ galler
       },
     })
 
-    if (!gallery) return NextResponse.json({ error: 'Gallery not found' }, { status: 404 })
+    if (!gallery) throw new ApiError(404, 'Gallery not found.')
     if (gallery.status !== 'DELETED') {
-      return NextResponse.json({ error: 'Gallery is not in trash' }, { status: 409 })
+      throw new ApiError(409, 'This gallery is not currently in trash.')
     }
 
     // 1. Collect all R2 keys and delete them
@@ -91,6 +92,6 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ galler
       error:   err instanceof Error ? err.message : String(err),
       message: 'Unexpected error purging gallery',
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err, `admin/gallery-trash/${galleryId} DELETE`)
   }
 }

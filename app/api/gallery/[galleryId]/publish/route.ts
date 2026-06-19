@@ -10,6 +10,7 @@ import { authOptions }                from '@/lib/auth'
 import { prisma }                     from '@/lib/prisma'
 import { logger }                     from '@/lib/logger'
 import { createInAppNotification }    from '@/lib/notifications'
+import { ApiError, handleApiError }   from '@/lib/apiError'
 
 const GALLERY_PUBLIC_BASE = 'https://gallery.cmmschristhood.org'
 
@@ -19,12 +20,12 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
 
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user) return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 })
+    if (!session?.user) throw new ApiError(401, 'Please log in to continue.')
 
     const { role, id: userId } = session.user
 
     if (role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      throw new ApiError(403, 'Only admins can publish galleries.')
     }
 
     const gallery = await prisma.publicGallery.findUnique({
@@ -35,13 +36,10 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
       },
     })
 
-    if (!gallery) return NextResponse.json({ error: 'Gallery not found' }, { status: 404 })
+    if (!gallery) throw new ApiError(404, 'Gallery not found.')
 
     if (gallery.status !== 'PENDING_REVIEW') {
-      return NextResponse.json(
-        { error: `Gallery must be in PENDING_REVIEW status to publish (current: ${gallery.status})` },
-        { status: 409 },
-      )
+      throw new ApiError(409, `Only galleries awaiting review can be published. Current status: ${gallery.status}.`)
     }
 
     const visiblePhotos = await prisma.galleryFile.count({
@@ -49,10 +47,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
     })
 
     if (visiblePhotos < 1) {
-      return NextResponse.json(
-        { error: 'Gallery must have at least one visible photo before publishing' },
-        { status: 422 },
-      )
+      throw new ApiError(422, 'Add at least one visible photo before publishing this gallery.')
     }
 
     const updated = await prisma.publicGallery.update({
@@ -97,6 +92,6 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ gallery
       error:     err instanceof Error ? err.message : String(err),
       message:   'Unexpected error publishing gallery',
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err, `/api/gallery/${galleryId}/publish PATCH`)
   }
 }

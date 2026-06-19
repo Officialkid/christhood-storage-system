@@ -5,5 +5,5 @@ import { redirect } from 'next/navigation'
  * Redirect all visitors to the new destination.
  */
 export default function TransferInboxPage() {
-  redirect('/communications/transfers')
+  redirect('/communications/transfers/inbox')
 }

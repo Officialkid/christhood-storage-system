@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma }                    from '@/lib/prisma'
 import { sendStorageThresholdEmail } from '@/lib/email'
+import { getStorageLimitGb }         from '@/lib/storage-config'
 
 export const dynamic = 'force-dynamic'
 
 const STORAGE_THRESHOLD_PERCENT = parseInt(process.env.STORAGE_THRESHOLD_PERCENT ?? '80')
-const STORAGE_LIMIT_GB          = parseFloat(process.env.STORAGE_LIMIT_GB         ?? '100')
 // Only the chief admin receives critical system alert emails
 const CHIEF_ADMIN_EMAIL         = process.env.CHIEF_ADMIN_EMAIL ?? 'danielmwalili1@gmail.com'
 
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
 
   const totalBytes = Number(agg._sum?.fileSize ?? 0)
   const totalGB    = totalBytes / 1_073_741_824
-  const limitGB    = STORAGE_LIMIT_GB
+  const limitGB    = getStorageLimitGb()
   const pct        = Math.round((totalGB / limitGB) * 100)
 
   if (pct < STORAGE_THRESHOLD_PERCENT) {

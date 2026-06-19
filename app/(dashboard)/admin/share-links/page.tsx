@@ -6,6 +6,7 @@ import {
   Lock, Clock, Check, AlertCircle, Eye, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { formatDistanceToNow, isPast } from 'date-fns'
+import { useToast } from '@/lib/toast'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ function TypePill({ type }: { type: string }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function AdminShareLinksPage() {
+  const toast = useToast()
   const [links,       setLinks]       = useState<AdminShareLink[]>([])
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState<string | null>(null)
@@ -91,10 +93,15 @@ export default function AdminShareLinksPage() {
     setRevoking(token)
     try {
       const res = await fetch(`/api/share/${token}`, { method: 'DELETE' })
-      if (!res.ok) { alert('Failed to revoke link.'); return }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string }
+        toast.error(data.error ?? 'Failed to revoke link.')
+        return
+      }
       setLinks(prev => prev.map(l => l.token === token ? { ...l, isRevoked: true } : l))
+      toast.success('Share link revoked.')
     } catch {
-      alert('Network error.')
+      toast.error('Network error while revoking the link.')
     } finally {
       setRevoking(null)
     }
@@ -158,18 +165,25 @@ export default function AdminShareLinksPage() {
         </div>
       </div>
 
+      <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
+        <p className="text-sm font-medium text-white">External sharing made easier to monitor</p>
+        <p className="mt-1 text-sm text-slate-400">
+          Keep the sharing workflow simple for users, while still tracking access, expiry, and revocation in one place.
+        </p>
+      </div>
+
       {/* ── Stats row ── */}
       {!loading && !error && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
             { label: 'Total links',   value: links.length },
             { label: 'Active',        value: links.filter(l => !l.isRevoked && !l.isExpired).length },
             { label: 'Expired',       value: links.filter(l => l.isExpired && !l.isRevoked).length },
             { label: 'Total accesses', value: links.reduce((s, l) => s + l.accessCount, 0) },
           ].map(stat => (
-            <div key={stat.label} className="rounded-xl bg-slate-800/50 border border-slate-700/50 px-4 py-3">
-              <p className="text-2xl font-bold text-white">{stat.value}</p>
-              <p className="text-xs text-slate-500 mt-0.5">{stat.label}</p>
+            <div key={stat.label} className="rounded-2xl border border-slate-800/70 bg-slate-950/60 px-4 py-3.5">
+              <p className="text-2xl font-semibold text-white">{stat.value}</p>
+              <p className="mt-1 text-xs text-slate-500">{stat.label}</p>
             </div>
           ))}
         </div>
@@ -192,7 +206,7 @@ export default function AdminShareLinksPage() {
 
       {/* ── Table ── */}
       {!loading && !error && (
-        <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 overflow-hidden">
+        <div className="overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-950/50">
           {sorted.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <Share2 className="w-10 h-10 text-slate-700 mb-3" />

@@ -9,6 +9,7 @@ import {
   CheckCheck, ShieldCheck, ShieldAlert, Loader2,
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
+import { useToast } from '@/lib/toast'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -203,6 +204,36 @@ interface StagedFile {
   uid:        string
   file:       File
   folderPath: string | null
+}
+
+const RESPONSE_UPLOAD_CONCURRENCY = 4
+
+async function uploadWithConcurrency<T>(
+  items: StagedFile[],
+  limit: number,
+  worker: (item: StagedFile, index: number) => Promise<T>,
+  onDone: (completed: number, total: number) => void,
+): Promise<T[]> {
+  const results = new Array<T>(items.length)
+  const total = items.length
+  let nextIndex = 0
+  let completed = 0
+
+  async function runWorker() {
+    while (true) {
+      const index = nextIndex++
+      if (index >= total) return
+      results[index] = await worker(items[index], index)
+      completed += 1
+      onDone(completed, total)
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, total) }, () => runWorker()),
+  )
+
+  return results
 }
 
 async function collectFromEntry(
@@ -444,49 +475,45 @@ function ResponseSection({
     setErrorMsg(null)
 
     try {
-      const uploaded: {
-        originalName: string; r2Key: string; fileSize: number
-        mimeType: string; folderPath: string | null; checksum: string
-      }[] = []
+      const uploaded = await uploadWithConcurrency(
+        staged,
+        RESPONSE_UPLOAD_CONCURRENCY,
+        async (sf) => {
+          const presignRes = await fetch(`/api/transfers/${transferId}/respond/presign`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+              filename:    sf.file.name,
+              folderPath:  sf.folderPath,
+              contentType: sf.file.type || 'application/octet-stream',
+            }),
+          })
+          if (!presignRes.ok) {
+            const d = await presignRes.json().catch(() => ({}))
+            throw new Error(d.error ?? `Could not presign ${sf.file.name}`)
+          }
+          const { presignedUrl, r2Key } = await presignRes.json()
 
-      for (const sf of staged) {
-        // 1. Get presigned URL
-        const presignRes = await fetch(`/api/transfers/${transferId}/respond/presign`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({
-            filename:    sf.file.name,
-            folderPath:  sf.folderPath,
-            contentType: sf.file.type || 'application/octet-stream',
-          }),
-        })
-        if (!presignRes.ok) {
-          const d = await presignRes.json().catch(() => ({}))
-          throw new Error(d.error ?? `Could not presign ${sf.file.name}`)
-        }
-        const { presignedUrl, r2Key } = await presignRes.json()
+          const checksum = await computeSHA256(sf.file)
 
-        // 2. SHA-256 (byte-for-byte integrity guarantee)
-        const checksum = await computeSHA256(sf.file)
+          const putRes = await fetch(presignedUrl, {
+            method:  'PUT',
+            body:    sf.file,
+            headers: { 'Content-Type': sf.file.type || 'application/octet-stream' },
+          })
+          if (!putRes.ok) throw new Error(`Upload failed for ${sf.file.name}`)
 
-        // 3. PUT to R2 — file stored exactly as-is, no processing
-        const putRes = await fetch(presignedUrl, {
-          method:  'PUT',
-          body:    sf.file,
-          headers: { 'Content-Type': sf.file.type || 'application/octet-stream' },
-        })
-        if (!putRes.ok) throw new Error(`Upload failed for ${sf.file.name}`)
-
-        uploaded.push({
-          originalName: sf.file.name,
-          r2Key,
-          fileSize:     sf.file.size,
-          mimeType:     sf.file.type || 'application/octet-stream',
-          folderPath:   sf.folderPath,
-          checksum,
-        })
-        setProgress(p => ({ ...p, done: p.done + 1 }))
-      }
+          return {
+            originalName: sf.file.name,
+            r2Key,
+            fileSize:     sf.file.size,
+            mimeType:     sf.file.type || 'application/octet-stream',
+            folderPath:   sf.folderPath,
+            checksum,
+          }
+        },
+        (done, total) => setProgress({ done, total }),
+      )
 
       // 4. Submit response record to DB
       setUploadStatus('submitting')
@@ -832,6 +859,7 @@ function PinGate({ transferId, onVerified }: { transferId: string; onVerified: (
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function TransferDetailView({ transfer }: { transfer: TransferDetailData }) {
+  const toast = useToast()
   const [pinVerified,    setPinVerified]    = useState(!transfer.isPinProtected)
   const [currentStatus,  setCurrentStatus]  = useState<TransferStatus>(transfer.status)
   const [existingResp,   setExistingResp]   = useState<TransferResponseData | null>(transfer.response)
@@ -877,8 +905,8 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
           setDownloadProgress({ done: i + 1, total: transfer.files.length })
           continue
         }
-        const { url, filename } = await res.json() as { url: string; filename: string }
-        triggerBrowserDownload(url, filename)
+        const { url, filename, downloadName } = await res.json() as { url: string; filename: string; downloadName?: string }
+        triggerBrowserDownload(url, downloadName ?? filename)
       } catch {
         failed.push(file.originalName)
       }
@@ -889,7 +917,9 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
 
     if (currentStatus === 'PENDING') setCurrentStatus('DOWNLOADED')
     if (failed.length > 0) {
-      alert(`Some files could not be downloaded: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '...' : ''}`)
+      toast.warning(`Some files could not be downloaded: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '...' : ''}`)
+    } else {
+      toast.success('All transfer files started downloading.')
     }
 
     setTimeout(() => {
@@ -903,17 +933,17 @@ export function TransferDetailView({ transfer }: { transfer: TransferDetailData 
     setDownloadingFile(file.id)
     try {
       const res = await fetch(`/api/transfers/${transfer.id}/files/${file.id}`)
-      if (!res.ok) { alert('Could not get download link.'); return }
-      const { url, filename } = await res.json() as { url: string; filename: string }
-      triggerBrowserDownload(url, filename)
+      if (!res.ok) { toast.error('Could not get the download link for that file.'); return }
+      const { url, filename, downloadName } = await res.json() as { url: string; filename: string; downloadName?: string }
+      triggerBrowserDownload(url, downloadName ?? filename)
       // Individual file download also unlocks response
       if (currentStatus === 'PENDING') setCurrentStatus('DOWNLOADED')
     } catch {
-      alert('Download failed.')
+      toast.error('Download failed. Please try again.')
     } finally {
       setDownloadingFile(null)
     }
-  }, [downloadingAll, downloadingFile, transfer.id, currentStatus, triggerBrowserDownload])
+  }, [downloadingAll, downloadingFile, transfer.id, currentStatus, triggerBrowserDownload, toast])
 
   const handleResponseSubmitted = useCallback((response: TransferResponseData) => {
     setExistingResp(response)

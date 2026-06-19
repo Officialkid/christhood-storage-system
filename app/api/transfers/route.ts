@@ -143,14 +143,14 @@ export async function POST(req: NextRequest) {
     createInAppNotification(
       recipientId,
       `${senderName} sent you ${fileCount} file${fileCount !== 1 ? 's' : ''}: "${subject.trim()}"`,
-      '/transfers/inbox',
+      `/transfers/inbox/${transferId}`,
     ),
 
     // 3. Web push (respects user preference opt-out)
     sendPushToUser(recipientId, 'TRANSFER_RECEIVED', {
       title:   '📦 New Transfer Received',
       body:    `${senderName} sent you ${fileCount} file${fileCount !== 1 ? 's' : ''}: "${subject.trim()}"`,
-      url:     '/transfers/inbox',
+      url:     `/transfers/inbox/${transferId}`,
       tag:     `transfer-${transferId}`,
       type:    'TRANSFER_RECEIVED',
       payload: { transferId, senderName, fileCount, subject: subject.trim() },
@@ -169,6 +169,7 @@ export async function POST(req: NextRequest) {
         message:    message?.trim() || null,
         fileCount,
         totalSize:  totalBytes,
+        transferId,
       })
     }),
   ]).catch(() => {})

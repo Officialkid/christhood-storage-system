@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
     select: {
       token:         true,
       originalName:  true,
+      folderPath:    true,
       fileSize:      true,
       mimeType:      true,
       title:         true,
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
     records.map(r => ({
       token:         r.token,
       originalName:  r.originalName,
+      folderPath:    r.folderPath,
       fileSize:      r.fileSize.toString(),
       mimeType:      r.mimeType,
       title:         r.title,

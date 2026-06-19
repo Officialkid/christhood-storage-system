@@ -10,10 +10,10 @@ import { logger }                                from '@/lib/logger'
 /**
  * PATCH /api/transfers/[transferId]/complete
  *
- * Admin marks a responded transfer as COMPLETED.
+ * Sender or admin marks a responded transfer as COMPLETED.
  * - Transfer must be in RESPONDED state.
  * - Updates Transfer.status → COMPLETED and expiresAt → now + 30 days.
- * - Sets TransferResponse.downloadedByAdmin → true.
+ * - Sets TransferResponse.downloadedByAdmin → true (reviewed by sender/admin).
  * - Notifies the recipient in-app and via push.
  * - Logs TRANSFER_COMPLETED.
  */
@@ -27,9 +27,6 @@ export async function PATCH(
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  if (session.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden — admin only' }, { status: 403 })
-  }
 
   const transfer = await prisma.transfer.findUnique({
     where:   { id: transferId },
@@ -42,6 +39,15 @@ export async function PATCH(
   if (!transfer) {
     return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
   }
+
+  const canComplete =
+    transfer.senderId === session.user.id ||
+    session.user.role === 'ADMIN'
+
+  if (!canComplete) {
+    return NextResponse.json({ error: 'Forbidden — sender or admin only' }, { status: 403 })
+  }
+
   if (transfer.status !== 'RESPONDED') {
     return NextResponse.json(
       { error: `Cannot complete a transfer in status "${transfer.status}". Must be RESPONDED.` },

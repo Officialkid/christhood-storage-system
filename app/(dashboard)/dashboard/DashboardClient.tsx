@@ -60,6 +60,9 @@ interface UpcomingEvent {
 interface Storage {
   totalBytes: string
   breakdown: { type: string; bytes: string; count: number }[]
+  limitBytes: string
+  limitGB: number
+  limitLabel: string
 }
 
 interface OnboardingStatus {
@@ -78,6 +81,7 @@ interface DashboardData {
   storage:        Storage | null
   onboarding:     OnboardingStatus
   generatedAt:    string
+  isFallback?:    boolean
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -97,7 +101,8 @@ function fmtBytes(bytes: number): string {
   if (bytes < 1024)          return `${bytes} B`
   if (bytes < 1_048_576)     return `${(bytes / 1024).toFixed(1)} KB`
   if (bytes < 1_073_741_824) return `${(bytes / 1_048_576).toFixed(1)} MB`
-  return `${(bytes / 1_073_741_824).toFixed(2)} GB`
+  if (bytes < 1_099_511_627_776) return `${(bytes / 1_073_741_824).toFixed(2)} GB`
+  return `${(bytes / 1_099_511_627_776).toFixed(2)} TB`
 }
 
 function displayName(user: { name: string | null; username: string | null } | null): string {
@@ -148,15 +153,14 @@ function StatCard({
 }) {
   const clickable = !!href || !!onClick
   const inner = (
-    <div className="bg-slate-900 border border-slate-800/60 rounded-2xl p-5 flex items-start gap-4
-                    hover:border-slate-700/80 transition-colors group">
-      <div className={`w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center shrink-0 ${accentClass}`}>
+    <div className="group flex items-start gap-4 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-5 transition-colors hover:border-slate-700 hover:bg-slate-900/80">
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700/60 bg-slate-900/80 ${accentClass}`}>
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">{label}</p>
-        <p className="text-2xl font-bold text-white tabular-nums">{typeof value === 'number' ? value.toLocaleString() : value}</p>
-        {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+        <p className="text-2xl font-semibold text-white tabular-nums">{typeof value === 'number' ? value.toLocaleString() : value}</p>
+        <p className="mt-1 text-sm text-slate-400">{label}</p>
+        {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
       </div>
     </div>
   )
@@ -181,13 +185,19 @@ function WelcomeBanner({ name }: { name: string }) {
     setEmoji(   h < 12 ? '☀️' : h < 18 ? '⛅' : '🌙')
   }, [])
   return (
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-bold text-white">
-        {greeting}, {name} {emoji}
-      </h1>
-      <p className="mt-1 text-slate-400 text-sm sm:text-base">
-        Here's what's happening in Christhood today.
-      </p>
+    <div className="rounded-3xl border border-slate-800/70 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950/30 p-6">
+      <div className="flex items-start gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-indigo-500/20 bg-indigo-500/10 text-2xl">
+          {emoji}
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500">{greeting}</p>
+          <h1 className="mt-1 text-2xl font-bold text-white sm:text-3xl">Welcome back, {name}</h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-400">
+            Everything important is in one place, with the most common actions close at hand.
+          </p>
+        </div>
+      </div>
     </div>
   )
 }
@@ -279,7 +289,7 @@ function OnboardingChecklist({
 // ── Activity feed ─────────────────────────────────────────────────────────────
 function ActivityFeed({ items }: { items: ActivityItem[] }) {
   return (
-    <div className="bg-slate-900 border border-slate-800/60 rounded-2xl p-5">
+    <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-5">
       <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
         <Zap className="w-4 h-4 text-amber-400" />
         Recent Activity
@@ -309,7 +319,7 @@ function ActivityFeed({ items }: { items: ActivityItem[] }) {
 // ── Upcoming events ───────────────────────────────────────────────────────────
 function UpcomingEvents({ events }: { events: UpcomingEvent[] }) {
   return (
-    <div className="bg-slate-900 border border-slate-800/60 rounded-2xl p-5 h-full">
+    <div className="h-full rounded-2xl border border-slate-800/70 bg-slate-950/60 p-5">
       <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
         <CalendarDays className="w-4 h-4 text-sky-400" />
         Upcoming Events
@@ -525,31 +535,31 @@ const STORAGE_COLORS = { PHOTO: '#6366f1', VIDEO: '#f59e0b', OTHER: '#64748b' }
 
 function StorageOverview({ storage }: { storage: Storage }) {
   const total = Number(BigInt(storage.totalBytes))
+  const limitBytes = Number(BigInt(storage.limitBytes))
   const chartData = storage.breakdown.map(b => ({
     name:  b.type,
     value: Number(BigInt(b.bytes)),
     count: b.count,
   }))
 
-  // Estimate capacity (10 TB)
-  const estimatedCapacity = 10 * 1024 * 1024 * 1024 * 1024
-  const usedPct = Math.min(100, (total / estimatedCapacity) * 100)
+  const usedPct = limitBytes > 0 ? Math.min(100, (total / limitBytes) * 100) : 0
+  const topBreakdown = chartData[0]
 
   return (
-    <div className="bg-slate-900 border border-slate-800/60 rounded-2xl p-5">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-slate-900 border border-slate-800/60 rounded-2xl p-4 sm:p-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
         <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-violet-400" />
           Storage Overview
         </h2>
-        <Link href="/admin/analytics" className="text-xs text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1">
+        <Link href="/admin/analytics" className="text-xs text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1 self-start sm:self-auto">
           Full analytics <ArrowRight className="w-3 h-3" />
         </Link>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-6 items-start">
+      <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 items-start">
         {/* Donut chart */}
-        <div className="shrink-0 w-32 h-32">
+        <div className="hidden sm:block shrink-0 w-32 h-32">
           <ResponsiveContainer width="100%" height={128}>
             <PieChart>
               <Pie data={chartData} cx="50%" cy="50%" innerRadius="60%" outerRadius="80%"
@@ -565,11 +575,23 @@ function StorageOverview({ storage }: { storage: Storage }) {
 
         {/* Stats */}
         <div className="flex-1 min-w-0">
-          <p className="text-xl font-bold text-white">{fmtBytes(total)} used</p>
-          <p className="text-xs text-slate-500 mb-3">of estimated 10 TB capacity</p>
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-xl font-bold text-white">{fmtBytes(total)} used</p>
+              <p className="text-xs text-slate-500">of {storage.limitLabel} capacity</p>
+            </div>
+            {topBreakdown && (
+              <div className="text-right sm:hidden">
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">Largest type</p>
+                <p className="text-sm font-semibold text-slate-200">
+                  {topBreakdown.name === 'PHOTO' ? 'Photos' : topBreakdown.name === 'VIDEO' ? 'Videos' : 'Other'}
+                </p>
+              </div>
+            )}
+          </div>
 
           {/* Usage bar */}
-          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden mb-4">
+          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden my-4">
             <div
               className="h-full rounded-full transition-all duration-700"
               style={{ width: `${usedPct}%`, background: 'linear-gradient(90deg, #6366f1, #f59e0b)' }}
@@ -582,11 +604,11 @@ function StorageOverview({ storage }: { storage: Storage }) {
               <div key={d.name} className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full shrink-0"
                   style={{ background: STORAGE_COLORS[d.name as keyof typeof STORAGE_COLORS] ?? STORAGE_COLORS.OTHER }} />
-                <span className="text-xs text-slate-400 flex-1">
+                <span className="text-xs text-slate-400 flex-1 min-w-0">
                   {d.name === 'PHOTO' ? 'Photos' : d.name === 'VIDEO' ? 'Videos' : 'Other'}
                 </span>
-                <span className="text-xs text-slate-300 tabular-nums">{fmtBytes(d.value)}</span>
-                <span className="text-xs text-slate-600 tabular-nums">({d.count.toLocaleString()})</span>
+                <span className="text-xs text-slate-300 tabular-nums whitespace-nowrap">{fmtBytes(d.value)}</span>
+                <span className="text-xs text-slate-600 tabular-nums whitespace-nowrap">({d.count.toLocaleString()})</span>
               </div>
             ))}
           </div>
@@ -668,7 +690,7 @@ function AdminStatsSection({
 }) {
   const v = (n: number) => isLoading ? '—' : n
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <StatCard icon={<FileText className="w-5 h-5" />} label="Total Files"
         value={v(stats.totalFiles)}
         sub={stats.monthChangePct != null ? `${stats.monthChangePct >= 0 ? '+' : ''}${stats.monthChangePct}% this month` : undefined}
@@ -746,7 +768,7 @@ function ActiveUsersModal({ users, onClose }: { users: ActiveUser[]; onClose: ()
 function EditorStatsSection({ stats, isLoading }: { stats: EditorStats; isLoading: boolean }) {
   const v = (n: number) => isLoading ? '—' : n
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <StatCard icon={<Clock className="w-5 h-5" />} label="Files to Edit"
         value={v(stats.filesToEdit)} sub="RAW files waiting"
         href="/media?status=RAW" accentClass="text-amber-400" />
@@ -763,7 +785,7 @@ function EditorStatsSection({ stats, isLoading }: { stats: EditorStats; isLoadin
 function UploaderStatsSection({ stats, isLoading }: { stats: UploaderStats; isLoading: boolean }) {
   const v = (n: number) => isLoading ? '—' : n
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <StatCard icon={<FileText className="w-5 h-5" />} label="My Uploads"
         value={v(stats.myTotal)} sub="total files uploaded"
         href="/media" accentClass="text-indigo-400" />
@@ -789,7 +811,7 @@ export default function DashboardClient({ initialData }: { initialData: Dashboar
   const [secsSince,     setSecsSince]     = useState(0)
   // False until the first successful client-side fetch completes.
   // Prevents the SSR-fallback zeros from flashing as real data.
-  const [hasRealData,   setHasRealData]   = useState(false)
+  const [hasRealData,   setHasRealData]   = useState(!initialData.isFallback)
   const [showActiveUsers, setShowActiveUsers] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 

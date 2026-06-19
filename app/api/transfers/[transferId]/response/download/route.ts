@@ -20,8 +20,8 @@ const STORE_EXTENSIONS = new Set([
 /**
  * GET /api/transfers/[transferId]/response/download
  *
- * Streams a ZIP archive of all TransferResponseFiles back to the admin.
- * Admin only. Preserves recipient's folder structure inside the ZIP.
+ * Streams a ZIP archive of all TransferResponseFiles back to the sender/admin.
+ * Sender or admin. Preserves recipient's folder structure inside the ZIP.
  * On first download sets TransferResponse.downloadedByAdmin = true.
  * Logs TRANSFER_RESPONSE_DOWNLOADED.
  */
@@ -35,9 +35,6 @@ export async function GET(
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  if (session.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden — admin only' }, { status: 403 })
-  }
 
   const transfer = await prisma.transfer.findUnique({
     where:   { id: transferId },
@@ -49,6 +46,15 @@ export async function GET(
   if (!transfer) {
     return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
   }
+
+  const canAccess =
+    transfer.senderId === session.user.id ||
+    session.user.role === 'ADMIN'
+
+  if (!canAccess) {
+    return NextResponse.json({ error: 'Forbidden — sender or admin only' }, { status: 403 })
+  }
+
   if (!transfer.response) {
     return NextResponse.json({ error: 'No response has been submitted for this transfer' }, { status: 404 })
   }

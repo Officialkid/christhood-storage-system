@@ -2,14 +2,12 @@ import { NextResponse }    from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions }      from '@/lib/auth'
 import { prisma }           from '@/lib/prisma'
-import { Prisma }           from '@prisma/client'
+import { getStorageLimitBytes, getStorageLimitGb } from '@/lib/storage-config'
 
 // Converts BigInt values coming out of $queryRaw to numbers so JSON.stringify works
 function toNum(v: unknown): number {
   return typeof v === 'bigint' ? Number(v) : Number(v ?? 0)
 }
-
-const LIMIT_GB = parseFloat(process.env.STORAGE_LIMIT_GB ?? '100')
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -167,17 +165,19 @@ export async function GET() {
   })
 
   // ── Serialise and return ──────────────────────────────────────────────────
-  const limitBytes = LIMIT_GB * 1_073_741_824
+  const limitGB = getStorageLimitGb()
+  const limitBytes = getStorageLimitBytes()
+  const totalBytes = toNum(totalAgg._sum.fileSize)
 
   return NextResponse.json({
     overview: {
-      totalBytes:   toNum(totalAgg._sum.fileSize),
+      totalBytes,
       totalFiles:   totalAgg._count.id,
       limitBytes,
-      limitGB:      LIMIT_GB,
+      limitGB,
       trashBytes:   toNum(trashAgg._sum.fileSize),
       trashFiles:   trashAgg._count.id,
-      usedPct:      Math.min(100, Math.round((toNum(totalAgg._sum.fileSize) / limitBytes) * 100)),
+      usedPct:      Math.round((totalBytes / limitBytes) * 100),
     },
     byStatus: byStatus.map(r => ({
       status:     r.status,

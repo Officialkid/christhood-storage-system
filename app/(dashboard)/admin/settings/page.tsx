@@ -391,8 +391,18 @@ export default function AdminSettingsPage() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  if (authStatus === 'loading' || !session?.user) {
+  if (authStatus === 'loading') {
     return <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 text-slate-500 animate-spin" /></div>
+  }
+
+  if (!session?.user || session.user.role !== 'ADMIN') {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-2 text-center">
+        <ShieldCheck className="h-8 w-8 text-amber-400" />
+        <p className="text-sm font-medium text-white">Admin access is required for system settings.</p>
+        <p className="text-sm text-slate-500">Redirecting to your dashboard…</p>
+      </div>
+    )
   }
 
   const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -406,15 +416,28 @@ export default function AdminSettingsPage() {
   ]
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
       {/* ── Page header ───────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
-          <Settings className="w-5 h-5 text-slate-400" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-white">System Settings</h1>
-          <p className="text-sm text-slate-400 mt-0.5">Global configuration for Christhood CMMS</p>
+      <div className="rounded-2xl border border-slate-800/70 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-5 shadow-lg shadow-black/20">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="w-11 h-11 rounded-2xl bg-indigo-600/15 border border-indigo-500/20 flex items-center justify-center shrink-0">
+              <Settings className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Admin controls</p>
+              <h1 className="text-2xl font-bold text-white sm:text-3xl">System Settings</h1>
+              <p className="max-w-2xl text-sm text-slate-400">
+                Global configuration for Christhood CMMS, grouped into simple sections so it is easier to scan and update.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 sm:flex sm:flex-wrap sm:justify-end">
+            <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Brand & identity</span>
+            <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Storage & files</span>
+            <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Access & notifications</span>
+            <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">AI & transfers</span>
+          </div>
         </div>
       </div>
 
@@ -427,12 +450,12 @@ export default function AdminSettingsPage() {
       )}
 
       {/* ── Tabs ──────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-1 p-1 rounded-2xl bg-slate-900/60 border border-slate-800/60">
+      <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-800/60 bg-slate-900/60 p-1">
         {TABS.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all
+            className={`flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2 rounded-xl text-xs font-medium transition-all
                         ${tab === t.id
                           ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
                           : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
