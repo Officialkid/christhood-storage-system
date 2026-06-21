@@ -170,6 +170,8 @@ export async function middleware(req: NextRequest) {
   if (
     isSharelinkHost &&
     !pathname.startsWith('/public-share') &&
+    !pathname.startsWith('/t/') &&
+    pathname !== '/t' &&
     !pathname.startsWith('/api/') &&
     !pathname.startsWith('/_next/')
   ) {

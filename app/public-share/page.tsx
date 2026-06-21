@@ -431,7 +431,7 @@ export default function PublicSharePage() {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.22),_transparent_34%),linear-gradient(180deg,_#050816_0%,_#0f172a_55%,_#020617_100%)]">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-        <header className="mb-6 flex items-center justify-between gap-4">
+        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-950/40">
               <Shield className="h-5 w-5 text-white" />
@@ -761,23 +761,23 @@ export default function PublicSharePage() {
 
       {progressState && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-[2.2rem] bg-white px-6 py-8 text-center shadow-2xl">
-            <div className="mx-auto flex h-40 w-40 items-center justify-center rounded-[2.5rem] border-8 border-indigo-100 bg-indigo-50">
+          <div className="w-full max-w-md rounded-[2.2rem] bg-white px-5 py-7 text-center shadow-2xl sm:px-6 sm:py-8">
+            <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-[2rem] border-8 border-indigo-100 bg-indigo-50 sm:h-40 sm:w-40 sm:rounded-[2.5rem]">
               <div>
-                <p className="text-5xl font-semibold text-indigo-600">{progressState.percent}%</p>
+                <p className="text-4xl font-semibold text-indigo-600 sm:text-5xl">{progressState.percent}%</p>
               </div>
             </div>
 
-            <h2 className="mt-8 text-4xl font-semibold tracking-tight text-slate-950">
+            <h2 className="mt-6 text-3xl font-semibold tracking-tight text-slate-950 sm:mt-8 sm:text-4xl">
               {progressState.phase === 'finishing' ? 'Almost done...' : progressState.phase === 'complete' ? 'Transfer complete' : 'Transferring...'}
             </h2>
 
-            <p className="mt-4 text-lg text-slate-600">
+            <p className="mt-4 text-base text-slate-600 sm:text-lg">
               {progressState.fileCount === 1
                 ? 'Sending 1 file'
                 : `Sending ${progressState.fileCount} files`}
             </p>
-            <p className="mt-1 text-base text-slate-500">
+            <p className="mt-1 text-sm text-slate-500 sm:text-base">
               {formatUploadSize(progressState.uploadedBytes)} of {formatUploadSize(progressState.totalBytes)} uploaded
             </p>
             <p className="mt-3 truncate text-sm text-slate-400">
