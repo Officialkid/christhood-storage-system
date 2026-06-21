@@ -196,8 +196,8 @@ export default function TransferShareViewClient({ code }: { code: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
-      <header className="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-sm">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(129,140,248,0.18),_transparent_32%),linear-gradient(180deg,_#0b1020_0%,_#121934_52%,_#0f172a_100%)]">
+      <header className="border-b border-white/10 bg-slate-950/45 backdrop-blur-sm">
         <div className="mx-auto flex max-w-4xl flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-indigo-300">Christhood ShareLink</p>
@@ -211,42 +211,42 @@ export default function TransferShareViewClient({ code }: { code: string }) {
 
       <main className="mx-auto max-w-4xl px-4 py-6 sm:py-8">
         <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr] lg:gap-6">
-          <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-2xl shadow-black/20 sm:p-6">
+          <section className="rounded-[2rem] border border-white/10 bg-white/6 p-5 shadow-xl shadow-black/10 backdrop-blur sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-indigo-300">
+                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-indigo-200">
                   {transfer.title || transfer.bundleName}
                 </p>
-                <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">
+                <h2 className="mt-2 text-2xl font-bold leading-tight text-white sm:text-3xl">
                   {transfer.files.length} file{transfer.files.length !== 1 ? 's' : ''} in one transfer
                 </h2>
                 {transfer.message && (
                   <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300">{transfer.message}</p>
                 )}
               </div>
-              <div className="rounded-2xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-left sm:min-w-[15rem] sm:text-right">
-                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Download package</p>
-                <p className="mt-1 break-words text-base font-semibold text-white sm:text-lg">{transfer.bundleName}.zip</p>
+              <div className="rounded-[1.6rem] border border-white/10 bg-slate-950/20 px-4 py-3 text-left sm:min-w-[15rem] sm:text-right">
+                <p className="text-xs uppercase tracking-[0.18em] text-indigo-200/70">Download package</p>
+                <p className="mt-2 break-words text-base font-semibold text-white sm:text-lg">{transfer.bundleName}.zip</p>
               </div>
             </div>
 
             <div className="mt-6 grid gap-3 grid-cols-1 sm:grid-cols-3">
-              <div className="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Size</p>
+              <div className="rounded-[1.4rem] border border-white/10 bg-slate-950/20 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Size</p>
                 <p className="mt-1 text-sm font-semibold text-white">{formatBytes(transfer.totalSize)}</p>
               </div>
-              <div className="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Expires</p>
+              <div className="rounded-[1.4rem] border border-white/10 bg-slate-950/20 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Expires</p>
                 <p className="mt-1 text-sm font-semibold text-white">{expiryCountdown(transfer.expiresAt)}</p>
               </div>
-              <div className="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Security</p>
+              <div className="rounded-[1.4rem] border border-white/10 bg-slate-950/20 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Security</p>
                 <p className="mt-1 text-sm font-semibold text-white">{transfer.pinRequired ? 'PIN protected' : 'Open link'}</p>
               </div>
             </div>
 
-            <div className="mt-6 rounded-2xl border border-indigo-500/20 bg-indigo-500/10 p-4">
-              <p className="text-sm leading-6 text-indigo-100">
+            <div className="mt-6 rounded-[1.6rem] border border-indigo-400/20 bg-indigo-400/8 p-4">
+              <p className="text-sm leading-7 text-indigo-100/90">
                 Download once and you will receive everything together in a single ZIP folder named after this transfer. If the sender uploaded a folder, its structure is kept inside the download.
               </p>
             </div>
@@ -255,20 +255,25 @@ export default function TransferShareViewClient({ code }: { code: string }) {
               <button
                 onClick={handleDownload}
                 disabled={step === 'downloading'}
-                className="w-full rounded-2xl bg-indigo-600 px-5 py-4 text-base font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                className="w-full rounded-[1.6rem] bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-4 text-base font-semibold text-white transition hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50"
               >
                 {step === 'downloading' ? 'Preparing download...' : `Download ${transfer.files.length} files together`}
               </button>
             </div>
           </section>
 
-          <aside className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 sm:p-6">
-            <h3 className="text-lg font-semibold text-white">What is inside</h3>
+          <aside className="rounded-[2rem] border border-white/10 bg-white/6 p-5 backdrop-blur sm:p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-semibold text-white">Files included</h3>
+              <span className="rounded-full bg-white/8 px-3 py-1 text-xs font-medium text-slate-300">
+                {transfer.files.length} item{transfer.files.length !== 1 ? 's' : ''}
+              </span>
+            </div>
             <div className="mt-4 max-h-[24rem] space-y-2 overflow-auto sm:max-h-[32rem]">
               {transfer.files.map((file) => (
-                <div key={file.token} className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3">
+                <div key={file.token} className="rounded-[1.4rem] border border-white/8 bg-slate-950/18 px-4 py-3">
                   <p className="truncate text-sm font-medium text-white">{fullName(file)}</p>
-                  <p className="mt-1 text-xs text-slate-500">{formatBytes(file.fileSize)}</p>
+                  <p className="mt-1 text-xs text-slate-400">{formatBytes(file.fileSize)}</p>
                 </div>
               ))}
             </div>

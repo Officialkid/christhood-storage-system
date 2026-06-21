@@ -49,6 +49,29 @@ type UploadProgressState = {
   uploadedBytes: number
 }
 
+const TUTORIAL_STEPS = [
+  {
+    label: 'Step 1',
+    title: 'Choose files or one folder',
+    body: 'Start by adding files. If you choose a folder, ShareLink keeps that folder structure inside the final download.',
+  },
+  {
+    label: 'Step 2',
+    title: 'Pick how you want to send',
+    body: 'Use Get a link when you want to copy the transfer yourself, or Send as email when the system should notify the recipient for you.',
+  },
+  {
+    label: 'Step 3',
+    title: 'Add title, message, and PIN if needed',
+    body: 'Keep it simple. The title names the transfer, the message gives context, and the PIN protects the whole transfer when needed.',
+  },
+  {
+    label: 'Step 4',
+    title: 'Send and wait for completion',
+    body: 'Once the upload finishes, you get one transfer result page. From there, you can open it, copy it, and share it easily.',
+  },
+] as const
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
@@ -110,6 +133,8 @@ export default function PublicSharePage() {
   const [completedShare, setCompletedShare] = useState<CompletedShare | null>(null)
   const [copiedLink, setCopiedLink] = useState<string | null>(null)
   const [progressState, setProgressState] = useState<UploadProgressState | null>(null)
+  const [tutorialStep, setTutorialStep] = useState(0)
+  const [tutorialDismissed, setTutorialDismissed] = useState(false)
 
   const totalSize = useMemo(
     () => files.reduce((sum, item) => sum + item.file.size, 0),
@@ -123,6 +148,8 @@ export default function PublicSharePage() {
     const folderRoot = first.folderPath?.split('/')[0]?.trim()
     return folderRoot || first.file.name
   }, [files, title])
+
+  const tutorial = TUTORIAL_STEPS[tutorialStep]
 
   function getFolderPath(file: File): string | null {
     const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath ?? ''
@@ -660,35 +687,76 @@ export default function PublicSharePage() {
           </form>
 
           <aside className="space-y-4">
-            <div className="rounded-[2rem] border border-white/10 bg-slate-950/60 p-5 text-white backdrop-blur">
-              <p className="text-sm font-semibold text-indigo-200">Simple sharing</p>
-              <h2 className="mt-2 text-2xl font-semibold">Built for normal users, not technical ones.</h2>
-              <ul className="mt-4 space-y-3 text-sm text-slate-300">
-                <li>One transfer page instead of many separate file links.</li>
-                <li>Email delivery when you want us to notify the recipient.</li>
-                <li>Folder uploads keep the original structure intact.</li>
-                <li>Optional PIN for the whole transfer.</li>
-              </ul>
-            </div>
+            {!tutorialDismissed && (
+              <div className="rounded-[2rem] border border-white/10 bg-slate-950/60 p-5 text-white backdrop-blur">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-indigo-200">Quick tutorial</p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+                      {tutorial.label} of {TUTORIAL_STEPS.length}
+                    </p>
+                  </div>
 
-            <div className="rounded-[2rem] border border-white/10 bg-slate-950/60 p-5 text-white backdrop-blur">
-              <p className="text-sm font-semibold text-indigo-200">Transfer summary</p>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-white/5 p-4">
-                  <p className="text-2xl font-semibold">{files.length}</p>
-                  <p className="mt-1 text-xs text-slate-400">Files</p>
+                  <div className="flex items-center gap-2 text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setTutorialStep((current) => Math.max(0, current - 1))}
+                      disabled={tutorialStep === 0}
+                      className="rounded-full border border-white/10 px-3 py-1.5 text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (tutorialStep === TUTORIAL_STEPS.length - 1) {
+                          setTutorialDismissed(true)
+                          return
+                        }
+                        setTutorialStep((current) => Math.min(TUTORIAL_STEPS.length - 1, current + 1))
+                      }}
+                      className="rounded-full bg-indigo-600 px-3 py-1.5 text-white transition hover:bg-indigo-500"
+                    >
+                      {tutorialStep === TUTORIAL_STEPS.length - 1 ? 'Done' : 'Next'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTutorialDismissed(true)}
+                      className="text-slate-400 transition hover:text-white"
+                    >
+                      Skip
+                    </button>
+                  </div>
                 </div>
-                <div className="rounded-2xl bg-white/5 p-4">
-                  <p className="text-2xl font-semibold">{formatBytes(totalSize)}</p>
-                  <p className="mt-1 text-xs text-slate-400">Total size</p>
+
+                <div className="mt-5 overflow-hidden rounded-[1.6rem] border border-white/10 bg-white/5 p-5">
+                  <div className="mb-4 flex gap-2">
+                    {TUTORIAL_STEPS.map((_, index) => (
+                      <span
+                        key={`tutorial-step-${index}`}
+                        className={`h-1.5 flex-1 rounded-full transition ${
+                          index <= tutorialStep ? 'bg-indigo-500' : 'bg-white/10'
+                        }`}
+                      />
+                    ))}
+                  </div>
+
+                  <h2 className="text-xl font-semibold">{tutorial.title}</h2>
+                  <p className="mt-3 text-sm leading-7 text-slate-300">{tutorial.body}</p>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl bg-white/5 p-4">
+                    <p className="text-2xl font-semibold">{files.length}</p>
+                    <p className="mt-1 text-xs text-slate-400">Files added</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/5 p-4">
+                    <p className="text-2xl font-semibold">{formatBytes(totalSize)}</p>
+                    <p className="mt-1 text-xs text-slate-400">Current size</p>
+                  </div>
                 </div>
               </div>
-              <div className="mt-4 rounded-2xl bg-white/5 p-4 text-sm text-slate-300">
-                {deliveryMode === 'email'
-                  ? 'The recipient gets the transfer link by email as soon as the upload finishes.'
-                  : 'You will get one short transfer link that you can copy and share anywhere.'}
-              </div>
-            </div>
+            )}
 
             <div className="rounded-[2rem] border border-white/10 bg-slate-950/60 p-5 text-white backdrop-blur">
               <p className="text-sm font-semibold text-indigo-200">After upload</p>
@@ -762,9 +830,15 @@ export default function PublicSharePage() {
       {progressState && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-[2.2rem] bg-white px-5 py-7 text-center shadow-2xl sm:px-6 sm:py-8">
-            <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-[2rem] border-8 border-indigo-100 bg-indigo-50 sm:h-40 sm:w-40 sm:rounded-[2.5rem]">
-              <div>
+            <div className="mx-auto flex h-32 w-32 flex-col items-center justify-center rounded-[2rem] border-8 border-indigo-100 bg-indigo-50 sm:h-40 sm:w-40 sm:rounded-[2.5rem]">
+              <div className="flex-1 content-center">
                 <p className="text-4xl font-semibold text-indigo-600 sm:text-5xl">{progressState.percent}%</p>
+              </div>
+              <div className="mb-4 w-16 overflow-hidden rounded-full bg-indigo-100 sm:w-20">
+                <div
+                  className="h-2 rounded-full bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 transition-all duration-300"
+                  style={{ width: `${Math.max(6, progressState.percent)}%` }}
+                />
               </div>
             </div>
 

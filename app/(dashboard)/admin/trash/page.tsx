@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   Trash2, RotateCcw, Clock, AlertTriangle, Loader2,
   RefreshCw, ShieldAlert, FileImage, FileVideo, Info, XCircle,
-  GalleryHorizontal, ArrowUpDown,
+  ArrowUpDown,
 } from 'lucide-react'
 import { TrashActionButton } from '@/components/admin/trash/TrashActionButton'
 import {
@@ -91,7 +91,7 @@ export default function AdminTrashPage() {
   const [restoring,    setRestoring]    = useState<string>('')
   const [purging,      setPurging]      = useState<string>('')
   const [page,         setPage]         = useState(1)
-  const [activeTab,    setActiveTab]    = useState<'FILES' | 'GALLERIES'>('FILES')
+  const activeTab = 'FILES' as const
   const [gData,        setGData]        = useState<GalleryTrashData | null>(null)
   const [gLoading,     setGLoading]     = useState(false)
   const [gError,       setGError]       = useState('')
@@ -141,9 +141,8 @@ export default function AdminTrashPage() {
   }, [gPage, galSort])
 
   useEffect(() => {
-    if (activeTab === 'FILES')     fetchTrash(page, fileSort)
-    else                           fetchGalleryTrash(gPage, galSort)
-  }, [page, gPage, activeTab, fileSort, galSort])
+    fetchTrash(page, fileSort)
+  }, [page, fileSort])
 
   // â”€â”€ Restore file â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleRestore(trashItemId: string, fileName: string) {
@@ -244,8 +243,7 @@ export default function AdminTrashPage() {
     }
   }
 
-  const isFileLoading    = activeTab === 'FILES'     && loading
-  const isGalleryLoading = activeTab === 'GALLERIES' && gLoading
+  const isFileLoading = loading
 
   return (
     <div className="space-y-6">
@@ -258,98 +256,44 @@ export default function AdminTrashPage() {
           <div>
             <h1 className="text-xl font-bold text-white">Trash</h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Files and galleries are permanently purged 30 days after deletion
+              Deleted files are permanently purged 30 days after deletion
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {activeTab === 'FILES' && data && (
+          {data && (
             <span className="text-xs text-slate-500 bg-slate-800 border border-slate-700
                              px-3 py-1.5 rounded-lg">
               {data.total} file{data.total !== 1 ? 's' : ''} in trash
-            </span>
-          )}
-          {activeTab === 'GALLERIES' && gData && (
-            <span className="text-xs text-slate-500 bg-slate-800 border border-slate-700
-                             px-3 py-1.5 rounded-lg">
-              {gData.total} {gData.total === 1 ? 'gallery' : 'galleries'} in trash
             </span>
           )}
 
           {/* Sort control */}
           <div className="flex items-center gap-1.5">
             <ArrowUpDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-            {activeTab === 'FILES' ? (
-              <select
-                value={fileSort}
-                onChange={e => { setFileSort(e.target.value as typeof fileSort); setPage(1) }}
-                className="text-xs bg-slate-800 border border-slate-700 text-slate-300
-                           rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1
-                           focus:ring-indigo-500/60 cursor-pointer"
-              >
-                <option value="purge_asc">Purge date ↑</option>
-                <option value="purge_desc">Purge date ↓</option>
-                <option value="deleted_asc">Deleted date ↑</option>
-                <option value="deleted_desc">Deleted date ↓</option>
-              </select>
-            ) : (
-              <select
-                value={galSort}
-                onChange={e => { setGalSort(e.target.value as typeof galSort); setGPage(1) }}
-                className="text-xs bg-slate-800 border border-slate-700 text-slate-300
-                           rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1
-                           focus:ring-indigo-500/60 cursor-pointer"
-              >
-                <option value="deleted_desc">Deleted date ↓</option>
-                <option value="deleted_asc">Deleted date ↑</option>
-                <option value="purge_asc">Purge date ↑</option>
-                <option value="purge_desc">Purge date ↓</option>
-              </select>
-            )}
+            <select
+              value={fileSort}
+              onChange={e => { setFileSort(e.target.value as typeof fileSort); setPage(1) }}
+              className="text-xs bg-slate-800 border border-slate-700 text-slate-300
+                         rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1
+                         focus:ring-indigo-500/60 cursor-pointer"
+            >
+              <option value="purge_asc">Purge date ↑</option>
+              <option value="purge_desc">Purge date ↓</option>
+              <option value="deleted_asc">Deleted date ↑</option>
+              <option value="deleted_desc">Deleted date ↓</option>
+            </select>
           </div>
 
           <button
-            onClick={() => activeTab === 'FILES' ? fetchTrash(page, fileSort) : fetchGalleryTrash(gPage, galSort)}
+            onClick={() => fetchTrash(page, fileSort)}
             className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
             title="Refresh"
           >
-            <RefreshCw className={`w-4 h-4 ${isFileLoading || isGalleryLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${isFileLoading ? 'animate-spin' : ''}`} />
           </button>
         </div>
-      </div>
-
-      {/* â”€â”€ Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-      <div className="flex gap-1 bg-slate-800/60 border border-slate-700/60 rounded-xl p-1 w-fit">
-        {(['FILES', 'GALLERIES'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
-              ${activeTab === tab
-                ? 'bg-slate-700 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-              }`}
-          >
-            {tab === 'FILES'
-              ? <FileImage         className="w-3.5 h-3.5" />
-              : <GalleryHorizontal className="w-3.5 h-3.5" />
-            }
-            {tab === 'FILES' ? 'Files' : 'Galleries'}
-            {tab === 'FILES' && data && data.total > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-md
-                ${activeTab === 'FILES' ? 'bg-slate-600 text-slate-300' : 'bg-slate-700/60 text-slate-500'}`}>
-                {data.total}
-              </span>
-            )}
-            {tab === 'GALLERIES' && gData && gData.total > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-md
-                ${activeTab === 'GALLERIES' ? 'bg-slate-600 text-slate-300' : 'bg-slate-700/60 text-slate-500'}`}>
-                {gData.total}
-              </span>
-            )}
-          </button>
-        ))}
       </div>
 
       {/* â”€â”€ Info banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
@@ -357,7 +301,7 @@ export default function AdminTrashPage() {
                       rounded-2xl px-4 py-3 text-sm text-amber-300/80">
         <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
         <span>
-          Only admins can view this page. Deleted {activeTab === 'FILES' ? 'files' : 'galleries'} remain
+          Only admins can view this page. Deleted files remain
           recoverable until their purge date. After purge, all R2 objects are permanently
           destroyed â€” this action cannot be undone.
           Activity log entries are retained&nbsp;indefinitely regardless of status.
@@ -539,176 +483,6 @@ export default function AdminTrashPage() {
         </>
       )}
 
-      {/* â•â• GALLERIES TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
-      {activeTab === 'GALLERIES' && (
-        <>
-          {gLoading ? (
-            <div className="flex items-center justify-center py-24 text-slate-500">
-              <Loader2 className="w-5 h-5 animate-spin mr-2" />
-              Loading gallery trashâ€¦
-            </div>
-          ) : gError ? (
-            <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
-              <XCircle className="w-10 h-10 text-red-500/60" />
-              <p className="text-base font-medium text-red-400">Failed to load gallery trash</p>
-              <p className="text-sm text-slate-500 max-w-sm">{gError}</p>
-              <button
-                onClick={() => fetchGalleryTrash(gPage)}
-                className="mt-2 px-4 py-2 rounded-xl text-sm font-medium bg-slate-800
-                           border border-slate-700 text-slate-300 hover:bg-slate-700 transition"
-              >
-                Try again
-              </button>
-            </div>
-          ) : !gData || gData.items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-24 text-slate-600">
-              <GalleryHorizontal className="w-12 h-12 mb-4 opacity-20" />
-              <p className="text-base font-medium">Gallery trash is empty</p>
-              <p className="text-sm mt-1">No galleries have been deleted.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {gData.items.map(item => {
-                const days        = daysRemaining(item.purgesAt)
-                const isUrgent    = days <= 3
-                const isRestoring = restoringG === item.id
-                const isPurging   = purgingG   === item.id
-                const isBusy      = isRestoring || isPurging
-
-                return (
-                  <div
-                    key={item.id}
-                    className={`bg-slate-900/60 border rounded-2xl p-4 transition
-                      ${isUrgent
-                        ? 'border-red-800/40 shadow-sm shadow-red-950/30'
-                        : 'border-slate-800/60'
-                      }`}
-                  >
-                    <div className="flex items-start justify-between gap-4 flex-wrap">
-                      {/* â”€â”€ Gallery info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-                      <div className="flex items-start gap-3 min-w-0">
-                        {/* Cover thumbnail */}
-                        <div className="w-16 h-12 rounded-xl overflow-hidden bg-slate-800 border border-slate-700 shrink-0">
-                          {item.coverUrl
-                            ? <img src={item.coverUrl} alt={item.title} className="w-full h-full object-cover" />
-                            : <div className="w-full h-full flex items-center justify-center">
-                                <GalleryHorizontal className="w-5 h-5 text-slate-600" />
-                              </div>
-                          }
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-white font-medium text-sm truncate">{item.title}</p>
-                          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
-                            {item.categoryName && (
-                              <span className="text-xs text-indigo-400">{item.categoryName} Â· {item.year}</span>
-                            )}
-                            <span className="text-xs text-slate-500">
-                              {item.fileCount} photo{item.fileCount !== 1 ? 's' : ''}
-                            </span>
-                            {item.preDeleteStatus && (
-                              <span className="text-xs text-slate-600">
-                                Was: <span className="text-slate-400">{item.preDeleteStatus}</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* â”€â”€ Right: badges + actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-                      <div className="flex items-center gap-2 flex-wrap shrink-0">
-                        <span className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl
-                                          text-xs font-medium border ${urgencyClass(item.purgesAt)}`}>
-                          {isUrgent
-                            ? <AlertTriangle className="w-3.5 h-3.5" />
-                            : <Clock         className="w-3.5 h-3.5" />
-                          }
-                          {purgeLabel(item.purgesAt)}
-                        </span>
-
-                        <TrashActionButton
-                          onClick={() => handleRestoreGallery(item.id, item.title)}
-                          disabled={isBusy}
-                          busy={isRestoring}
-                          idleLabel="Restore"
-                          busyLabel="Restoring…"
-                          icon={<RotateCcw className="w-3.5 h-3.5" />}
-                          tone="success"
-                        />
-
-                        <TrashActionButton
-                          onClick={() => handlePurgeGallery(item.id, item.title, item.fileCount)}
-                          disabled={isBusy}
-                          busy={isPurging}
-                          idleLabel="Delete Permanently"
-                          busyLabel="Deleting…"
-                          icon={<Trash2 className="w-3.5 h-3.5" />}
-                          tone="danger"
-                        />
-                      </div>
-                    </div>
-
-                    {/* â”€â”€ Footer: deletion metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-                    <div className="mt-3 pt-3 border-t border-slate-800/60
-                                    flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-                      <span>
-                        Deleted by{' '}
-                        <span className="text-slate-400">
-                          {item.deletedBy.username ?? item.deletedBy.email}
-                        </span>
-                        {' '}on{' '}
-                        <span className="text-slate-500">{formatDate(item.deletedAt)}</span>
-                      </span>
-                      <span className={isUrgent ? 'text-red-500' : ''}>
-                        Purge scheduled{' '}
-                        <span className={isUrgent ? 'text-red-400 font-medium' : 'text-slate-500'}>
-                          {formatDate(item.purgesAt)}
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* â”€â”€ Pagination (galleries) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-          {gData && gData.pages > 1 && (
-            <div className="flex items-center justify-center gap-2 pt-2">
-              <button
-                onClick={() => setGPage(p => Math.max(1, p - 1))}
-                disabled={gPage === 1 || gLoading}
-                className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-800 text-slate-300
-                           border border-slate-700 hover:bg-slate-700
-                           disabled:opacity-40 disabled:cursor-not-allowed transition"
-              >
-                â† Prev
-              </button>
-              <span className="text-xs text-slate-500">
-                Page {gData.page} of {gData.pages}
-              </span>
-              <button
-                onClick={() => setGPage(p => Math.min(gData.pages, p + 1))}
-                disabled={gPage === gData.pages || gLoading}
-                className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-800 text-slate-300
-                           border border-slate-700 hover:bg-slate-700
-                           disabled:opacity-40 disabled:cursor-not-allowed transition"
-              >
-                Next â†’
-              </button>
-            </div>
-          )}
-
-          {/* â”€â”€ Cron info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-          <div className="flex items-start gap-2 text-xs text-slate-600 pt-2">
-            <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span>
-              Gallery purge and 7-day warnings run daily at 3â€¯AM via{' '}
-              <code className="font-mono text-slate-500">GET /api/cron/purge-galleries</code>.
-              Warnings are sent to the admin who deleted the gallery.
-            </span>
-          </div>
-        </>
-      )}
     </div>
   )
 }

@@ -180,6 +180,16 @@ export async function middleware(req: NextRequest) {
     return applySecurityHeaders(NextResponse.rewrite(url), pathname)
   }
 
+  // Gallery is intentionally hidden from the main CMMS UI for now.
+  // Bounce legacy dashboard gallery URLs back to the main dashboard so
+  // bookmarks and stale links do not keep exposing that surface.
+  if (pathname === '/galleries' || pathname.startsWith('/galleries/')) {
+    const url = req.nextUrl.clone()
+    url.pathname = '/dashboard'
+    url.search = ''
+    return applySecurityHeaders(NextResponse.redirect(url), pathname)
+  }
+
   // ── CSRF Origin check — blocks cross-site state-changing requests ──────────
   if (!checkCsrfOrigin(req)) {
     return applySecurityHeaders(
