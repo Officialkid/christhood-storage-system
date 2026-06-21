@@ -118,7 +118,7 @@ function extractIp(req: NextRequest): string {
 // All of these still go through the CRLF guard above.
 // /api/photo/* routes are the Gallery Platform API — they manage their own JWT cookie auth.
 const AUTH_PASSTHROUGH_RE =
-  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|2fa|gallery-public(?:\/|$)|share(?:\/|$)|public-share(?:\/|$)|api\/auth|api\/health|api\/assistant\/health|api\/cron|api\/gallery\/public(?:\/|$)|api\/share(?:\/|$)|api\/public-share(?:\/|$)|api\/photo(?:\/|$))\b/
+  /^\/(?:login|signup|forgot-password|reset-password|privacy|terms|2fa|t(?:\/|$)|gallery-public(?:\/|$)|share(?:\/|$)|public-share(?:\/|$)|api\/auth|api\/health|api\/assistant\/health|api\/cron|api\/gallery\/public(?:\/|$)|api\/share(?:\/|$)|api\/public-share(?:\/|$)|api\/photo(?:\/|$))\b/
 
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl
