@@ -28,13 +28,14 @@ export async function GET(_req: NextRequest) {
   }
 
   const userId  = session.user.id
-  const isAdmin = session.user.role === 'ADMIN'
+  const role = session.user.role
+  const canSendTransfer = role === 'ADMIN' || role === 'EDITOR'
 
   const [messages, transfers, urgentCount] = await Promise.all([
     prisma.messageRecipient.count({
       where: { recipientId: userId, read: false },
     }),
-    isAdmin
+    canSendTransfer
       ? prisma.transfer.count({ where: { senderId: userId, status: 'RESPONDED' } })
       : prisma.transfer.count({ where: { recipientId: userId, status: 'PENDING' } }),
     prisma.messageRecipient.count({

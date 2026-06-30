@@ -76,16 +76,22 @@ export async function PATCH(
 
   const recipientName = transfer.recipient.username ?? transfer.recipient.name ?? transfer.recipient.email ?? 'User'
   const notifMsg      = `Your transfer "${transfer.subject}" has been completed. Thank you!`
-  const notifLink     = `/transfers/inbox/${transferId}`
+  const notifLink     = `/communications/transfers/inbox/${transferId}`
 
-  log('TRANSFER_COMPLETED', session.user.id, {
-    metadata: { transferId, subject: transfer.subject },
-  }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/complete', transferId, error: (e as Error)?.message, message: '[complete] log failed' }))
+  await Promise.allSettled([
+    log('TRANSFER_COMPLETED', session.user.id, {
+      metadata: { transferId, subject: transfer.subject },
+    }),
+    createInAppNotification(
+      transfer.recipientId,
+      notifMsg,
+      notifLink,
+      'TRANSFER_COMPLETED',
+      'Transfer Completed',
+    ),
+  ])
 
-  createInAppNotification(transfer.recipientId, notifMsg, notifLink)
-    .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/complete', transferId, error: (e as Error)?.message, message: '[complete] in-app notif failed' }))
-
-  sendPushToUser(transfer.recipientId, 'TRANSFER_COMPLETED', {
+  void sendPushToUser(transfer.recipientId, 'TRANSFER_COMPLETED', {
     title:   '🎉 Transfer Completed',
     body:    notifMsg,
     url:     notifLink,
@@ -96,7 +102,7 @@ export async function PATCH(
 
   // Email the recipient if they have a TRANSFER_COMPLETED email preference (default: send)
   if (transfer.recipient.email) {
-    prisma.notificationPreference.findUnique({
+    void prisma.notificationPreference.findUnique({
       where: { userId_category: { userId: transfer.recipientId, category: 'TRANSFER_COMPLETED' } },
     }).then((pref) => {
       if (pref?.email === false) return

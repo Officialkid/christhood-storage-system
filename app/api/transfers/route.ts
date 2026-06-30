@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
 
   // ── Fire-and-forget side-effects ───────────────────────────────────────────
   // Never let notification/email failures affect the response.
-  Promise.allSettled([
+  await Promise.allSettled([
     // 1. Activity log
     log('TRANSFER_SENT', session.user.id, {
       metadata: {
@@ -143,14 +143,16 @@ export async function POST(req: NextRequest) {
     createInAppNotification(
       recipientId,
       `${senderName} sent you ${fileCount} file${fileCount !== 1 ? 's' : ''}: "${subject.trim()}"`,
-      `/transfers/inbox/${transferId}`,
+      `/communications/transfers/inbox/${transferId}`,
+      'TRANSFER_RECEIVED',
+      'New Transfer Received',
     ),
 
     // 3. Web push (respects user preference opt-out)
     sendPushToUser(recipientId, 'TRANSFER_RECEIVED', {
       title:   '📦 New Transfer Received',
       body:    `${senderName} sent you ${fileCount} file${fileCount !== 1 ? 's' : ''}: "${subject.trim()}"`,
-      url:     `/transfers/inbox/${transferId}`,
+      url:     `/communications/transfers/inbox/${transferId}`,
       tag:     `transfer-${transferId}`,
       type:    'TRANSFER_RECEIVED',
       payload: { transferId, senderName, fileCount, subject: subject.trim() },

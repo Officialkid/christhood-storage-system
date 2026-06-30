@@ -2,7 +2,6 @@ import { notFound } from 'next/navigation'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { getPresignedDownloadUrl } from '@/lib/r2'
 import { StatusBadge } from '@/components/StatusBadge'
 import { StatusChangeDropdown } from '@/components/StatusChangeDropdown'
 import { VersionHistoryPanelWrapper } from '@/components/VersionHistoryPanelWrapper'
@@ -38,11 +37,11 @@ export default async function FileDetailPage(
 
   if (!file) notFound()
 
-  const [downloadUrl, versionCount, allTags] = await Promise.all([
-    getPresignedDownloadUrl(file.r2Key),
+  const [versionCount, allTags] = await Promise.all([
     prisma.fileVersion.count({ where: { mediaFileId: file.id } }),
     prisma.tag.findMany({ orderBy: { name: 'asc' } }),
   ])
+  const previewUrl = `/api/media/${file.id}/content?disposition=inline`
 
   const role    = session.user.role as AppRole
   const isVideo = file.fileType === 'VIDEO'
@@ -105,14 +104,14 @@ export default async function FileDetailPage(
                           aspect-video flex items-center justify-center">
             {isVideo ? (
               <video
-                src={downloadUrl}
+                src={previewUrl}
                 controls
                 className="w-full h-full object-contain"
               />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
               (<img
-                src={downloadUrl}
+                src={previewUrl}
                 alt={file.originalName}
                 className="max-h-full max-w-full object-contain"
               />)

@@ -253,6 +253,7 @@ export function NewTransferForm() {
   const [sendStatus, setSendStatus] = useState<'idle' | 'uploading' | 'creating' | 'done' | 'error'>('idle')
   const [progress,   setProgress]   = useState({ done: 0, total: 0 })
   const [errorMsg,   setErrorMsg]   = useState<string | null>(null)
+  const [completedTransferId, setCompletedTransferId] = useState<string | null>(null)
 
   // Pending transfer (saved after all R2 uploads, in case network drops before DB create)
   const [pendingCreate, setPendingCreate] = useState<PendingTransfer | null>(null)
@@ -474,6 +475,7 @@ export function NewTransferForm() {
 
     localStorage.removeItem(PENDING_KEY)
     setPendingCreate(null)
+    setCompletedTransferId(pending.id)
     setSendStatus('done')
   }
 
@@ -872,10 +874,10 @@ export function NewTransferForm() {
             </div>
           </div>
           <button
-            onClick={() => router.push('/dashboard')}
+            onClick={() => router.push(completedTransferId ? `/communications/transfers/sent/${completedTransferId}` : '/communications/transfers/sent')}
             className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors shrink-0"
           >
-            Go to Dashboard
+            View sent transfer
           </button>
         </div>
       )}

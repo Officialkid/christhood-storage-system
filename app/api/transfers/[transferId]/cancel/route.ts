@@ -77,21 +77,26 @@ export async function PATCH(
 
   const senderName = transfer.sender.username ?? transfer.sender.name ?? 'Admin'
   const notifMsg   = `A transfer from ${senderName} has been cancelled: "${transfer.subject}"`
-  const notifLink  = `/transfers/inbox`
+  const notifLink  = `/communications/transfers/inbox`
 
-  log('TRANSFER_CANCELLED', session.user.id, {
-    metadata: {
-      transferId,
-      subject:   transfer.subject,
-      fileCount: transfer.files.length,
-    },
-  })
-  .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/cancel', transferId, error: (e as Error)?.message, message: '[cancel] log failed' }))
+  await Promise.allSettled([
+    log('TRANSFER_CANCELLED', session.user.id, {
+      metadata: {
+        transferId,
+        subject:   transfer.subject,
+        fileCount: transfer.files.length,
+      },
+    }),
+    createInAppNotification(
+      transfer.recipientId,
+      notifMsg,
+      notifLink,
+      'TRANSFER_CANCELLED',
+      'Transfer Cancelled',
+    ),
+  ])
 
-  createInAppNotification(transfer.recipientId, notifMsg, notifLink)
-    .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/cancel', transferId, error: (e as Error)?.message, message: '[cancel] in-app notif failed' }))
-
-  sendPushToUser(transfer.recipientId, 'TRANSFER_CANCELLED', {
+  void sendPushToUser(transfer.recipientId, 'TRANSFER_CANCELLED', {
     title:   '❌ Transfer Cancelled',
     body:    notifMsg,
     url:     notifLink,

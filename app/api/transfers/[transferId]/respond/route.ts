@@ -131,16 +131,22 @@ export async function POST(
   const senderEmail   = transfer.sender.email
   const senderName    = transfer.sender.username ?? transfer.sender.name ?? 'Admin'
   const notifMsg      = `${recipientName} sent back ${files.length} edited file${files.length !== 1 ? 's' : ''} for: "${transfer.subject}"`
-  const notifLink     = `/transfers/sent/${transferId}`
+  const notifLink     = `/communications/transfers/sent/${transferId}`
 
-  log('TRANSFER_RESPONDED', session.user.id, {
-    metadata: { transferId, subject: transfer.subject, fileCount: files.length },
-  }).catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/respond', transferId, error: (e as Error)?.message, message: '[respond] log failed' }))
+  await Promise.allSettled([
+    log('TRANSFER_RESPONDED', session.user.id, {
+      metadata: { transferId, subject: transfer.subject, fileCount: files.length },
+    }),
+    createInAppNotification(
+      transfer.senderId,
+      notifMsg,
+      notifLink,
+      'TRANSFER_RESPONDED',
+      'Transfer Response Received',
+    ),
+  ])
 
-  createInAppNotification(transfer.senderId, notifMsg, notifLink)
-    .catch((e: unknown) => logger.warn('TRANSFER_SIDE_EFFECT_FAILED', { route: '/api/transfers/respond', transferId, error: (e as Error)?.message, message: '[respond] in-app notif failed' }))
-
-  sendPushToUser(transfer.senderId, 'TRANSFER_RESPONDED', {
+  void sendPushToUser(transfer.senderId, 'TRANSFER_RESPONDED', {
     title:   '✅ Transfer Response Received',
     body:    notifMsg,
     url:     notifLink,
@@ -151,7 +157,7 @@ export async function POST(
 
   if (senderEmail) {
     // Respect TRANSFER_RESPONDED email preference (default: send)
-    prisma.notificationPreference.findUnique({
+    void prisma.notificationPreference.findUnique({
       where: { userId_category: { userId: transfer.senderId, category: 'TRANSFER_RESPONDED' } },
     }).then((pref) => {
       if (pref && !pref.email) return

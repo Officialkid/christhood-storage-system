@@ -400,8 +400,7 @@ export function PreviewModal({ file, allFiles, role, onClose, onStatusChanged, o
               {/* Download — all roles */}
               {data && (
                 <a
-                  href={data.url}
-                  download={currentFile.originalName}
+                  href={`/api/media/${currentFile.id}/content?disposition=attachment`}
                   className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl
                              bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold
                              transition"
