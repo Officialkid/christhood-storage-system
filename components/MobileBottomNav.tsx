@@ -4,7 +4,7 @@ import Link                 from 'next/link'
 import { usePathname }      from 'next/navigation'
 import { useSession }       from 'next-auth/react'
 import {
-  LayoutDashboard, Image, MessagesSquare, Bell, Menu,
+  LayoutDashboard, Image, ArrowLeftRight, Bell, Menu,
 } from 'lucide-react'
 import { useSidebar }       from './DashboardShell'
 import { useUnreadCount }   from '@/hooks/useUnreadCount'
@@ -24,9 +24,8 @@ export function MobileBottomNav() {
     skip: !session?.user?.id,
   })
 
-  const isComms = pathname.startsWith('/communications') ||
-                  pathname.startsWith('/transfers')       ||
-                  pathname.startsWith('/messages')
+  const isTransfers = pathname.startsWith('/communications/transfers') ||
+                      pathname.startsWith('/transfers')
 
   const navCls = (active: boolean) =>
     `flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-[10px] font-medium
@@ -57,16 +56,16 @@ export function MobileBottomNav() {
 
       {/* Communications — primary action */}
       <Link
-        href="/communications"
+        href="/communications/transfers/inbox"
         className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5
                     text-[10px] font-medium transition-colors select-none relative
-                    ${isComms ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
+                    ${isTransfers ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
       >
         <span className="relative">
-          <MessagesSquare className="w-5 h-5" />
+          <ArrowLeftRight className="w-5 h-5" />
           <CommsBadgeSmall count={badge} urgent={hasUrgent} />
         </span>
-        <span>Comms</span>
+        <span>Transfers</span>
       </Link>
 
       {/* Notifications */}

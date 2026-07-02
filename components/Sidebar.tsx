@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import {
   LayoutDashboard, Image, Upload, CalendarDays, Shield, LogOut, Network, ScrollText,
   Trash2, Bell, Settings, Search, BarChart2, UserCircle, BookOpen, ChevronLeft, ChevronRight,
-  MessagesSquare, X, Bot, Share2, Tags, RefreshCcw, Minus, Plus,
+  MessagesSquare, X, Bot, Share2, Tags, RefreshCcw, Minus, Plus, ArrowLeftRight,
 } from 'lucide-react'
 import { useSidebar }       from './DashboardShell'
 import { useUnreadCount }   from '@/hooks/useUnreadCount'
@@ -21,7 +21,8 @@ const navItems: NavItem[] = [
   { label: 'Upload',         href: '/upload',           icon: Upload          },
   { label: 'Events',         href: '/events',           icon: CalendarDays    },
   { label: 'Search',         href: '/search',           icon: Search          },
-  { label: 'Communications', href: '/communications',   icon: MessagesSquare, badge: true },
+  { label: 'Transfers',      href: '/communications/transfers/inbox', icon: ArrowLeftRight, badge: true },
+  { label: 'Messages',       href: '/communications/messages/inbox',  icon: MessagesSquare },
   { label: 'Notifications',  href: '/notifications',    icon: Bell            },
   { label: 'User Guide',     href: '/docs',             icon: BookOpen        },
 ]
@@ -165,7 +166,8 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className={`flex-1 py-4 space-y-0.5 overflow-y-auto ${isCollapsed ? 'px-1.5' : 'px-3'}`}>
         {items.map(({ label, href, icon: Icon, badge }) => {
-          const active       = pathname.startsWith(href)
+          const active       = pathname.startsWith(href) ||
+            (label === 'Transfers' && pathname.startsWith('/transfers'))
           const badgeCount   = badge ? commsCount : 0
           const badgeUrgent  = badge ? commsUrgent : false
           const itemClass    = `flex items-center rounded-xl text-sm font-medium transition-all
