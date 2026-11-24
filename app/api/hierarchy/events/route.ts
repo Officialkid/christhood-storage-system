@@ -25,13 +25,38 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { name, date, categoryName, yearNumber, customCategoryName } = body
+    const { name, date, categoryName, yearNumber, customCategoryName, subfolders } = body
 
-    if (!name || !date || !categoryName || !yearNumber) {
+    const trimmedName = typeof name === 'string' ? name.trim() : ''
+    if (!trimmedName || !categoryName || !yearNumber) {
       return NextResponse.json(
-        { error: 'name, date, categoryName and yearNumber are required.' },
+        { error: 'Event title, category, and year are required.' },
         { status: 400 }
       )
+    }
+
+    // Parse optional date
+    let parsedDate: Date | null = null
+    if (date !== undefined && date !== null && String(date).trim() !== '') {
+      const d = new Date(date)
+      if (isNaN(d.getTime())) {
+        return NextResponse.json({ error: 'Invalid date format.' }, { status: 400 })
+      }
+      parsedDate = d
+    }
+
+    // Normalize optional initial subfolders (e.g. ["Day 1", "Day 2", "Day 3"])
+    const normalizedSubfolders: string[] = []
+    if (Array.isArray(subfolders)) {
+      const seen = new Set<string>()
+      for (const raw of subfolders) {
+        const label = typeof raw === 'string' ? raw.trim() : ''
+        if (!label || label.length > 80) continue
+        const key = label.toLowerCase()
+        if (seen.has(key)) continue
+        seen.add(key)
+        normalizedSubfolders.push(label)
+      }
     }
 
     // ── Resolve effective category name ───────────────────────────────────
@@ -103,27 +128,41 @@ export async function POST(req: NextRequest) {
 
     // ── Duplicate check ───────────────────────────────────────────────────
     const duplicate = await prisma.event.findFirst({
-      where: { name, categoryId: category.id },
+      where: { name: trimmedName, categoryId: category.id },
     })
     if (duplicate) {
       return NextResponse.json(
-        { error: `An event named "${name}" already exists in ${effectiveCategoryName} ${yr}.` },
+        { error: `An event named "${trimmedName}" already exists in ${effectiveCategoryName} ${yr}.` },
         { status: 409 }
       )
     }
 
-    // ── Create Event ──────────────────────────────────────────────────────
+    // ── Create Event (+ optional initial subfolders) ──────────────────────
     const event = await prisma.event.create({
-      data: { name, date: new Date(date), categoryId: category.id },
+      data: {
+        name:       trimmedName,
+        date:       parsedDate,
+        categoryId: category.id,
+        ...(normalizedSubfolders.length > 0
+          ? { subfolders: { create: normalizedSubfolders.map(label => ({ label })) } }
+          : {}),
+      },
       include: {
         category: { include: { year: true } },
-        subfolders: true,
+        subfolders: {
+          orderBy: { label: 'asc' },
+          include: { _count: { select: { mediaFiles: true } } },
+        },
         _count: { select: { mediaFiles: true } },
       },
     })
 
     await logActivity('EVENT_CREATED', session.user.id, {
-      name, date, categoryName: effectiveCategoryName, year: yr,
+      name: trimmedName,
+      date: parsedDate ? parsedDate.toISOString() : null,
+      categoryName: effectiveCategoryName,
+      year: yr,
+      subfolders: normalizedSubfolders,
     }, event.id)
 
     notifyNewEventCreated({

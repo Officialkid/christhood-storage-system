@@ -6,7 +6,7 @@ import {
   ChevronRight, ChevronDown, Calendar, Loader2,
   X, Check, AlertTriangle,
 } from 'lucide-react'
-import { OFFICIAL_CATEGORY_NAMES, OTHER_CATEGORY_SENTINEL } from '@/lib/hierarchyConstants'
+import { CreateEventModal } from '@/components/CreateEventModal'
 import type { HierarchyYear, HierarchyEvent, HierarchySubfolder } from '@/types'
 
 // ─────────────────────────── Types ────────────────────────────
@@ -39,205 +39,6 @@ function Toast({ msg, ok }: { msg: string; ok: boolean }) {
   )
 }
 
-// ──────────────────────── Create-event modal ──────────────────
-function CreateEventModal({
-  years,
-  onClose,
-  onCreated,
-  initialCategoryName,
-  initialYear,
-}: {
-  years:     HierarchyYear[]
-  onClose:   () => void
-  onCreated: () => void
-  initialCategoryName?: string
-  initialYear?: number
-}) {
-  const currentYear = new Date().getFullYear()
-  const [name, setName]                     = useState('')
-  const [date, setDate]                     = useState('')
-  const [categoryValue, setCategoryValue]   = useState<string>(initialCategoryName ?? OFFICIAL_CATEGORY_NAMES[0])
-  const [customCategoryName, setCustomCat]  = useState('')
-  const [year, setYear]                     = useState(String(initialYear ?? currentYear))
-  const [saving, setSaving]                 = useState(false)
-  const [error, setError]                   = useState('')
-
-  const isOther      = categoryValue === OTHER_CATEGORY_SENTINEL
-  const yearNum      = Number(year)
-  const yearData     = years.find(y => y.year === yearNum)
-  const customCats   = yearData?.categories
-    .filter(c => !c.isDefault && !c.isArchived)
-    .map(c => c.name) ?? []
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim() || !date || !year) return
-    if (isOther && !customCategoryName.trim()) return
-    setSaving(true)
-    setError('')
-    try {
-      const body: Record<string, unknown> = {
-        name:         name.trim(),
-        date,
-        categoryName: categoryValue,
-        yearNumber:   yearNum,
-      }
-      if (isOther) body.customCategoryName = customCategoryName.trim()
-      const res = await fetch('/api/hierarchy/events', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) {
-        const j = await res.json()
-        throw new Error(j.error ?? 'Failed to create event')
-      }
-      onCreated()
-    } catch (err: any) {
-      setError(err.message)
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-700/60 rounded-2xl
-                      shadow-2xl shadow-black/60 p-6">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-semibold text-white">Create Month Folder</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-white transition">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Name */}
-          <div>
-            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Month Folder Name
-            </label>
-            <input
-              autoFocus
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. June 2026"
-              className="mt-1.5 w-full bg-slate-800 border border-slate-700 rounded-xl
-                         px-3.5 py-2.5 text-sm text-white placeholder:text-slate-600
-                         focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          {/* Date */}
-          <div>
-            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Month / Anchor Date
-            </label>
-            <input
-              type="date"
-              value={date}
-              onChange={e => setDate(e.target.value)}
-              className="mt-1.5 w-full bg-slate-800 border border-slate-700 rounded-xl
-                         px-3.5 py-2.5 text-sm text-white
-                         focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          {/* Category */}
-          <div>
-            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Major Category
-            </label>
-            <select
-              value={categoryValue}
-              onChange={e => { setCategoryValue(e.target.value); setCustomCat('') }}
-              className="mt-1.5 w-full bg-slate-800 border border-slate-700 rounded-xl
-                         px-3.5 py-2.5 text-sm text-white
-                         focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <optgroup label="Official Categories">
-                {OFFICIAL_CATEGORY_NAMES.map(cn => (
-                  <option key={cn} value={cn}>{cn}</option>
-                ))}
-              </optgroup>
-              {customCats.length > 0 && (
-                <optgroup label="Custom Categories">
-                  {customCats.map(cn => (
-                    <option key={cn} value={cn}>{cn}</option>
-                  ))}
-                </optgroup>
-              )}
-              <option value={OTHER_CATEGORY_SENTINEL}>Other / Create new type…</option>
-            </select>
-          </div>
-
-          {/* Custom category name (shown when Other selected) */}
-          {isOther && (
-            <div>
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                New Category Name
-              </label>
-              <input
-                autoFocus
-                value={customCategoryName}
-                onChange={e => setCustomCat(e.target.value)}
-                maxLength={80}
-                placeholder="e.g. Fellowship, Outreach, Media Training"
-                className="mt-1.5 w-full bg-slate-800 border border-indigo-600/60 rounded-xl
-                           px-3.5 py-2.5 text-sm text-white placeholder:text-slate-600
-                           focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-              <p className="mt-1 text-xs text-slate-500">This becomes a real top-level category for future uploads.</p>
-            </div>
-          )}
-
-          {/* Year */}
-          <div>
-            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Year
-            </label>
-            <input
-              type="number"
-              min="2000"
-              max="2100"
-              value={year}
-              onChange={e => setYear(e.target.value)}
-              className="mt-1.5 w-full bg-slate-800 border border-slate-700 rounded-xl
-                         px-3.5 py-2.5 text-sm text-white
-                         focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          {error && (
-            <p className="text-xs text-red-400 flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5" />{error}
-            </p>
-          )}
-
-          <div className="flex gap-3 pt-1">
-            <button
-              type="button" onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl text-sm font-medium text-slate-400
-                         border border-slate-700 hover:bg-slate-800 transition"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving || !name.trim() || !date || (isOther && !customCategoryName.trim())}
-              className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white
-                         bg-gradient-to-r from-indigo-600 to-violet-600
-                         hover:from-indigo-500 hover:to-violet-500
-                         disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Create Month Folder'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
 // ────────────────────── Create-subfolder modal ─────────────────
 function CreateSubfolderModal({
   eventId, eventName, onClose, onCreated,
@@ -257,14 +58,15 @@ function CreateSubfolderModal({
     setSaving(true)
     setError('')
     try {
+      const labels = label.split(',').map(p => p.trim()).filter(Boolean)
       const res = await fetch('/api/hierarchy/subfolders', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label: label.trim(), eventId }),
+        body:    JSON.stringify({ labels, eventId }),
       })
       if (!res.ok) {
         const j = await res.json()
-        throw new Error(j.error ?? 'Failed to create subfolder')
+        throw new Error(j.error ?? 'Failed to create folder')
       }
       onCreated()
     } catch (err: any) {
@@ -278,19 +80,19 @@ function CreateSubfolderModal({
       <div className="w-full max-w-sm bg-slate-900 border border-slate-700/60 rounded-2xl
                       shadow-2xl shadow-black/60 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-white">Add Week / Date Folder</h2>
+          <h2 className="text-base font-semibold text-white">Add Folder / Day</h2>
           <button onClick={onClose} className="text-slate-500 hover:text-white transition">
             <X className="w-4 h-4" />
           </button>
         </div>
-        <p className="text-xs text-slate-500 mb-4">Within month folder: <span className="text-slate-300">{eventName}</span></p>
+        <p className="text-xs text-slate-500 mb-4">Within event: <span className="text-slate-300">{eventName}</span></p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
             autoFocus
             value={label}
             onChange={e => setLabel(e.target.value)}
-            placeholder="e.g. Week 1 - Jun 7, 2026"
+            placeholder="e.g. Day 1 (or Day 1, Day 2, Day 3)"
             className="w-full bg-slate-800 border border-slate-700 rounded-xl
                        px-3.5 py-2.5 text-sm text-white placeholder:text-slate-600
                        focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -419,7 +221,7 @@ export default function AdminHierarchyPage() {
     const res = await fetch(`/api/hierarchy/events/${id}`, {
       method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, date }),
+      body: JSON.stringify({ name, date: date || null }),
     })
     setEditing(null)
     if (res.ok) { showToast('Event updated'); await loadTree() }
@@ -472,7 +274,7 @@ export default function AdminHierarchyPage() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-white">Media Hierarchy Manager</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Manage years, major categories, month folders, and week/date folders</p>
+            <p className="text-xs text-slate-500 mt-0.5">Manage years, categories, events, and Day/session folders</p>
           </div>
         </div>
 
@@ -483,7 +285,7 @@ export default function AdminHierarchyPage() {
                      hover:from-indigo-500 hover:to-violet-500 transition shadow shadow-indigo-500/20"
         >
           <Plus className="w-4 h-4" />
-          New Month Folder
+          New Event
         </button>
       </div>
 
@@ -497,7 +299,7 @@ export default function AdminHierarchyPage() {
         ) : years.length === 0 ? (
           <div className="text-center py-12 text-slate-600">
             <FolderTree className="w-10 h-10 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">No month folders yet. Create one to get started.</p>
+            <p className="text-sm">No events yet. Create one to get started.</p>
           </div>
         ) : (
           <div className="space-y-1">
@@ -641,11 +443,11 @@ function CategoryNode({
           <span className="text-xs font-semibold tracking-wider uppercase text-slate-500">
             {category.name}
           </span>
-          <span className="ml-auto text-xs text-slate-700">{category.events.length} month{category.events.length !== 1 ? 's' : ''}</span>
+          <span className="ml-auto text-xs text-slate-700">{category.events.length} event{category.events.length !== 1 ? 's' : ''}</span>
         </button>
 
         <button
-          title="Add month folder"
+          title="Add event in this category"
           onClick={() => onAddEventInCategory(category.name, yearValue)}
           className="p-1 rounded text-slate-500 hover:text-indigo-400 hover:bg-indigo-900/30"
         >
@@ -688,9 +490,11 @@ function EventNode({
   const isDeleting     = deleting === event.id
   const hasSubfolders  = event.subfolders?.length > 0
   const mediaCount     = event._count?.mediaFiles ?? 0
-  const dateStr        = new Date(event.date).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  })
+  const dateStr        = event.date
+    ? new Date(event.date).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+      })
+    : null
   const isoDate = event.date?.slice(0, 10) ?? ''
 
   return (
@@ -720,9 +524,11 @@ function EventNode({
         ) : (
           <div className="flex-1 min-w-0 flex items-center gap-2">
             <span className="text-sm text-slate-300 truncate">{event.name}</span>
-            <span className="text-xs text-slate-600 flex items-center gap-1 shrink-0">
-              <Calendar className="w-3 h-3" />{dateStr}
-            </span>
+            {dateStr && (
+              <span className="text-xs text-slate-600 flex items-center gap-1 shrink-0">
+                <Calendar className="w-3 h-3" />{dateStr}
+              </span>
+            )}
             {mediaCount > 0 && (
               <span className="ml-auto text-xs bg-slate-700/80 text-slate-400
                                px-1.5 py-0.5 rounded-full shrink-0">
@@ -736,7 +542,7 @@ function EventNode({
         {!isEditing && (
           <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shrink-0 ml-1">
             <button
-              title="Add week/date folder"
+              title="Add Day / folder"
               onClick={() => onAddSubfolder(event.id, event.name)}
               className="p-1 rounded text-slate-500 hover:text-indigo-400 hover:bg-indigo-900/30"
             >

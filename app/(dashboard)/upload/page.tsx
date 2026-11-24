@@ -40,13 +40,16 @@ export default async function UploadPage(props: Props) {
   }
 
   const events = (await prisma.event.findMany({
-    orderBy: { date: 'desc' },
+    orderBy: [{ createdAt: 'desc' }],
     take: 100,
     include: {
       category: { include: { year: true } },
       subfolders: { orderBy: { label: 'asc' } },
     },
-  })).map(ev => ({ ...ev, date: ev.date instanceof Date ? ev.date.toISOString() : ev.date })) as unknown as EventOption[]
+  })).map(ev => ({
+    ...ev,
+    date: ev.date instanceof Date ? ev.date.toISOString() : null,
+  })) as unknown as EventOption[]
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -60,13 +63,13 @@ export default async function UploadPage(props: Props) {
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Structured upload flow</p>
               <h1 className="text-2xl font-bold text-white sm:text-3xl">Upload Media</h1>
               <p className="max-w-2xl text-sm text-slate-400">
-                Add files to the right year, category, month folder, and week/date folder, while keeping large uploads resumable and easy to track.
+                Add photos and videos to the right category, event, and Day folder, while keeping large uploads resumable and easy to track.
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 sm:flex sm:flex-wrap sm:justify-end">
-            <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Choose year → category → month → week</span>
+            <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Choose category → event → day folder</span>
             <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Add files or folders</span>
             <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Track progress</span>
             <span className="rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5">Resume if interrupted</span>

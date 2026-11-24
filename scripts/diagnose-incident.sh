@@ -27,7 +27,7 @@
 
 set -euo pipefail
 
-PROJECT_ID="dotted-spot-476513-i2"
+PROJECT_ID="${PROJECT_ID:-project-d46be384-233e-47fb-bb5}"
 SERVICE="christhood-cmms"
 GCLOUD="C:/Program Files/Git/usr/bin/env bash" # overridden below
 GCLOUD_CMD="gcloud"

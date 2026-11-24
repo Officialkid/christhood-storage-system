@@ -38,7 +38,7 @@ export interface EventCategoryItem {
 export interface EventItem {
   id: string
   name: string
-  date: string
+  date: string | null
   categoryId: string
   createdAt: string
   category?: EventCategoryItem
@@ -111,7 +111,7 @@ export interface HierarchySubfolder {
 export interface HierarchyEvent {
   id:         string
   name:       string
-  date:       string
+  date:       string | null
   categoryId: string
   createdAt:  string
   subfolders: HierarchySubfolder[]

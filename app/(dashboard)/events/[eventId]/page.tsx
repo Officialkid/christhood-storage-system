@@ -9,8 +9,9 @@ import { BatchDownloadButton } from '@/components/BatchDownloadButton'
 import { ArchiveSection }      from '@/components/ArchiveSection'
 import { getPresignedDownloadUrl } from '@/lib/r2'
 import { canBatchDownload }    from '@/lib/downloadAuth'
-import { CalendarDays, FolderOpen, Image, Upload } from 'lucide-react'
+import { CalendarDays, Image, Upload } from 'lucide-react'
 import ShareButton             from '@/components/ShareButton'
+import { EventFolderBar }      from '@/components/EventFolderBar'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,12 +34,21 @@ export default async function EventDetailPage(props: Props) {
     where: { id: eventId },
     include: {
       category:  { include: { year: true } },
-      subfolders: { orderBy: { label: 'asc' } },
+      subfolders: {
+        orderBy: { label: 'asc' },
+        include: {
+          _count: { select: { mediaFiles: { where: { status: { notIn: ['DELETED', 'PURGED'] } } } } },
+        },
+      },
       _count:    { select: { mediaFiles: { where: { status: { notIn: ['DELETED', 'PURGED'] } } } } },
     },
   })
 
   if (!event) notFound()
+
+  const sortedSubfolders = [...event.subfolders].sort((a, b) =>
+    a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' })
+  )
 
   const isAdmin = session?.user?.role === 'ADMIN'
 
@@ -89,7 +99,7 @@ export default async function EventDetailPage(props: Props) {
 
   // Build breadcrumb
   const activeSubfolder = subfolderId
-    ? event.subfolders.find(s => s.id === subfolderId)
+    ? sortedSubfolders.find(s => s.id === subfolderId)
     : null
 
   const breadcrumbItems = [
@@ -99,7 +109,7 @@ export default async function EventDetailPage(props: Props) {
     },
     {
       label: event.category.name,
-      href:  `/events`,
+      href:  `/events?category=${encodeURIComponent(event.category.name)}`,
     },
     {
       label: event.name,
@@ -111,9 +121,11 @@ export default async function EventDetailPage(props: Props) {
     ),
   ]
 
-  const dateStr = new Date(event.date).toLocaleDateString('en-US', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  })
+  const dateStr = event.date
+    ? new Date(event.date).toLocaleDateString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      })
+    : null
 
   return (
     <div className="space-y-6">
@@ -124,17 +136,26 @@ export default async function EventDetailPage(props: Props) {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-white">{event.name}</h1>
-          <div className="flex items-center gap-3 mt-1.5 text-sm text-slate-400">
-            <span className="flex items-center gap-1.5">
-              <CalendarDays className="w-3.5 h-3.5" />
-              {dateStr}
-            </span>
-            <span className="text-slate-700">·</span>
-            <span>{event.category.name}</span>
+          <div className="flex items-center gap-3 mt-1.5 text-sm text-slate-400 flex-wrap">
+            {dateStr && (
+              <>
+                <span className="flex items-center gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5" />
+                  {dateStr}
+                </span>
+                <span className="text-slate-700">·</span>
+              </>
+            )}
+            <Link
+              href={`/events?category=${encodeURIComponent(event.category.name)}`}
+              className="hover:text-indigo-300 transition"
+            >
+              {event.category.name}
+            </Link>
             <span className="text-slate-700">·</span>
             <span className="flex items-center gap-1.5">
               <Image className="w-3.5 h-3.5" />
-              {event._count.mediaFiles} total files
+              {event._count.mediaFiles} total file{event._count.mediaFiles !== 1 ? 's' : ''}
             </span>
           </div>
         </div>
@@ -165,42 +186,19 @@ export default async function EventDetailPage(props: Props) {
                        px-4 py-2.5 rounded-xl transition shrink-0 shadow shadow-indigo-500/20"
           >
             <Upload className="w-4 h-4" />
-            Upload here
+            {activeSubfolder ? `Upload to ${activeSubfolder.label}` : 'Upload here'}
           </Link>
         </div>
       </div>
 
-      {/* Subfolder tabs */}
-      {event.subfolders.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <Link
-            href={`/events/${eventId}`}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition
-              ${!subfolderId
-                ? 'bg-indigo-600/80 text-white'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-          >
-            <FolderOpen className="w-3.5 h-3.5" />
-            All files
-          </Link>
-
-          {event.subfolders.map(sf => (
-            <Link
-              key={sf.id}
-              href={`/events/${eventId}?subfolder=${sf.id}`}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition
-                ${sf.id === subfolderId
-                  ? 'bg-indigo-600/80 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-            >
-              <FolderOpen className="w-3.5 h-3.5" />
-              {sf.label}
-            </Link>
-          ))}
-        </div>
-      )}
+      {/* Interactive Folders / Days bar (supports inline folder creation) */}
+      <EventFolderBar
+        eventId={eventId}
+        subfolders={sortedSubfolders}
+        activeSubfolderId={subfolderId}
+        totalFilesCount={event._count.mediaFiles}
+        isAdmin={isAdmin}
+      />
 
       {/* Active media grid */}
       {enriched.length > 0 ? (

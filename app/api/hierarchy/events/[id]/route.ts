@@ -36,14 +36,27 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   }
 
   try {
-    const { name, date } = await req.json()
+    const body = await req.json()
+    const { name, date } = body
+    const data: { name?: string; date?: Date | null } = {}
+    if (typeof name === 'string' && name.trim()) {
+      data.name = name.trim()
+    }
+    if ('date' in body) {
+      if (date === null || String(date).trim() === '') {
+        data.date = null
+      } else {
+        const parsed = new Date(date)
+        if (isNaN(parsed.getTime())) {
+          return NextResponse.json({ error: 'Invalid date format.' }, { status: 400 })
+        }
+        data.date = parsed
+      }
+    }
 
     const event = await prisma.event.update({
       where: { id: params.id },
-      data: {
-        ...(name ? { name }                : {}),
-        ...(date ? { date: new Date(date) } : {}),
-      },
+      data,
       include: {
         category: { include: { year: true } },
         subfolders: { orderBy: { label: 'asc' } },

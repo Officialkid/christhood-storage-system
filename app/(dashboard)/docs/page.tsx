@@ -406,9 +406,17 @@ export default function DocsPage() {
           </Card>
 
           <div className="mb-5 space-y-3">
-            <p className="text-sm font-semibold text-slate-300">The five event categories:</p>
+            <p className="text-sm font-semibold text-slate-300">Official event categories (plus custom categories via &quot;Other&quot;):</p>
             <div className="flex flex-wrap gap-2">
-              {['Saturday Fellowships', 'Missions', 'Conferences', 'Special Events', 'Outreach Programs'].map(c => (
+              {[
+                'Saturday Fellowships',
+                'Missions',
+                'Branch Excandidates Programme',
+                'Teen Life',
+                'Mentorship Camp',
+                'Jewels Kids Camp',
+                'Special Events',
+              ].map(c => (
                 <span key={c} className="px-3 py-1 rounded-lg bg-slate-800 border border-slate-700/60 text-xs text-slate-300">{c}</span>
               ))}
             </div>

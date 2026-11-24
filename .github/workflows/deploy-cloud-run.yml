@@ -130,7 +130,7 @@ jobs:
             --timeout=300
             --concurrency=80
             --cpu-boost
-            --service-account=deploy-sa@dotted-spot-476513-i2.iam.gserviceaccount.com
+            --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }}
           env_vars: |
             NODE_ENV=production
             NEXT_TELEMETRY_DISABLED=1

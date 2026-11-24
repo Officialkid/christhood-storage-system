@@ -54,7 +54,7 @@ export interface DestinationInfo {
 export interface EventOption {
   id:          string
   name:        string
-  date:        string
+  date:        string | null
   category:    { name: string; year: { year: number } }
   subfolders:  { id: string; label: string }[]
 }
@@ -1530,22 +1530,54 @@ export function UploadZone({ defaultDestination, events }: Props) {
           </p>
 
           {destination ? (
-            <div className="flex items-center gap-3">
-              <FolderOpen className="w-4 h-4 text-indigo-400 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white">
-                  {destination.year} · {destination.categoryName} · Month: {destination.eventName}
-                </p>
-                {destination.subfolderLabel && (
-                  <p className="text-xs text-slate-500">Week / date folder: {destination.subfolderLabel}</p>
-                )}
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-3">
+                <FolderOpen className="w-4 h-4 text-indigo-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white">
+                    {destination.year} · {destination.categoryName} · {destination.eventName}
+                  </p>
+                  {destination.subfolderLabel && (
+                    <p className="text-xs text-indigo-300">Folder: {destination.subfolderLabel}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setDestination(null)}
+                  className="text-xs text-slate-500 hover:text-white transition underline"
+                >
+                  Change
+                </button>
               </div>
-              <button
-                onClick={() => setDestination(null)}
-                className="text-xs text-slate-500 hover:text-white transition underline"
-              >
-                Change
-              </button>
+              {destination.subfolders && destination.subfolders.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-slate-800/70">
+                  <span className="text-[11px] text-slate-500 mr-1">Folder:</span>
+                  <button
+                    type="button"
+                    onClick={() => setDestination({ ...destination, subfolderId: null, subfolderLabel: null })}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+                      !destination.subfolderId
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Event root
+                  </button>
+                  {destination.subfolders.map(sf => (
+                    <button
+                      key={sf.id}
+                      type="button"
+                      onClick={() => setDestination({ ...destination, subfolderId: sf.id, subfolderLabel: sf.label })}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+                        destination.subfolderId === sf.id
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {sf.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid gap-3 lg:grid-cols-[0.8fr_1fr_1fr_0.9fr_auto]">
@@ -1582,7 +1614,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
                              px-3 py-2 text-sm text-white focus:outline-none focus:ring-2
                              focus:ring-indigo-500 disabled:opacity-50"
                 >
-                  <option value="">- Select major category -</option>
+                  <option value="">- Select category -</option>
                   {availableCategories.map(category => (
                     <option key={category} value={category}>{category}</option>
                   ))}
@@ -1597,7 +1629,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
                              px-3 py-2 text-sm text-white focus:outline-none focus:ring-2
                              focus:ring-indigo-500 disabled:opacity-50"
                 >
-                  <option value="">- Select month folder -</option>
+                  <option value="">- Select event -</option>
                   {selectedCategoryEvents.map(ev => (
                     <option key={ev.id} value={ev.id}>{ev.name}</option>
                   ))}
@@ -1613,7 +1645,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
                              px-3 py-2 text-sm text-white focus:outline-none focus:ring-2
                              focus:ring-indigo-500 disabled:opacity-50"
                 >
-                  <option value="">No week/date folder</option>
+                  <option value="">No day / folder</option>
                   {selectedEvent?.subfolders.map(s => (
                     <option key={s.id} value={s.id}>{s.label}</option>
                   ))}
@@ -1635,18 +1667,50 @@ export function UploadZone({ defaultDestination, events }: Props) {
       )}
 
       {/* ── Pre-filled destination banner ────────────────────────────────── */}
-      {defaultDestination && (
-        <div className="flex items-center gap-2.5 bg-indigo-950/60 border border-indigo-800/40
-                        rounded-xl px-4 py-2.5">
-          <FolderOpen className="w-4 h-4 text-indigo-400 shrink-0" />
-          <div className="flex-1 min-w-0 text-sm">
-            <span className="text-slate-400">{defaultDestination.year} · </span>
-            <span className="text-slate-400">{defaultDestination.categoryName} · </span>
-            <span className="text-white font-medium">Month: {defaultDestination.eventName}</span>
-            {defaultDestination.subfolderLabel && (
-              <span className="text-slate-500"> / Week: {defaultDestination.subfolderLabel}</span>
-            )}
+      {defaultDestination && destination && (
+        <div className="bg-indigo-950/60 border border-indigo-800/40 rounded-xl px-4 py-3 space-y-2.5">
+          <div className="flex items-center gap-2.5">
+            <FolderOpen className="w-4 h-4 text-indigo-400 shrink-0" />
+            <div className="flex-1 min-w-0 text-sm">
+              <span className="text-slate-400">{destination.year} · </span>
+              <span className="text-slate-400">{destination.categoryName} · </span>
+              <span className="text-white font-medium">{destination.eventName}</span>
+              {destination.subfolderLabel && (
+                <span className="text-indigo-300 font-medium"> / {destination.subfolderLabel}</span>
+              )}
+            </div>
           </div>
+
+          {destination.subfolders && destination.subfolders.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-indigo-900/50">
+              <span className="text-[11px] text-slate-400 mr-1">Switch folder:</span>
+              <button
+                type="button"
+                onClick={() => setDestination({ ...destination, subfolderId: null, subfolderLabel: null })}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+                  !destination.subfolderId
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-900/70 text-slate-300 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                Event root
+              </button>
+              {destination.subfolders.map(sf => (
+                <button
+                  key={sf.id}
+                  type="button"
+                  onClick={() => setDestination({ ...destination, subfolderId: sf.id, subfolderLabel: sf.label })}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+                    destination.subfolderId === sf.id
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-900/70 text-slate-300 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  {sf.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

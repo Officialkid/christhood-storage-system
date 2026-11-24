@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-PROJECT_ID="${PROJECT_ID:-dotted-spot-476513-i2}"
+PROJECT_ID="${PROJECT_ID:-project-d46be384-233e-47fb-bb5}"
 REGION="${REGION:-us-central1}"
 APP_URL="${APP_URL:-https://cmmschristhood.org}"
 CRON_SECRET="${CRON_SECRET:?CRON_SECRET environment variable must be set}"

@@ -35,7 +35,7 @@ Custom Domain — cmmschristhood.org
 ## 1 — Enable GCP APIs (one time)
 
 ```bash
-export PROJECT_ID=your-gcp-project-id
+export PROJECT_ID=project-d46be384-233e-47fb-bb5
 
 gcloud config set project $PROJECT_ID
 

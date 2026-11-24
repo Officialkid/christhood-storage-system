@@ -66,9 +66,11 @@ function EventRow({
   const isActive = event.id === activeEventId
   const [open, setOpen] = useState(defaultOpen ?? isActive)
   const hasSubs = event.subfolders.length > 0
-  const dateStr = new Date(event.date).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  })
+  const dateStr = event.date
+    ? new Date(event.date).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+      })
+    : null
 
   return (
     <div>
@@ -94,7 +96,7 @@ function EventRow({
         <Link href={`/events/${event.id}`} className="flex items-center gap-2 flex-1 min-w-0">
           <Calendar className="w-3 h-3 shrink-0 opacity-70" />
           <span className="truncate flex-1">{event.name}</span>
-          <span className="text-[10px] text-slate-500 shrink-0">{dateStr}</span>
+          {dateStr && <span className="text-[10px] text-slate-500 shrink-0">{dateStr}</span>}
           {!activeSubfolderId && badge(event._count?.mediaFiles ?? 0)}
         </Link>
       </div>

@@ -19,7 +19,7 @@ export async function GET() {
         orderBy: { name: 'asc' },
         include: {
           events: {
-            orderBy: { date: 'desc' },
+            orderBy: [{ createdAt: 'desc' }],
             include: {
               subfolders: {
                 orderBy: { label: 'asc' },

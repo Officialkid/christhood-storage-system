@@ -146,9 +146,9 @@ error event in the last 10 minutes.
 
 | Resource | Link |
 |---|---|
-| Logs Explorer | https://console.cloud.google.com/logs/query?project=dotted-spot-476513-i2 |
-| Cloud Run | https://console.cloud.google.com/run?project=dotted-spot-476513-i2 |
-| Monitoring | https://console.cloud.google.com/monitoring?project=dotted-spot-476513-i2 |
+| Logs Explorer | https://console.cloud.google.com/logs/query?project=project-d46be384-233e-47fb-bb5 |
+| Cloud Run | https://console.cloud.google.com/run?project=project-d46be384-233e-47fb-bb5 |
+| Monitoring | https://console.cloud.google.com/monitoring?project=project-d46be384-233e-47fb-bb5 |
 | Neon DB | https://console.neon.tech |
 | Cloudflare R2 | https://dash.cloudflare.com |
 
@@ -201,7 +201,7 @@ DATABASE_URL="your-neon-connection-string" npx prisma migrate deploy
 gcloud run deploy christhood-cmms \
   --source . \
   --region us-central1 \
-  --project dotted-spot-476513-i2
+  --project project-d46be384-233e-47fb-bb5
 ```
 
 This builds a new container, pushes it to Cloud Run, and starts routing traffic.

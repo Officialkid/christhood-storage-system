@@ -3,14 +3,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Image             from 'next/image'
 import Link              from 'next/link'
+import { useRouter }     from 'next/navigation'
 import { useSession }    from 'next-auth/react'
 import {
   UploadCloud, Film, ImageIcon, Users, FileText, HardDrive, Clock,
   TrendingUp, CheckCircle2, Circle, Loader2, RefreshCw, ArrowRight,
   CalendarDays, Zap, AlertTriangle, Star, BarChart3, MessageSquare,
-  Folder, ChevronRight, CheckCheck, X, Download,
+  Folder, ChevronRight, CheckCheck, X, Download, Plus, Layers,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
+import { CreateEventModal } from '@/components/CreateEventModal'
+import { OFFICIAL_CATEGORY_NAMES } from '@/lib/hierarchyConstants'
+import type { HierarchyYear } from '@/types'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -804,6 +808,7 @@ function UploaderStatsSection({ stats, isLoading }: { stats: UploaderStats; isLo
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function DashboardClient({ initialData }: { initialData: DashboardData }) {
+  const router = useRouter()
   const { data: session } = useSession()
   const [data,          setData]          = useState<DashboardData>(initialData)
   const [lastUpdated,   setLastUpdated]   = useState(new Date())
@@ -813,7 +818,16 @@ export default function DashboardClient({ initialData }: { initialData: Dashboar
   // Prevents the SSR-fallback zeros from flashing as real data.
   const [hasRealData,   setHasRealData]   = useState(!initialData.isFallback)
   const [showActiveUsers, setShowActiveUsers] = useState(false)
+  const [showCreateEvent, setShowCreateEvent] = useState(false)
+  const [hierarchyYears,  setHierarchyYears]  = useState<HierarchyYear[]>([])
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    fetch('/api/hierarchy', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j?.years) setHierarchyYears(j.years) })
+      .catch(() => {})
+  }, [])
 
   const refresh = useCallback(async (silent = true) => {
     if (document.hidden) return
@@ -878,12 +892,41 @@ export default function DashboardClient({ initialData }: { initialData: Dashboar
   const name     = session?.user?.name ?? (session?.user as any)?.username ?? 'there'
   const showChecklist = !onboarding.dismissed
 
+  const quickCategories = (() => {
+    const counts = new Map<string, { eventCount: number; fileCount: number }>()
+    for (const yr of hierarchyYears) {
+      for (const cat of yr.categories) {
+        if (cat.isArchived) continue
+        const files = cat.events.reduce((s, e) => s + (e._count?.mediaFiles ?? 0), 0)
+        const prev = counts.get(cat.name)
+        if (prev) {
+          prev.eventCount += cat.events.length
+          prev.fileCount += files
+        } else {
+          counts.set(cat.name, { eventCount: cat.events.length, fileCount: files })
+        }
+      }
+    }
+    const officialSet = new Set<string>(OFFICIAL_CATEGORY_NAMES)
+    const result: { name: string; eventCount: number; fileCount: number; isCustom: boolean }[] = []
+    for (const name of OFFICIAL_CATEGORY_NAMES) {
+      const c = counts.get(name)
+      result.push({ name, eventCount: c?.eventCount ?? 0, fileCount: c?.fileCount ?? 0, isCustom: false })
+    }
+    for (const [name, c] of counts.entries()) {
+      if (!officialSet.has(name)) {
+        result.push({ name, eventCount: c.eventCount, fileCount: c.fileCount, isCustom: true })
+      }
+    }
+    return result
+  })()
+
   return (
     <div className="space-y-8 max-w-7xl">
 
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
+        <div className="flex-1 min-w-0">
           {showChecklist
             ? (
               <div>
@@ -894,21 +937,91 @@ export default function DashboardClient({ initialData }: { initialData: Dashboar
             : <WelcomeBanner name={name} />
           }
         </div>
-        {/* Last updated indicator */}
-        <div className="flex items-center gap-2 text-xs text-slate-600 shrink-0">
-          <button
-            onClick={() => refresh(false)}
-            disabled={isRefreshing}
-            className="flex items-center gap-1.5 text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-50"
-            title="Refresh dashboard"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-          </button>
-          <span suppressHydrationWarning>
-            Updated {secsSince === 0 ? 'just now' : `${secsSince}s ago`}
-          </span>
+        {/* Quick actions + Last updated indicator */}
+        <div className="flex flex-col items-end gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setShowCreateEvent(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white
+                           bg-gradient-to-r from-indigo-600 to-violet-600
+                           hover:from-indigo-500 hover:to-violet-500 transition shadow-lg shadow-indigo-500/20"
+              >
+                <Plus className="w-4 h-4" />
+                Create a New Event
+              </button>
+            )}
+            <Link
+              href="/upload"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-slate-200
+                         bg-slate-900 border border-slate-700 hover:bg-slate-800 hover:text-white transition"
+            >
+              <UploadCloud className="w-4 h-4 text-indigo-400" />
+              Upload Media
+            </Link>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-slate-600">
+            <button
+              onClick={() => refresh(false)}
+              disabled={isRefreshing}
+              className="flex items-center gap-1.5 text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-50"
+              title="Refresh dashboard"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
+            <span suppressHydrationWarning>
+              Updated {secsSince === 0 ? 'just now' : `${secsSince}s ago`}
+            </span>
+          </div>
         </div>
       </div>
+
+      {/* ── Quick Access: Event Categories ──────────────────────────────────── */}
+      <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-5 space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+            <Layers className="w-4 h-4 text-indigo-400" />
+            Event Categories
+          </h2>
+          <Link
+            href="/events"
+            className="text-xs text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1"
+          >
+            Open Event Library <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {quickCategories.map(cat => (
+            <Link
+              key={cat.name}
+              href={`/events?category=${encodeURIComponent(cat.name)}`}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium
+                         bg-slate-900 border border-slate-800 text-slate-200
+                         hover:border-indigo-500/50 hover:bg-indigo-950/40 hover:text-white transition"
+            >
+              <Folder className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span>{cat.name}</span>
+              {cat.eventCount > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400">
+                  {cat.eventCount}
+                </span>
+              )}
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {isAdmin && showCreateEvent && (
+        <CreateEventModal
+          years={hierarchyYears.length > 0 ? hierarchyYears : undefined}
+          onClose={() => setShowCreateEvent(false)}
+          onCreated={created => {
+            setShowCreateEvent(false)
+            router.push(`/events/${created.id}`)
+          }}
+        />
+      )}
 
       {/* ── Section 1: Onboarding checklist ────────────────────────────────── */}
       {showChecklist && (

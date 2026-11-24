@@ -1,84 +1,71 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import Link from 'next/link'
-import { CalendarDays, FolderOpen, Image } from 'lucide-react'
-import { RecentEventsList } from '@/components/RecentEventsList'
+import { EventsBrowserClient } from '@/components/EventsBrowserClient'
+import type { HierarchyYear } from '@/types'
 
 export const dynamic = 'force-dynamic'
 
-export default async function EventsPage() {
+interface Props {
+  searchParams: Promise<{ category?: string }>
+}
+
+export default async function EventsPage(props: Props) {
+  const searchParams = await props.searchParams
   const session = await getServerSession(authOptions)
 
-  // Fetch summary stats
-  const [yearCount, eventCount, mediaCount, recentEvents] = await Promise.all([
-    prisma.year.count(),
-    prisma.event.count(),
-    prisma.mediaFile.count({ where: { status: { notIn: ['DELETED', 'PURGED'] } } }),
-    prisma.event.findMany({
-      orderBy: { date: 'desc' },
-      take: 8,
-      include: {
-        category: { include: { year: true } },
-        _count: { select: { mediaFiles: { where: { status: { notIn: ['DELETED', 'PURGED'] } } } } },
+  const yearsRaw = await prisma.year.findMany({
+    orderBy: { year: 'desc' },
+    include: {
+      categories: {
+        orderBy: { name: 'asc' },
+        include: {
+          events: {
+            orderBy: [{ createdAt: 'desc' }],
+            include: {
+              subfolders: {
+                orderBy: { label: 'asc' },
+                include: {
+                  _count: { select: { mediaFiles: { where: { status: { notIn: ['DELETED', 'PURGED'] } } } } },
+                },
+              },
+              _count: { select: { mediaFiles: { where: { status: { notIn: ['DELETED', 'PURGED'] } } } } },
+            },
+          },
+        },
       },
-    }),
-  ])
+    },
+  })
+
+  const years: HierarchyYear[] = yearsRaw.map(y => ({
+    id:        y.id,
+    year:      y.year,
+    createdAt: y.createdAt.toISOString(),
+    categories: y.categories.map(c => ({
+      id:         c.id,
+      name:       c.name,
+      yearId:     c.yearId,
+      isDefault:  c.isDefault,
+      isArchived: c.isArchived,
+      events: c.events.map(e => ({
+        id:         e.id,
+        name:       e.name,
+        date:       e.date ? e.date.toISOString() : null,
+        categoryId: e.categoryId,
+        createdAt:  e.createdAt.toISOString(),
+        subfolders: e.subfolders,
+        _count:     e._count,
+      })),
+    })),
+  }))
 
   return (
-    <div className="max-w-3xl space-y-10">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white">Event Library</h1>
-        <p className="mt-1 text-slate-400 text-sm">
-          Browse media by year, major category, month folder, and week/date folder from the panel on the left.
-        </p>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { icon: FolderOpen,    label: 'Years',       value: yearCount  },
-          { icon: CalendarDays,  label: 'Events',      value: eventCount },
-          { icon: Image,         label: 'Media files', value: mediaCount },
-        ].map(({ icon: Icon, label, value }) => (
-          <div key={label}
-               className="bg-slate-900/60 border border-slate-800/60 rounded-2xl p-5">
-            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center mb-3">
-              <Icon className="w-4 h-4 text-indigo-400" />
-            </div>
-            <div className="text-2xl font-bold text-white">{value.toLocaleString()}</div>
-            <div className="text-xs text-slate-500 mt-0.5">{label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Recent events */}
-      {recentEvents.length > 0 && (
-        <RecentEventsList
-          events={recentEvents.map(e => ({
-            id:       e.id,
-            name:     e.name,
-            date:     e.date.toISOString(),
-            category: e.category,
-            _count:   e._count,
-          }))}
-          isAdmin={session?.user?.role === 'ADMIN'}
-        />
-      )}
-
-      {eventCount === 0 && (
-        <div className="text-center py-16 text-slate-600">
-          <CalendarDays className="w-12 h-12 mx-auto mb-3 opacity-40" />
-          <p className="text-sm">No events yet.</p>
-          {session?.user?.role === 'ADMIN' && (
-            <Link href="/admin/hierarchy"
-                  className="inline-block mt-4 text-sm text-indigo-400 hover:text-indigo-300 transition">
-              Create your first event →
-            </Link>
-          )}
-        </div>
-      )}
+    <div className="max-w-5xl">
+      <EventsBrowserClient
+        years={years}
+        isAdmin={session?.user?.role === 'ADMIN'}
+        initialCategory={searchParams.category}
+      />
     </div>
   )
 }

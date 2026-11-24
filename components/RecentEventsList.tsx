@@ -10,7 +10,7 @@ import {
 interface EventItem {
   id:   string
   name: string
-  date: string        // ISO string
+  date: string | null   // ISO string or null
   category: {
     name: string
     year: { year: number }
@@ -42,8 +42,8 @@ export function RecentEventsList({ events: initialEvents, isAdmin }: Props) {
   function startEdit(ev: EventItem) {
     setEditing(ev.id)
     setEditName(ev.name)
-    // Format date as YYYY-MM-DD for the date input
-    setEditDate(new Date(ev.date).toISOString().substring(0, 10))
+    // Format date as YYYY-MM-DD for the date input (blank if optional date not set)
+    setEditDate(ev.date ? new Date(ev.date).toISOString().substring(0, 10) : '')
   }
 
   function cancelEdit() {
@@ -59,14 +59,14 @@ export function RecentEventsList({ events: initialEvents, isAdmin }: Props) {
       const res = await fetch(`/api/hierarchy/events/${id}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ name: editName.trim(), date: editDate }),
+        body:    JSON.stringify({ name: editName.trim(), date: editDate || null }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed to save')
 
       setEvents(evs => evs.map(e =>
         e.id === id
-          ? { ...e, name: editName.trim(), date: new Date(editDate).toISOString() }
+          ? { ...e, name: editName.trim(), date: editDate ? new Date(editDate).toISOString() : null }
           : e
       ))
       cancelEdit()
@@ -109,9 +109,11 @@ export function RecentEventsList({ events: initialEvents, isAdmin }: Props) {
           const isDeleting  = deleting  === event.id
           const needsConfirm = confirmDel === event.id
 
-          const dateStr = new Date(event.date).toLocaleDateString('en-US', {
-            weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-          })
+          const dateStr = event.date
+            ? new Date(event.date).toLocaleDateString('en-US', {
+                weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+              })
+            : 'No date'
 
           return (
             <div

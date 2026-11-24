@@ -22,7 +22,7 @@
 
 set -euo pipefail
 
-PROJECT_ID="dotted-spot-476513-i2"
+PROJECT_ID="${PROJECT_ID:-project-d46be384-233e-47fb-bb5}"
 SERVICE="christhood-cmms"
 HOSTNAME="cmmschristhood.org"
 HEALTH_PATH="/api/assistant/health"
@@ -141,7 +141,7 @@ cat > "${TMPDIR_CMMS}/error-spike.json" << 'POLICY_EOF'
   },
   "notificationChannels": ["__CHANNEL__"],
   "documentation": {
-    "content": "More than 5 ERROR-level log entries in a 10-minute window on Cloud Run service **christhood-cmms**.\n\nInvestigate: https://console.cloud.google.com/logs/query;query=resource.type%3D%22cloud_run_revision%22%20severity%3DERROR?project=dotted-spot-476513-i2"
+    "content": "More than 5 ERROR-level log entries in a 10-minute window on Cloud Run service **christhood-cmms**.\n\nInvestigate: https://console.cloud.google.com/logs/query;query=resource.type%3D%22cloud_run_revision%22%20severity%3DERROR?project=${PROJECT_ID}"
   }
 }
 POLICY_EOF
@@ -173,7 +173,7 @@ cat > "${TMPDIR_CMMS}/zara-offline.json" << 'POLICY_EOF'
   },
   "notificationChannels": ["__CHANNEL__"],
   "documentation": {
-    "content": "A ZARA_ERROR event was logged, indicating the Gemini AI assistant is failing.\n\nInvestigate: https://console.cloud.google.com/logs/query;query=resource.type%3D%22cloud_run_revision%22%20jsonPayload.event%3D~%22ZARA%22%20severity>%3DWARNING?project=dotted-spot-476513-i2"
+    "content": "A ZARA_ERROR event was logged, indicating the Gemini AI assistant is failing.\n\nInvestigate: https://console.cloud.google.com/logs/query;query=resource.type%3D%22cloud_run_revision%22%20jsonPayload.event%3D~%22ZARA%22%20severity>%3DWARNING?project=${PROJECT_ID}"
   }
 }
 POLICY_EOF
@@ -276,7 +276,7 @@ UPTIME_EOF
   },
   "notificationChannels": ["__CHANNEL__"],
   "documentation": {
-    "content": "The /api/assistant/health endpoint on cmmschristhood.org is failing from 2 or more geographic regions.\n\nThis means Cloud Run is down or not responding. Check: https://console.cloud.google.com/run/detail/us-central1/christhood-cmms/logs?project=dotted-spot-476513-i2"
+    "content": "The /api/assistant/health endpoint on cmmschristhood.org is failing from 2 or more geographic regions.\n\nThis means Cloud Run is down or not responding. Check: https://console.cloud.google.com/run/detail/us-central1/christhood-cmms/logs?project=${PROJECT_ID}"
   }
 }
 UPTIME_ALERT_EOF

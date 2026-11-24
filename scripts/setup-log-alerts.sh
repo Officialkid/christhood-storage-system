@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-PROJECT_ID="dotted-spot-476513-i2"
+PROJECT_ID="${PROJECT_ID:-project-d46be384-233e-47fb-bb5}"
 SERVICE="christhood-cmms"
 REGION="us-central1"
 NOTIFICATION_EMAIL="${ALERT_EMAIL:-admin@christhood.org}"  # override with: ALERT_EMAIL=you@example.com bash setup-log-alerts.sh
