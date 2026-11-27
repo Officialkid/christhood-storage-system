@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { NotificationBell } from './NotificationBell'
 import { NetworkStatus } from './NetworkStatus'
 import { SearchBar } from './SearchBar'
+import { ThemeToggle } from './ThemeToggle'
 import { useSidebar } from './DashboardShell'
 import { Menu, Sparkles } from 'lucide-react'
 
@@ -77,12 +78,13 @@ export function TopBar() {
       className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6
                  border-b border-slate-800/70 bg-slate-950/80 backdrop-blur-sm shrink-0"
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
         <button
           onClick={toggleMobile}
           aria-label="Open navigation"
-          className="md:hidden flex items-center justify-center h-8 w-8 rounded-lg
-                     text-slate-400 transition-colors hover:bg-slate-800 hover:text-white shrink-0"
+          className="md:hidden flex items-center justify-center h-10 w-10 rounded-xl
+                     border border-slate-800 bg-slate-900/80 text-slate-300 transition-colors
+                     hover:bg-slate-800 hover:text-white shrink-0"
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -100,7 +102,7 @@ export function TopBar() {
         </div>
       </div>
 
-      <div className="flex flex-1 justify-center px-2 sm:px-4">
+      <div className="flex flex-1 min-w-0 justify-center px-1 sm:px-4">
         <Suspense fallback={null}>
           <div className="w-full max-w-2xl">
             <SearchBar />
@@ -108,8 +110,8 @@ export function TopBar() {
         </Suspense>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
-        <div className="rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1.5">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="hidden sm:block rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1.5">
           <NetworkStatus />
         </div>
 
@@ -121,6 +123,7 @@ export function TopBar() {
           </div>
         )}
 
+        <ThemeToggle />
         <NotificationBell />
       </div>
     </header>

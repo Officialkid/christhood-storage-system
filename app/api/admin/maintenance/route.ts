@@ -113,19 +113,14 @@ export async function POST(req: NextRequest) {
 
   // ── Trash Purge ───────────────────────────────────────────────────────────
   if (action === 'run_trash_purge') {
+    const { purgeTrashedMediaFile } = await import('@/lib/trashPurge')
     const expired = await prisma.trashItem.findMany({
       where:   { scheduledPurgeAt: { lte: now } },
       select:  { id: true, mediaFileId: true },
     })
 
     for (const item of expired) {
-      await prisma.$transaction([
-        prisma.mediaFile.update({
-          where: { id: item.mediaFileId },
-          data:  { status: 'PURGED', purgedAt: now },
-        }),
-        prisma.trashItem.delete({ where: { id: item.id } }),
-      ])
+      await purgeTrashedMediaFile(item.id, item.mediaFileId, now)
     }
 
     await stampJob('job_trash_purge_last_run')
@@ -305,7 +300,8 @@ export async function POST(req: NextRequest) {
               f => f.status !== 'DELETED' && f.status !== 'PURGED',
             )
             if (trashable.length > 0) {
-              const scheduledPurgeAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+              const { computeScheduledPurgeAt } = await import('@/lib/appSettings')
+              const scheduledPurgeAt = await computeScheduledPurgeAt(now)
               await tx.trashItem.createMany({
                 data: trashable.map(f => ({
                   mediaFileId: f.id, deletedById: adminId,

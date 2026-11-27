@@ -216,7 +216,7 @@ export default function SharePage({ token }: { token: string }) {
 
     try {
       const pinParam = verifiedPin ? `&pin=${encodeURIComponent(verifiedPin)}` : ''
-      const res = await fetch(`/api/share/${token}/download?fileId=${file.id}${pinParam}`)
+      const res = await fetch(`/api/share/${token}/download?fileId=${file.id}&preview=1${pinParam}`)
       if (!res.ok) {
         setPreviewLoading(false)
         return

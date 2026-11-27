@@ -13,8 +13,8 @@ import { prisma } from '@/lib/prisma'
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  if (!session || !(['ADMIN', 'EDITOR'] as string[]).includes(session.user.role as string)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const body = await req.json()

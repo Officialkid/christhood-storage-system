@@ -28,9 +28,6 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  if (session.user.role !== 'ADMIN' && session.user.role !== 'EDITOR') {
-    return NextResponse.json({ error: 'Forbidden — Admin or Editor role required' }, { status: 403 })
-  }
 
   let body: {
     linkType:       string
@@ -87,10 +84,13 @@ export async function POST(req: NextRequest) {
       if (!sfExists) return NextResponse.json({ error: 'Subfolder not found in this event' }, { status: 404 })
     }
   } else {
-    // TRANSFER
+    // TRANSFER — enforce sender or ADMIN ownership to prevent IDOR
     if (!transferId) return NextResponse.json({ error: 'transferId required for TRANSFER links' }, { status: 400 })
-    const exists = await prisma.transfer.count({ where: { id: transferId } })
-    if (!exists) return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
+    const tr = await prisma.transfer.findUnique({ where: { id: transferId }, select: { senderId: true } })
+    if (!tr) return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
+    if (tr.senderId !== session.user.id && session.user.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden — only the sender or an Admin may share this transfer' }, { status: 403 })
+    }
   }
 
   // ── PIN hashing ────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
     metadata: { shareLinkId: link.id, linkType, title: link.title, expiresAt: expiresAt.toISOString() },
   }).catch((e: unknown) => logger.warn('SHARE_SIDE_EFFECT_FAILED', { route: '/api/share', error: (e as Error)?.message, message: 'Activity log failed after share link creation' }))
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/+$/, '')
   return NextResponse.json({
     id:        link.id,
     token:     link.token,
@@ -158,7 +158,7 @@ export async function GET(req: NextRequest) {
     },
   })
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/+$/, '')
   return NextResponse.json({
     links: links.map(({ pinHash, _count, ...l }) => ({
       ...l,

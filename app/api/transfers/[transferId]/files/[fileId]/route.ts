@@ -82,10 +82,11 @@ export async function GET(
     }
   }
 
-  const url = await getPresignedDownloadUrl(file.r2Key, 3600)
+  const downloadName = toFlatDownloadName(file.originalName, file.folderPath ?? null)
+  const url = await getPresignedDownloadUrl(file.r2Key, 3600, downloadName)
   return NextResponse.json({
     url,
     filename: file.originalName,
-    downloadName: toFlatDownloadName(file.originalName, file.folderPath ?? null),
+    downloadName,
   })
 }

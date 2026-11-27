@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Check, Copy, ExternalLink, Link2, Loader2, Sparkles, X } from 'lucide-react'
+import { Check, Copy, ExternalLink, Link2, Loader2, Share2, Sparkles, X } from 'lucide-react'
 import { useToast } from '@/lib/toast'
 import { Button } from '@/components/ui/Button'
 
@@ -291,8 +291,35 @@ export default function ShareLinkDialog({
                   </div>
                 </div>
 
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(`${title.trim() || 'Shared Media'}: ${created.url}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600/20 border border-emerald-500/30 px-3.5 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-600/30 transition"
+                  >
+                    Share on WhatsApp
+                  </a>
+                  {typeof navigator !== 'undefined' && 'share' in navigator && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.share({
+                          title: title.trim() || 'Christhood CMMS Share',
+                          text:  message.trim() || title.trim(),
+                          url:   created.url,
+                        }).catch(() => {})
+                      }}
+                      className="inline-flex items-center gap-2 rounded-xl bg-slate-800 border border-slate-700 px-3.5 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700 transition"
+                    >
+                      <Share2 className="h-3.5 w-3.5" />
+                      More Share Options
+                    </button>
+                  )}
+                </div>
+
                 <div className="rounded-xl border border-slate-700 bg-slate-800/50 px-4 py-3 text-sm text-slate-300">
-                  <p>Recipients can open the link and download directly.</p>
+                  <p>Recipients can open the link to preview and download directly at full quality.</p>
                   {created.hasPin && <p className="mt-1 text-amber-300">Remember to send them the 4-digit PIN separately.</p>}
                 </div>
               </div>

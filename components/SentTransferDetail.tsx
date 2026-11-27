@@ -6,10 +6,11 @@ import {
   File as FileIcon, Folder, ChevronDown, ChevronRight,
   Clock, CheckCircle2, RefreshCcw, Archive, AlertCircle,
   User2, CheckCheck, X, Ban, Send, MessageSquare,
-  CalendarDays, AlertTriangle, ShieldCheck, ShieldAlert, Loader2,
+  CalendarDays, AlertTriangle, ShieldCheck, ShieldAlert, Loader2, FolderPlus,
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { useToast } from '@/lib/toast'
+import { SaveTransferToEventModal } from '@/components/SaveTransferToEventModal'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -296,6 +297,7 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
   const [verifyDone,    setVerifyDone]    = useState(false)
   const [verifyFailed,  setVerifyFailed]  = useState(false)
   const [integrityMap,  setIntegrityMap]  = useState<Record<string, boolean | null>>({})
+  const [saveModalSource, setSaveModalSource] = useState<'response' | 'original' | null>(null)
 
   const { label, cls, Icon } = STATUS_META[currentStatus]
   const recipientLabel = transfer.recipient.username ?? transfer.recipient.name ?? transfer.recipient.email
@@ -612,6 +614,18 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
                 )}
               </div>
             )}
+            {existingResponse && existingResponse.totalFiles > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-700/40">
+                <button
+                  type="button"
+                  onClick={() => setSaveModalSource('response')}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30 text-xs font-semibold transition"
+                >
+                  <FolderPlus className="w-4 h-4" />
+                  Save Edited Files Directly to CMMS Event
+                </button>
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -771,6 +785,15 @@ export function SentTransferDetail({ transfer }: { transfer: SentTransferDetailD
           </div>
         )}
       </section>
+
+      {saveModalSource && (
+        <SaveTransferToEventModal
+          transferId={transfer.id}
+          source={saveModalSource}
+          fileCount={saveModalSource === 'response' ? (existingResponse?.totalFiles ?? 0) : transfer.totalFiles}
+          onClose={() => setSaveModalSource(null)}
+        />
+      )}
     </div>
   )
 }

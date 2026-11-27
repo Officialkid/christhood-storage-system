@@ -1,6 +1,16 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma }           from '@/lib/prisma'
 import { getGalleryPublicUrl } from '@/lib/gallery/gallery-r2'
+
+function hasValidGalleryPasswordCookie(req: NextRequest, galleryId: string): boolean {
+  const secret = process.env.NEXTAUTH_SECRET
+  const cookie = req.cookies.get(`g_${galleryId}`)?.value
+  if (!secret || !cookie) return false
+  const expected = createHmac('sha256', secret).update(galleryId).digest('hex')
+  if (cookie.length !== expected.length) return false
+  return timingSafeEqual(Buffer.from(cookie), Buffer.from(expected))
+}
 
 export async function GET(
   req:     NextRequest,
@@ -21,6 +31,7 @@ export async function GET(
         select: {
           allowDownload:          true,
           requireNameForDownload: true,
+          isPasswordProtected:    true,
           status:                 true,
         },
       },
@@ -29,6 +40,10 @@ export async function GET(
 
   if (!file || file.gallery.status !== 'PUBLISHED') {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  if (file.gallery.isPasswordProtected && !hasValidGalleryPasswordCookie(req, galleryId)) {
+    return NextResponse.json({ error: 'Gallery password required' }, { status: 401 })
   }
 
   if (!file.gallery.allowDownload) {

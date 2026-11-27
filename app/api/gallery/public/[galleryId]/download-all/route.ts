@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { Readable }         from 'node:stream'
 import { PassThrough }      from 'node:stream'
@@ -8,6 +9,15 @@ import { getGalleryPublicUrl } from '@/lib/gallery/gallery-r2'
 // Next.js App Router needs to know this route streams a large body
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // 5 min — Cloud Run allows up to the configured timeout
+
+function hasValidGalleryPasswordCookie(req: NextRequest, galleryId: string): boolean {
+  const secret = process.env.NEXTAUTH_SECRET
+  const cookie = req.cookies.get(`g_${galleryId}`)?.value
+  if (!secret || !cookie) return false
+  const expected = createHmac('sha256', secret).update(galleryId).digest('hex')
+  if (cookie.length !== expected.length) return false
+  return timingSafeEqual(Buffer.from(cookie), Buffer.from(expected))
+}
 
 export async function GET(req:     NextRequest, props: { params: Promise<{ galleryId: string }> }) {
   const params = await props.params;
@@ -20,6 +30,7 @@ export async function GET(req:     NextRequest, props: { params: Promise<{ galle
       title:                  true,
       allowDownload:          true,
       requireNameForDownload: true,
+      isPasswordProtected:    true,
       sections: {
         orderBy: { sortOrder: 'asc' },
         select:  {
@@ -38,6 +49,10 @@ export async function GET(req:     NextRequest, props: { params: Promise<{ galle
 
   if (!gallery) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  if (gallery.isPasswordProtected && !hasValidGalleryPasswordCookie(req, galleryId)) {
+    return NextResponse.json({ error: 'Gallery password required' }, { status: 401 })
   }
 
   if (!gallery.allowDownload) {

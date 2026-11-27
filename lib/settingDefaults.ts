@@ -18,7 +18,7 @@ export const SETTING_DEFAULTS: Record<string, string> = {
 
   // ── Storage & Files ───────────────────────────────────────────────────────
   archive_threshold_months: '6',
-  trash_retention_days:     '30',
+  trash_retention_days:     '13',
   max_file_size_mb:         '500',
   allowed_photo_types:      'jpg,png,heic,raw,tiff',
   allowed_video_types:      'mp4,mov,avi,mkv',

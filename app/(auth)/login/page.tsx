@@ -116,7 +116,7 @@ function LoginInner() {
       : 'text-red-400 bg-red-500/10 border-red-500/30'
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#020817] px-4 relative overflow-hidden">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-slate-950 px-4 py-8 relative overflow-hidden">
       {/* ambient blobs */}
       <div className="pointer-events-none absolute -top-40 -left-40 w-[500px] h-[500px]
                       rounded-full bg-indigo-600/20 blur-[120px]" />
@@ -247,9 +247,9 @@ function LoginInner() {
           <button
             onClick={handleGoogle}
             className="w-full flex items-center justify-center gap-3
-                       bg-white hover:bg-slate-100 text-slate-900
+                       bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100
                        text-sm font-medium rounded-xl py-3
-                       transition-all duration-200 shadow"
+                       transition-all duration-200 shadow-sm"
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
               <path d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>

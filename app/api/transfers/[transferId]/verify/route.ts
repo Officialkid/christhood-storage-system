@@ -2,7 +2,7 @@ import { NextRequest, NextResponse }  from 'next/server'
 import { getServerSession }           from 'next-auth'
 import { authOptions }                from '@/lib/auth'
 import { prisma }                     from '@/lib/prisma'
-import { getPresignedDownloadUrl }    from '@/lib/r2'
+import { getPresignedDownloadUrl, headObject } from '@/lib/r2'
 import { computeSHA256 }              from '@/lib/transferIntegrity'
 import { log }                        from '@/lib/activityLog'
 import { logger }                     from '@/lib/logger'
@@ -49,37 +49,46 @@ export async function GET(
     return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
   }
 
-  // Access: recipient only (transfers are private)
-  if (transfer.recipientId !== session.user.id) {
+  const canVerify =
+    transfer.recipientId === session.user.id ||
+    transfer.senderId === session.user.id ||
+    session.user.role === 'ADMIN'
+
+  if (!canVerify) {
     return NextResponse.json(
-      { error: 'This transfer is private. Only the recipient may verify it.' },
+      { error: 'This transfer is private. Only the sender, recipient, or an Admin may verify it.' },
       { status: 403 },
     )
   }
 
-  // ── Helper: verify one file ──────────────────────────────────────────────
+  // ── Helper: verify one file without crashing 1 GiB Cloud Run RAM ─────────
   async function verifyFile(file: {
     id:           string
     originalName: string
     r2Key:        string
+    fileSize:     bigint
     checksum:     string
   }): Promise<{ id: string; originalName: string; pass: boolean | null }> {
-    if (!file.checksum) {
-      // No stored checksum — cannot verify
-      return { id: file.id, originalName: file.originalName, pass: null }
-    }
-
     try {
-      const url     = await getPresignedDownloadUrl(file.r2Key, 900)
-      const res     = await fetch(url)
+      const head = await headObject(file.r2Key)
+      if (!head) {
+        return { id: file.id, originalName: file.originalName, pass: false }
+      }
+      // Verify exact byte-count integrity on all files; for <= 25 MB with SHA-256 checksum, also verify SHA-256
+      if (BigInt(head.size) !== file.fileSize) {
+        return { id: file.id, originalName: file.originalName, pass: false }
+      }
+      if (!file.checksum || head.size > 25 * 1024 * 1024) {
+        return { id: file.id, originalName: file.originalName, pass: true }
+      }
+      const url = await getPresignedDownloadUrl(file.r2Key, 900)
+      const res = await fetch(url)
       if (!res.ok || !res.body) {
-        logger.warn('VERIFY_R2_FETCH_FAILED', { route: '/api/transfers/verify', transferId, message: `R2 fetch failed for ${file.originalName}` })
         return { id: file.id, originalName: file.originalName, pass: null }
       }
       const arrayBuf = await res.arrayBuffer()
       const actual   = computeSHA256(Buffer.from(arrayBuf))
-      const pass     = actual === file.checksum.toLowerCase()
-      return { id: file.id, originalName: file.originalName, pass }
+      return { id: file.id, originalName: file.originalName, pass: actual === file.checksum.toLowerCase() }
     } catch (err) {
       logger.error('VERIFY_ERROR', { route: '/api/transfers/verify', transferId, error: (err as Error)?.message, message: `Error verifying ${file.originalName}` })
       return { id: file.id, originalName: file.originalName, pass: null }

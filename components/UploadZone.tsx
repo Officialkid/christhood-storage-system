@@ -3,11 +3,13 @@
 import {
   useState, useRef, useCallback, useEffect, DragEvent,
 } from 'react'
+import Link from 'next/link'
 import {
   Upload, X, CheckCircle2, AlertCircle, Loader2, Film,
   Image as ImageIcon, FolderOpen, ChevronDown, RefreshCw,
-  WifiOff, Wifi, Camera, Video as VideoIcon, GalleryHorizontalEnd, Clock, PauseCircle,
+  WifiOff, Wifi, Camera, Video as VideoIcon, GalleryHorizontalEnd, Clock, PauseCircle, ArrowRight,
 } from 'lucide-react'
+import { useToast } from '@/lib/toast'
 import { queueUpload, getQueue, removeFromQueue, type QueuedUpload } from '@/lib/offlineQueue'
 import { runMultipartUpload, abortMultipartSession, NetworkError, DuplicateError }   from '@/lib/upload/multipart-uploader'
 import { invalidateFileCache } from '@/lib/cache'
@@ -237,7 +239,7 @@ function FileRow({
       </div>
 
       {/* Status badge */}
-      <div className="shrink-0 w-16 text-right">
+      <div className="shrink-0 w-20 text-right">
         {uf.status === 'pending' && (
           <span className="text-xs text-slate-500">Queued</span>
         )}
@@ -251,8 +253,9 @@ function FileRow({
           <span className="text-xs text-violet-400">Saving…</span>
         )}
         {uf.status === 'done' && (
-          <div className="flex items-center gap-1 justify-end">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <div className="flex items-center gap-1 justify-end text-emerald-400">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span className="text-xs font-semibold">Done</span>
             {uf.versionNumber && (
               <span className="text-[10px] font-semibold text-indigo-400 bg-indigo-500/15 rounded px-1">
                 v{uf.versionNumber}
@@ -289,10 +292,11 @@ function FileRow({
         && uf.status !== 'queued-offline' && uf.status !== 'paused' && (
         <button
           onClick={onRemove}
-          className="shrink-0 p-1 rounded text-slate-600 hover:text-slate-300 hover:bg-slate-700
+          className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-700
                      transition"
+          aria-label={`Remove ${uf.file.name}`}
         >
-          <X className="w-3.5 h-3.5" />
+          <X className="w-4 h-4" />
         </button>
       )}
     </div>
@@ -306,6 +310,7 @@ interface Props {
 }
 
 export function UploadZone({ defaultDestination, events }: Props) {
+  const toast                           = useToast()
   const inputRef                        = useRef<HTMLInputElement>(null)
   const cameraRef                       = useRef<HTMLInputElement>(null)
   const videoRef                        = useRef<HTMLInputElement>(null)
@@ -353,6 +358,35 @@ export function UploadZone({ defaultDestination, events }: Props) {
   useEffect(() => {
     if (defaultDestination) setDestination(defaultDestination)
   }, [defaultDestination])
+
+  // Request Screen Wake Lock while actively uploading so mobile screens don't sleep mid-video
+  useEffect(() => {
+    if (!isUploading || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return
+    let sentinel: { release?: () => Promise<void> } | null = null
+    let cancelled = false
+
+    const acquire = async () => {
+      try {
+        sentinel = await (navigator as any).wakeLock.request('screen')
+      } catch {
+        // Ignore if battery saver / unsupported browser blocks wake lock
+      }
+    }
+    void acquire()
+
+    const onVisibility = () => {
+      if (!cancelled && document.visibilityState === 'visible') {
+        void acquire()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisibility)
+      sentinel?.release?.().catch(() => {})
+    }
+  }, [isUploading])
 
   // ── Online / offline detection ──────────────────────────────────────────────
   useEffect(() => {
@@ -1198,17 +1232,24 @@ export function UploadZone({ defaultDestination, events }: Props) {
     setIsUploading(false)
     lastNotifPctRef.current = -NOTIF_THROTTLE_PCT
 
-    // Send final PWA notification
-    const errored = filesRef.current.filter(f => f.status === 'error').length
+    // Send final PWA + in-app toast notification
+    const errored   = filesRef.current.filter(f => f.status === 'error').length
+    const completed = filesRef.current.filter(f => f.status === 'done').length
     if (errored > 0) {
       notifyUploadFailed(errored)
-    } else {
-      const completed = filesRef.current.filter(f => f.status === 'done').length
       if (completed > 0) {
-        notifyUploadComplete(completed)
-        // Bust SWR caches so FolderTree sidebar counts update immediately
-        void invalidateFileCache(destination.eventId)
+        toast.info(`${completed} file${completed !== 1 ? 's' : ''} uploaded · ${errored} failed.`)
+      } else {
+        toast.error(`${errored} file${errored !== 1 ? 's' : ''} failed to upload.`)
       }
+    } else if (completed > 0) {
+      notifyUploadComplete(completed)
+      const destLabel = destination.subfolderLabel
+        ? `${destination.eventName} / ${destination.subfolderLabel}`
+        : destination.eventName
+      toast.success(`All ${completed} file${completed !== 1 ? 's' : ''} uploaded to ${destLabel}!`)
+      // Bust SWR caches so FolderTree sidebar counts update immediately
+      void invalidateFileCache(destination.eventId)
     }
   }
 
@@ -1449,7 +1490,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
             Photos (JPEG, PNG, RAW, HEIC) · Videos (MP4, MOV, MKV)
           </p>
           <p className="text-xs text-slate-700 mt-0.5">
-            Files ≥ 5 MB upload in resumable parallel multipart chunks
+            Files ≥ 10 MB upload in resumable parallel multipart chunks
           </p>
         </div>
       </div>
@@ -1459,7 +1500,10 @@ export function UploadZone({ defaultDestination, events }: Props) {
         multiple
         accept="image/*,video/*,.dng,.raw,.cr2,.nef,.arw,.orf"
         className="hidden"
-        onChange={e => { if (e.target.files) addFiles(Array.from(e.target.files)) }}
+        onChange={e => {
+          if (e.target.files) addFiles(Array.from(e.target.files))
+          e.target.value = ''
+        }}
       />
 
       {/* Hidden capture inputs (mobile only) */}
@@ -1469,7 +1513,10 @@ export function UploadZone({ defaultDestination, events }: Props) {
         accept="image/*"
         capture="environment"
         className="hidden"
-        onChange={e => { if (e.target.files) addFiles(Array.from(e.target.files)) }}
+        onChange={e => {
+          if (e.target.files) addFiles(Array.from(e.target.files))
+          e.target.value = ''
+        }}
       />
       <input
         ref={videoRef}
@@ -1477,7 +1524,10 @@ export function UploadZone({ defaultDestination, events }: Props) {
         accept="video/*"
         capture="environment"
         className="hidden"
-        onChange={e => { if (e.target.files) addFiles(Array.from(e.target.files)) }}
+        onChange={e => {
+          if (e.target.files) addFiles(Array.from(e.target.files))
+          e.target.value = ''
+        }}
       />
       <input
         ref={galleryRef}
@@ -1485,7 +1535,10 @@ export function UploadZone({ defaultDestination, events }: Props) {
         multiple
         accept="image/*,video/*,.dng,.raw,.cr2,.nef,.arw,.orf"
         className="hidden"
-        onChange={e => { if (e.target.files) addFiles(Array.from(e.target.files)) }}
+        onChange={e => {
+          if (e.target.files) addFiles(Array.from(e.target.files))
+          e.target.value = ''
+        }}
       />
 
       {/* ── Mobile capture buttons (shown only on touch devices) ─────────── */}
@@ -1623,10 +1676,26 @@ export function UploadZone({ defaultDestination, events }: Props) {
               <div className="flex-1">
                 <select
                   value={selEventId}
-                  onChange={e => { setSelEventId(e.target.value); setSelSubId('') }}
+                  onChange={e => {
+                    const nextEventId = e.target.value
+                    setSelEventId(nextEventId)
+                    setSelSubId('')
+                    const chosen = selectedCategoryEvents.find(ev => ev.id === nextEventId)
+                    if (chosen) {
+                      setDestination({
+                        eventId:        chosen.id,
+                        eventName:      chosen.name,
+                        categoryName:   chosen.category.name,
+                        year:           chosen.category.year.year,
+                        subfolderId:    null,
+                        subfolderLabel: null,
+                        subfolders:     chosen.subfolders,
+                      })
+                    }
+                  }}
                   disabled={!selCategory}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl
-                             px-3 py-2 text-sm text-white focus:outline-none focus:ring-2
+                             px-3 py-2 text-base sm:text-sm text-white focus:outline-none focus:ring-2
                              focus:ring-indigo-500 disabled:opacity-50"
                 >
                   <option value="">- Select event -</option>
@@ -1716,10 +1785,16 @@ export function UploadZone({ defaultDestination, events }: Props) {
 
       {/* ── File queue ─────────────────────────────────────────────────────── */}
       {filesState.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              {filesState.length} file{filesState.length !== 1 ? 's' : ''} queued
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              {isUploading
+                ? `Uploading (${doneCount} of ${filesState.length} done)`
+                : doneCount === filesState.length
+                  ? `✓ All ${doneCount} file${doneCount !== 1 ? 's' : ''} uploaded`
+                  : doneCount > 0
+                    ? `${doneCount} uploaded · ${filesState.length - doneCount} remaining`
+                    : `${filesState.length} file${filesState.length !== 1 ? 's' : ''} ready to upload`}
             </p>
             {doneCount > 0 && !isUploading && (
               <button
@@ -1727,55 +1802,111 @@ export function UploadZone({ defaultDestination, events }: Props) {
                   filesRef.current = filesRef.current.filter(f => f.status !== 'done')
                   syncState()
                 }}
-                className="text-xs text-slate-500 hover:text-white transition"
+                className="text-xs text-slate-400 hover:text-white transition underline"
               >
-                Clear done
+                Clear completed
               </button>
             )}
           </div>
 
-          {/* Overall progress bar — visible while uploads are in flight */}
-          {isUploading && filesState.length > 1 && (
-            <div className="bg-slate-800/60 border border-slate-700/40 rounded-xl px-4 py-3 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">
+          {/* Overall progress bar — visible for ANY active upload (1 or more files) */}
+          {isUploading && (
+            <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between text-xs gap-2 flex-wrap">
+                <span className="text-slate-300">
                   Uploading{' '}
-                  <span className="text-white font-semibold">{activeCount}</span>
+                  <span className="text-white font-semibold">{Math.max(1, activeCount)}</span>
                   {' '}of{' '}
                   <span className="text-white font-semibold">{filesState.length}</span>
-                  {' '}files —{' '}
+                  {' '}file{filesState.length !== 1 ? 's' : ''} —{' '}
                   <span className="text-indigo-400 font-semibold">{overallPct}% complete</span>
                 </span>
                 {avgUploadSpeed > 0 && remainingBytes > 0 && (
-                  <span className="text-slate-500 shrink-0 ml-3">
+                  <span className="text-slate-400 shrink-0">
                     {formatSharedSpeed(avgUploadSpeed)} · ~{formatSharedEta(remainingBytes, avgUploadSpeed)} left
                   </span>
                 )}
               </div>
-              <div className="h-2 w-full bg-slate-700 rounded-full overflow-hidden">
+              <div className="h-2.5 w-full bg-slate-700 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-300"
                   style={{ width: `${overallPct}%` }}
                 />
               </div>
-              <div className="flex items-center justify-between text-[10px] text-slate-600">
+              <div className="flex items-center justify-between text-[11px] text-slate-400">
                 <span>
                   {doneCount > 0 ? `${doneCount} done` : ''}
                   {doneCount > 0 && (pendingCount > 0 || errorCount > 0) ? ' · ' : ''}
                   {pendingCount > 0 ? `${pendingCount} queued` : ''}
                   {errorCount > 0 ? `${pendingCount > 0 ? ' · ' : ''}${errorCount} failed` : ''}
                 </span>
-                {doneCount > 0 && (
-                  <button
-                    onClick={() => {
-                      filesRef.current = filesRef.current.filter(f => f.status !== 'done')
-                      syncState()
-                    }}
-                    className="text-slate-500 hover:text-white transition"
+              </div>
+            </div>
+          )}
+
+          {/* ── Unmistakable Upload Complete / Partial-Failure Banner ────────── */}
+          {!isUploading && doneCount > 0 && pendingCount === 0 && activeCount === 0 && (
+            <div className={`rounded-2xl border p-4 space-y-3 shadow-lg ${
+              errorCount === 0
+                ? 'bg-emerald-950/40 border-emerald-500/40'
+                : 'bg-amber-950/40 border-amber-500/40'
+            }`}>
+              <div className="flex items-start gap-3">
+                {errorCount === 0 ? (
+                  <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm sm:text-base font-bold text-white">
+                    {errorCount === 0
+                      ? `Upload Complete — All ${doneCount} file${doneCount !== 1 ? 's' : ''} uploaded!`
+                      : `${doneCount} file${doneCount !== 1 ? 's' : ''} uploaded · ${errorCount} failed`}
+                  </p>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    {destination
+                      ? `Saved in ${destination.categoryName} → ${destination.eventName}${destination.subfolderLabel ? ` / ${destination.subfolderLabel}` : ''} (${formatSharedSize(overallTotalBytes)})`
+                      : `Total size: ${formatSharedSize(overallTotalBytes)}`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 flex-wrap pt-1">
+                {destination && (
+                  <Link
+                    href={`/events/${destination.eventId}${destination.subfolderId ? `?subfolder=${destination.subfolderId}` : ''}`}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold
+                               bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-sm"
                   >
-                    Clear done
+                    Open {destination.subfolderLabel ?? destination.eventName}
+                    <ArrowRight className="w-4 h-4" />
+                  </Link>
+                )}
+
+                {errorCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={uploadAll}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold
+                               bg-amber-600 hover:bg-amber-500 text-white transition"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Retry {errorCount} Failed
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    filesRef.current = filesRef.current.filter(f => f.status !== 'done')
+                    syncState()
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium
+                             bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Upload More Files
+                </button>
               </div>
             </div>
           )}
@@ -1795,8 +1926,8 @@ export function UploadZone({ defaultDestination, events }: Props) {
       )}
 
       {/* ── Upload / retry button ─────────────────────────────────────────── */}
-      {filesState.length > 0 && (
-        <div className="flex items-center gap-3">
+      {filesState.length > 0 && (isUploading || uploadableCount > 0 || !destination) && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <button
             onClick={uploadAll}
             disabled={
@@ -1804,7 +1935,7 @@ export function UploadZone({ defaultDestination, events }: Props) {
               isUploading ||
               (!destination)
             }
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl
+            className="flex-1 flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl
                        text-sm font-semibold text-white transition
                        bg-gradient-to-r from-indigo-600 to-violet-600
                        hover:from-indigo-500 hover:to-violet-500
@@ -1812,17 +1943,15 @@ export function UploadZone({ defaultDestination, events }: Props) {
                        shadow shadow-indigo-500/20"
           >
             {isUploading
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading…</>
-              : uploadableCount > 0
-                ? <><Upload className="w-4 h-4" />
-                    Upload {uploadableCount} file{uploadableCount !== 1 ? 's' : ''}
-                    {errorCount > 0 ? ' (incl. retries)' : ''}</>
-                : <><RefreshCw className="w-4 h-4" /> All done</>
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading ({overallPct}%)…</>
+              : <><Upload className="w-4 h-4" />
+                  Upload {uploadableCount} file{uploadableCount !== 1 ? 's' : ''}
+                  {errorCount > 0 ? ' (incl. retries)' : ''}</>
             }
           </button>
 
           {!destination && (
-            <p className="text-xs text-amber-500">Select a destination first</p>
+            <p className="text-xs text-amber-400 text-center sm:text-left">Select an event destination above first</p>
           )}
         </div>
       )}

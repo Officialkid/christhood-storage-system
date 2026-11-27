@@ -141,7 +141,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ trashed: 0 })
   }
 
-  const scheduledPurgeAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+  const { computeScheduledPurgeAt } = await import('@/lib/appSettings')
+  const scheduledPurgeAt = await computeScheduledPurgeAt()
 
   await prisma.$transaction(async tx => {
     for (const extra of extras) {

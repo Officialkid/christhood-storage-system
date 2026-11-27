@@ -573,10 +573,10 @@ export default function AdminSettingsPage() {
                   <div>
                     <Label>Trash Retention (days)</Label>
                     <div className="flex items-center gap-2">
-                      <input type="number" min={7} max={90} className={FIELD_SM} value={f('trash_retention_days')} onChange={e=>set('trash_retention_days',e.target.value)} />
+                      <input type="number" min={1} max={90} className={FIELD_SM} value={f('trash_retention_days')} onChange={e=>set('trash_retention_days',e.target.value)} />
                       <span className="text-xs text-slate-500">days</span>
                     </div>
-                    <Hint>Files in Trash are permanently purged after this many days.</Hint>
+                    <Hint>Files in Trash are permanently purged after this many days (default: 13 days).</Hint>
                   </div>
                   <div>
                     <Label>Max File Size (MB)</Label>
@@ -710,7 +710,7 @@ export default function AdminSettingsPage() {
                 <div className="space-y-3">
                   <p className="text-sm text-slate-300">
                     Users can enable 2FA from their{' '}
-                    <a href="/dashboard/profile" className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
+                    <a href="/profile" className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
                       Profile Settings
                     </a>
                     . Once enabled, they will be prompted to verify with their authenticator app at each sign-in.

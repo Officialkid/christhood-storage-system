@@ -209,7 +209,7 @@ export function PreviewModal({ file, allFiles, role, onClose, onStatusChanged, o
       onClick={(e) => { if (e.target === backdropRef.current) onClose() }}
     >
       <div
-        className="relative flex flex-col lg:flex-row w-full max-w-6xl max-h-[90vh]
+        className="relative flex flex-col lg:flex-row w-full max-w-6xl max-h-[90dvh]
                    bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden
                    shadow-2xl shadow-black/60"
         role="dialog"
@@ -228,8 +228,11 @@ export function PreviewModal({ file, allFiles, role, onClose, onStatusChanged, o
         </button>
 
         {/* ── Media pane ─────────────────────────────────────────────────────── */}
-        <div className="flex-1 min-h-0 bg-slate-950 flex items-center justify-center
-                        relative overflow-hidden min-h-[280px] lg:min-h-[500px]">
+        <div
+          data-dark-overlay="true"
+          className="flex-1 min-h-0 bg-black/95 flex items-center justify-center
+                     relative overflow-hidden min-h-[240px] lg:min-h-[500px]"
+        >
           {loading && (
             <div className="flex flex-col items-center gap-3 text-slate-500">
               <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />

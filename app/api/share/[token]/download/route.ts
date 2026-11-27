@@ -104,23 +104,28 @@ export async function GET(
   const ip        = extractIp(req)
   const userAgent = req.headers.get('user-agent') ?? 'unknown'
 
-  // ── Single file download ───────────────────────────────────────────────────
+  // ── Single file download (or inline preview when ?preview=1) ───────────────
+  const isPreview = req.nextUrl.searchParams.get('preview') === '1'
   if (fileId) {
     const target = allFiles.find(f => f.id === fileId)
     if (!target) return NextResponse.json({ error: 'File not in this share link.' }, { status: 404 })
 
-    const presignedUrl = await getPresignedDownloadUrl(target.r2Key, 300)
+    const presignedUrl = await getPresignedDownloadUrl(
+      target.r2Key,
+      3600,
+      isPreview ? undefined : target.name,
+    )
 
-    // Log the download
-    prisma.shareLinkAccess.create({
-      data: { shareLinkId: link.id, ipAddress: ip, userAgent, downloaded: true },
-    }).catch(() => {})
+    if (!isPreview) {
+      prisma.shareLinkAccess.create({
+        data: { shareLinkId: link.id, ipAddress: ip, userAgent, downloaded: true },
+      }).catch(() => {})
 
-    // Increment download count
-    prisma.shareLink.update({
-      where: { id: link.id },
-      data:  { downloadCount: { increment: 1 } },
-    }).catch(() => {})
+      prisma.shareLink.update({
+        where: { id: link.id },
+        data:  { downloadCount: { increment: 1 } },
+      }).catch(() => {})
+    }
 
     return NextResponse.json({ url: presignedUrl, filename: target.name })
   }

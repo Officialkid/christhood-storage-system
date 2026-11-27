@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { deleteObject } from '@/lib/r2'
+import { purgeTrashedMediaFile } from '@/lib/trashPurge'
 import { log } from '@/lib/activityLog'
 import { logger } from '@/lib/logger'
 import { sendAdminPurgeAlert, type PurgedFileInfo } from '@/lib/email'
@@ -59,17 +59,7 @@ export async function GET(req: NextRequest) {
     const { mediaFile } = item
 
     try {
-      // 1. Delete from Cloudflare R2
-      await deleteObject(mediaFile.r2Key)
-
-      // 2. Mark MediaFile as PURGED in DB + delete TrashItem atomically
-      await prisma.$transaction([
-        prisma.mediaFile.update({
-          where: { id: mediaFile.id },
-          data: { status: 'PURGED' as any, purgedAt: now } as any, // new field + new enum value; safe after db push
-        }),
-        prisma.trashItem.delete({ where: { id: item.id } }),
-      ])
+      await purgeTrashedMediaFile(item.id, mediaFile.id, now)
 
       // 3. Log — entry is permanent, even though the file is gone
       await log('FILE_DELETED', item.deletedById, {

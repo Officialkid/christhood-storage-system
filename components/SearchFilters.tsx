@@ -7,12 +7,14 @@ import { ChevronDown, ChevronUp, SlidersHorizontal, RotateCcw } from 'lucide-rea
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface YearOption     { id: string; year: number }
 interface CategoryOption { id: string; name: string; yearId: string; year: YearOption }
+interface EventOption    { id: string; name: string; categoryId: string; year: number }
 interface TagOption      { id: string; name: string }
 interface UserOption     { id: string; username: string | null; email: string }
 
 export interface FilterOptions {
   years:      YearOption[]
   categories: CategoryOption[]
+  events?:    EventOption[]
   tags:       TagOption[]
   users:      UserOption[]
 }
@@ -79,6 +81,13 @@ export function SearchFilters({ options, isAdmin }: Props) {
   const visibleCategories = year
     ? options.categories.filter(c => c.year.year === parseInt(year, 10))
     : options.categories
+
+  // Events filtered to selected year / category
+  const visibleEvents = (options.events ?? []).filter(ev => {
+    if (categoryId && ev.categoryId !== categoryId) return false
+    if (year && ev.year !== parseInt(year, 10)) return false
+    return true
+  })
 
   function toggleStatus(s: string) {
     setStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
@@ -162,14 +171,14 @@ export function SearchFilters({ options, isAdmin }: Props) {
       {open && (
         <form onSubmit={handleApply} className="border-t border-slate-800 px-5 py-4 space-y-5">
 
-          {/* Row 1: Year + Category + Sort */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Row 1: Year + Category + Event + Sort */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Year */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Year</label>
               <select
                 value={year}
-                onChange={e => { setYear(e.target.value); setCategoryId('') }}
+                onChange={e => { setYear(e.target.value); setCategoryId(''); setEventId('') }}
                 className={selectCls}
               >
                 <option value="">All years</option>
@@ -182,10 +191,25 @@ export function SearchFilters({ options, isAdmin }: Props) {
             {/* Category */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Category</label>
-              <select value={categoryId} onChange={e => setCategoryId(e.target.value)} className={selectCls}>
+              <select
+                value={categoryId}
+                onChange={e => { setCategoryId(e.target.value); setEventId('') }}
+                className={selectCls}
+              >
                 <option value="">All categories</option>
                 {visibleCategories.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Event */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Event</label>
+              <select value={eventId} onChange={e => setEventId(e.target.value)} className={selectCls}>
+                <option value="">All events</option>
+                {visibleEvents.map(ev => (
+                  <option key={ev.id} value={ev.id}>{ev.name}</option>
                 ))}
               </select>
             </div>
@@ -340,5 +364,4 @@ const selectCls = `w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-
   text-slate-200 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition`
 
 const inputCls = `w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm
-  text-slate-200 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition
-  [color-scheme:dark]`
+  text-slate-200 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition`

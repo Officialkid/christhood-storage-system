@@ -73,24 +73,36 @@ export default async function SearchPage(props: PageProps) {
     uploaderIds.length || statuses.length || tags.length || dateFrom || dateTo)
 
   // ── Fetch filter options (for SearchFilters panel) ────────────────────────
-  const [years, categories, tagOptions, users] = await Promise.all([
+  const [years, categories, eventsList, tagOptions, users] = await Promise.all([
     prisma.year.findMany({ orderBy: { year: 'desc' } }),
     prisma.eventCategory.findMany({ include: { year: true }, orderBy: { name: 'asc' } }),
+    prisma.event.findMany({
+      include: { category: { include: { year: true } } },
+      orderBy: [{ createdAt: 'desc' }],
+    }),
     prisma.tag.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
     isAdmin
       ? prisma.user.findMany({ select: { id: true, username: true, email: true }, orderBy: { username: 'asc' } })
       : Promise.resolve([] as { id: string; username: string | null; email: string }[]),
   ])
 
-  const filterOptions: FilterOptions = { years, categories, tags: tagOptions, users }
-
-  // ── Build search WHERE ────────────────────────────────────────────────────
-  let results: Awaited<ReturnType<typeof runSearch>> = { files: [], total: 0 }
-  if (hasFilters) {
-    results = await runSearch({
-      q, year, catId, eventId, fileType, uploaderIds, statuses, tags, dateFrom, dateTo, sort, page, isAdmin,
-    })
+  const filterOptions: FilterOptions = {
+    years,
+    categories,
+    events: eventsList.map(ev => ({
+      id: ev.id,
+      name: ev.name,
+      categoryId: ev.categoryId,
+      year: ev.category.year.year,
+    })),
+    tags: tagOptions,
+    users,
   }
+
+  // ── Build search WHERE (shows recent media when no filters are active) ────
+  const results = await runSearch({
+    q, year, catId, eventId, fileType, uploaderIds, statuses, tags, dateFrom, dateTo, sort, page, isAdmin,
+  })
 
   const { files, total } = results
   const totalPages = Math.ceil(total / LIMIT)
@@ -128,106 +140,118 @@ export default async function SearchPage(props: PageProps) {
       {/* Filter panel */}
       <SearchFilters options={filterOptions} isAdmin={isAdmin} />
       {/* Results */}
-      {!hasFilters ? (
-        <div className="flex flex-col items-center justify-center py-24 text-slate-600">
-          <Search className="w-10 h-10 mb-3 opacity-30" />
-          <p className="text-sm">Enter a keyword or apply filters to search.</p>
+      <>
+        {/* Results meta */}
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-slate-400">
+            {!hasFilters
+              ? `Recent uploads (${total.toLocaleString()} total${totalPages > 1 ? ` — page ${page} of ${totalPages}` : ''})`
+              : total === 0
+              ? 'No results found'
+              : `${total.toLocaleString()} result${total !== 1 ? 's' : ''}${
+                  totalPages > 1 ? ` — page ${page} of ${totalPages}` : ''
+                }`}
+          </p>
         </div>
-      ) : (
-        <>
-          {/* Results meta */}
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-400">
-              {total === 0
-                ? 'No results found'
-                : `${total.toLocaleString()} result${total !== 1 ? 's' : ''}${
-                    totalPages > 1 ? ` — page ${page} of ${totalPages}` : ''
-                  }`}
+
+        {files.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-600">
+            <FileQuestion className="w-10 h-10 mb-3 opacity-40" />
+            <p className="text-sm">
+              {hasFilters ? 'No files match your search.' : 'No media files have been uploaded yet.'}
             </p>
           </div>
-
-          {files.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-600">
-              <FileQuestion className="w-10 h-10 mb-3 opacity-40" />
-              <p className="text-sm">No files match your search.</p>
-            </div>
-          ) : (
-            <>
-              {/* Results grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {files.map(f => (
+        ) : (
+          <>
+            {/* Results grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              {files.map(f => (
+                <div
+                  key={f.id}
+                  className="group relative flex flex-col rounded-2xl overflow-hidden bg-slate-900 border border-slate-800
+                             hover:border-indigo-500/50 transition-all hover:shadow-lg hover:shadow-indigo-500/10"
+                >
+                  {/* Thumbnail — opens the exact file detail/preview page */}
                   <Link
-                    key={f.id}
-                    href={`/events/${f.breadcrumb.eventId}${f.breadcrumb.subfolderId ? `?subfolder=${f.breadcrumb.subfolderId}` : ''}`}
-                    className="group relative rounded-2xl overflow-hidden bg-slate-900 border border-slate-800
-                               hover:border-indigo-500/50 transition-all hover:shadow-lg hover:shadow-indigo-500/10"
+                    href={`/media/${f.id}`}
+                    data-dark-overlay="true"
+                    className="aspect-square bg-slate-800 relative overflow-hidden block"
                   >
-                    {/* Thumbnail */}
-                    <div className="aspect-square bg-slate-800 relative overflow-hidden">
-                      {f.thumbnailUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        (<img
-                          src={f.thumbnailUrl}
-                          alt={f.originalName}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />)
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          {f.fileType === 'VIDEO'
-                            ? <Video className="w-10 h-10 text-slate-600" />
-                            : <ImageIcon className="w-10 h-10 text-slate-600" />}
-                        </div>
-                      )}
+                    {f.thumbnailUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      (<img
+                        src={f.thumbnailUrl}
+                        alt={f.originalName}
+                        loading="lazy"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />)
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        {f.fileType === 'VIDEO'
+                          ? <Video className="w-10 h-10 text-slate-600" />
+                          : <ImageIcon className="w-10 h-10 text-slate-600" />}
+                      </div>
+                    )}
 
-                      {/* File type badge */}
-                      <span className={`absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px]
-                        font-bold uppercase tracking-wide
-                        ${f.fileType === 'VIDEO'
-                          ? 'bg-violet-950/90 text-violet-300' : 'bg-slate-950/80 text-slate-300'}`}>
-                        {f.fileType === 'VIDEO' ? 'VID' : 'IMG'}
-                      </span>
+                    {/* File type badge */}
+                    <span className={`absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px]
+                      font-bold uppercase tracking-wide
+                      ${f.fileType === 'VIDEO'
+                        ? 'bg-violet-950/90 text-white' : 'bg-black/70 text-white'}`}>
+                      {f.fileType === 'VIDEO' ? 'VID' : 'IMG'}
+                    </span>
 
-                      {/* Status badge */}
-                      <span className={`absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px]
-                        font-medium ${STATUS_PILL[f.status] ?? 'bg-slate-700 text-slate-300'}`}>
-                        {STATUS_LABEL[f.status] ?? f.status}
-                      </span>
-                    </div>
+                    {/* Status badge */}
+                    <span className={`absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px]
+                      font-medium ${STATUS_PILL[f.status] ?? 'bg-slate-700 text-slate-300'}`}>
+                      {STATUS_LABEL[f.status] ?? f.status}
+                    </span>
+                  </Link>
 
-                    {/* Info */}
-                    <div className="p-2.5 space-y-1.5">
-                      <p className="text-xs font-medium text-slate-200 truncate" title={f.originalName}>
+                  {/* Info */}
+                  <div className="p-2.5 space-y-1.5 flex-1 flex flex-col justify-between">
+                    <div className="space-y-1">
+                      <Link
+                        href={`/media/${f.id}`}
+                        className="block text-xs font-medium text-slate-200 hover:text-indigo-400 truncate transition-colors"
+                        title={f.originalName}
+                      >
                         {f.originalName}
-                      </p>
+                      </Link>
 
-                      {/* Breadcrumb */}
-                      <div className="flex items-center gap-0.5 text-[10px] text-slate-500 flex-wrap">
+                      {/* Breadcrumb — links directly to the Event / Day folder */}
+                      <Link
+                        href={`/events/${f.breadcrumb.eventId}${f.breadcrumb.subfolderId ? `?subfolder=${f.breadcrumb.subfolderId}` : ''}`}
+                        className="flex items-center gap-0.5 text-[10px] text-slate-500 hover:text-indigo-400 flex-wrap transition-colors"
+                        title={`Open folder: ${f.breadcrumb.event}`}
+                      >
                         <span className="text-indigo-400 font-medium">{f.breadcrumb.year}</span>
                         <ChevronRight className="w-2.5 h-2.5 shrink-0" />
                         <span className="truncate max-w-[60px]" title={f.breadcrumb.category}>
                           {f.breadcrumb.category}
                         </span>
                         <ChevronRight className="w-2.5 h-2.5 shrink-0" />
-                        <span className="truncate max-w-[60px]" title={f.breadcrumb.event}>
+                        <span className="truncate max-w-[70px]" title={f.breadcrumb.event}>
                           {f.breadcrumb.event}
                         </span>
                         {f.breadcrumb.subfolder && (
                           <>
                             <ChevronRight className="w-2.5 h-2.5 shrink-0" />
-                            <span className="truncate max-w-[50px]">{f.breadcrumb.subfolder}</span>
+                            <span className="truncate max-w-[55px]">{f.breadcrumb.subfolder}</span>
                           </>
                         )}
-                      </div>
-
-                      {/* Meta */}
-                      <div className="flex items-center justify-between text-[10px] text-slate-600">
-                        <span>{fmtBytes(f.fileSize)}</span>
-                        <span>{new Date(f.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}</span>
-                      </div>
+                      </Link>
                     </div>
-                  </Link>
-                ))}
-              </div>
+
+                    {/* Meta */}
+                    <div className="flex items-center justify-between text-[10px] text-slate-500">
+                      <span>{fmtBytes(f.fileSize)}</span>
+                      <span>{new Date(f.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
 
               {/* Pagination */}
               {totalPages > 1 && (
@@ -279,8 +303,7 @@ export default async function SearchPage(props: PageProps) {
               )}
             </>
           )}
-        </>
-      )}
+      </>
     </div>
   );
 }
@@ -360,6 +383,8 @@ async function runSearch(opts: {
     rawFiles.map(async (m) => {
       const thumbnailUrl = m.thumbnailKey
         ? await getPresignedDownloadUrl(m.thumbnailKey)
+        : m.fileType === 'PHOTO'
+        ? await getPresignedDownloadUrl(m.r2Key)
         : null
       return {
         ...m,

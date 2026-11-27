@@ -457,12 +457,12 @@ export default function ChatbotWidget() {
       {/* ── Chat Panel ──────────────────────────────────────────────────── */}
       <div
         className={[
-          // Layout
-          'fixed z-[60] flex flex-col bg-white shadow-2xl border border-slate-200 overflow-hidden',
-          // Mobile: nearly full-screen, leaving room for the FAB below
-          'inset-x-3 top-14 bottom-24 rounded-2xl',
+          // Layout — unified CMMS slate surface (adapts cleanly to Dark & Light mode via .cmms-app)
+          'fixed z-[60] flex flex-col bg-slate-900 shadow-2xl border border-slate-800 overflow-hidden',
+          // Mobile: nearly full-screen, leaving room for TopBar above and MobileBottomNav/FAB below
+          'inset-x-3 top-14 bottom-[5.25rem] rounded-2xl',
           // sm+: anchored to bottom-right, capped at 560px but never taller than the viewport
-          'sm:inset-auto sm:bottom-20 sm:right-6 sm:top-auto sm:w-[22rem] sm:h-[min(560px,calc(100vh-6rem))]',
+          'sm:inset-auto sm:bottom-20 sm:right-6 sm:top-auto sm:w-[22rem] sm:h-[min(560px,calc(100dvh-6rem))]',
           // Open / close animation
           isOpen
             ? 'opacity-100 translate-y-0 pointer-events-auto'
@@ -475,17 +475,17 @@ export default function ChatbotWidget() {
         aria-hidden={!isOpen}
       >
         {/* ── Header ──────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-3 px-4 py-3 bg-slate-900 shrink-0">
+        <div className="flex items-center gap-3 px-4 py-3 bg-slate-950 border-b border-slate-800 shrink-0">
           <div className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 shrink-0">
             <Bot size={15} className="text-white" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-white leading-none">CMMS Assistant</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">Here to help</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Zara · Here to help</p>
           </div>
           <button
             onClick={closeChat}
-            className="flex items-center justify-center w-8 h-8 rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+            className="flex items-center justify-center w-8 h-8 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             aria-label="Close chat"
           >
             <X size={16} />
@@ -494,17 +494,17 @@ export default function ChatbotWidget() {
 
         {/* ── Offline banner ──────────────────────────────────────────── */}
         {isOffline && (
-          <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs">
-            <WifiOff size={13} className="shrink-0 text-amber-600" />
+          <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-amber-950/60 border-b border-amber-500/30 text-amber-300 text-xs">
+            <WifiOff size={13} className="shrink-0 text-amber-400" />
             <span>The assistant is currently offline. Please try again later or contact your admin.</span>
           </div>
         )}
 
         {/* ── Privacy Notice Banner ────────────────────────────────────── */}
         {showPrivacyNotice && (
-          <div className="shrink-0 mx-4 mt-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-900">
-            <p className="font-semibold mb-1">👋 About Zara&apos;s conversation logs</p>
-            <p className="mb-2 leading-relaxed">
+          <div className="shrink-0 mx-4 mt-3 rounded-xl border border-indigo-500/30 bg-indigo-950/50 p-3 text-xs text-slate-200">
+            <p className="font-semibold text-white mb-1">👋 About Zara&apos;s conversation logs</p>
+            <p className="mb-2 leading-relaxed text-slate-300">
               To improve Zara over time, anonymised summaries of conversations may be
               saved — with your name, email, and other personal details removed.
               You can opt out at any time in your <strong>Profile → Privacy settings</strong>.
@@ -522,7 +522,7 @@ export default function ChatbotWidget() {
                   localStorage.setItem(LS_PRIVACY_KEY, '1')
                   setShowPrivacyNotice(false)
                 }}
-                className="px-3 py-1 rounded-lg border border-indigo-300 text-indigo-700 hover:bg-indigo-100 transition-colors"
+                className="px-3 py-1 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 transition-colors"
               >
                 Opt out of logging
               </button>
@@ -531,7 +531,7 @@ export default function ChatbotWidget() {
                   localStorage.setItem(LS_PRIVACY_KEY, '1')
                   setShowPrivacyNotice(false)
                 }}
-                className="px-3 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+                className="px-3 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
               >
                 Got it, let&apos;s chat
               </button>
@@ -552,8 +552,8 @@ export default function ChatbotWidget() {
               >
                 {/* Bot avatar — shown left of every assistant bubble */}
                 {msg.role === 'assistant' && (
-                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 shrink-0 mb-0.5">
-                    <Bot size={11} className="text-indigo-600" />
+                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-500/15 border border-indigo-500/30 shrink-0 mb-0.5">
+                    <Bot size={11} className="text-indigo-400" />
                   </div>
                 )}
 
@@ -572,7 +572,7 @@ export default function ChatbotWidget() {
                       : true
 
                     return (
-                      <div className={`max-w-[90%] rounded-2xl rounded-bl-sm border-2 ${style.cardBorder} ${style.cardBg} p-3.5 shadow-sm`}>
+                      <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-slate-700 bg-slate-800/90 p-3.5 shadow-sm">
 
                         {/* ─ Header ─────────────────────────────────────────── */}
                         <div className="flex items-start gap-2 mb-2.5">
@@ -580,16 +580,16 @@ export default function ChatbotWidget() {
                             {style.headerIcon}
                           </span>
                           <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-semibold leading-snug ${style.headlineColor}`}>
+                            <p className="text-sm font-semibold leading-snug text-white">
                               {aw?.headline ?? '⚡ Action Required'}
                             </p>
                             <span className={[
-                              'inline-block text-[9px] uppercase tracking-widest font-bold mt-1 px-1.5 py-0.5 rounded',
-                              risk === ActionRiskLevel.SAFE      ? 'bg-green-100 text-green-700' :
-                              risk === ActionRiskLevel.MODERATE  ? 'bg-blue-100 text-blue-700'  :
-                              risk === ActionRiskLevel.SENSITIVE ? 'bg-amber-100 text-amber-700' :
-                              risk === ActionRiskLevel.HIGH      ? 'bg-orange-100 text-orange-700' :
-                                                                   'bg-red-100 text-red-700',
+                              'inline-block text-[9px] uppercase tracking-widest font-bold mt-1 px-1.5 py-0.5 rounded border',
+                              risk === ActionRiskLevel.SAFE      ? 'bg-emerald-950/60 border-emerald-500/30 text-emerald-300' :
+                              risk === ActionRiskLevel.MODERATE  ? 'bg-indigo-950/60 border-indigo-500/30 text-indigo-300'  :
+                              risk === ActionRiskLevel.SENSITIVE ? 'bg-amber-950/60 border-amber-500/30 text-amber-300' :
+                              risk === ActionRiskLevel.HIGH      ? 'bg-amber-950/60 border-amber-500/40 text-amber-300' :
+                                                                   'bg-red-950/60 border-red-500/40 text-red-300',
                             ].join(' ')}>
                               {risk} risk
                             </span>
@@ -600,7 +600,7 @@ export default function ChatbotWidget() {
                         {msg.confirmationState === 'pending' && (
                           <>
                             {/* Zara's confirmation message */}
-                            <p className="text-sm text-slate-700 mb-3 whitespace-pre-wrap leading-relaxed">
+                            <p className="text-sm text-slate-200 mb-3 whitespace-pre-wrap leading-relaxed">
                               {msg.confirmationMessage}
                             </p>
 
@@ -608,11 +608,11 @@ export default function ChatbotWidget() {
                             {aw && (
                               <div className="space-y-2.5 mb-3">
                                 <div>
-                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">What will happen</p>
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">What will happen</p>
                                   <ul className="space-y-0.5">
                                     {aw.whatWillHappen.map((item, i) => (
-                                      <li key={i} className="flex items-start gap-1.5 text-xs text-slate-700">
-                                        <span className="text-green-500 mt-0.5 shrink-0">✓</span>
+                                      <li key={i} className="flex items-start gap-1.5 text-xs text-slate-200">
+                                        <span className="text-emerald-400 mt-0.5 shrink-0">✓</span>
                                         <span>{item}</span>
                                       </li>
                                     ))}
@@ -620,10 +620,10 @@ export default function ChatbotWidget() {
                                 </div>
 
                                 <div>
-                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">What stays the same</p>
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">What stays the same</p>
                                   <ul className="space-y-0.5">
                                     {aw.whatWillNOTHappen.map((item, i) => (
-                                      <li key={i} className="flex items-start gap-1.5 text-xs text-slate-500">
+                                      <li key={i} className="flex items-start gap-1.5 text-xs text-slate-400">
                                         <span className="mt-0.5 shrink-0">○</span>
                                         <span>{item}</span>
                                       </li>
@@ -633,17 +633,17 @@ export default function ChatbotWidget() {
 
                                 {/* Can be undone */}
                                 <div className="text-xs">
-                                  <span className={aw.canBeUndone ? 'text-green-700 font-semibold' : 'text-red-600 font-semibold'}>
+                                  <span className={aw.canBeUndone ? 'text-emerald-400 font-semibold' : 'text-red-400 font-semibold'}>
                                     {aw.canBeUndone ? '↩ Reversible' : '⚠ Permanent'}
                                   </span>
                                   {aw.howToUndo && (
-                                    <p className="text-slate-500 mt-0.5">{aw.howToUndo}</p>
+                                    <p className="text-slate-400 mt-0.5">{aw.howToUndo}</p>
                                   )}
                                 </div>
 
                                 {/* Preservation note */}
                                 {aw.preservationNote && (
-                                  <p className="text-[10px] text-slate-400 italic border-t border-slate-200 pt-2">
+                                  <p className="text-[10px] text-slate-400 italic border-t border-slate-700 pt-2">
                                     🔒 {aw.preservationNote}
                                   </p>
                                 )}
@@ -653,7 +653,7 @@ export default function ChatbotWidget() {
                             {/* CRITICAL: type-to-confirm input + countdown */}
                             {isCritical && (
                               <div className="mb-3">
-                                <p className="text-xs font-semibold text-red-700 mb-1.5">
+                                <p className="text-xs font-semibold text-red-400 mb-1.5">
                                   Type <strong>CONFIRM</strong> below to unlock this action:
                                 </p>
                                 <input
@@ -668,10 +668,10 @@ export default function ChatbotWidget() {
                                     }
                                   }}
                                   placeholder="Type CONFIRM…"
-                                  className="w-full text-xs px-3 py-2 rounded-lg border-2 border-red-300 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-400 font-mono tracking-wider"
+                                  className="w-full text-base sm:text-xs px-3 py-2 rounded-lg border-2 border-red-500/50 bg-slate-900 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-red-400 font-mono tracking-wider"
                                 />
                                 {typeof countdown === 'number' && countdown > 0 && (
-                                  <p className="text-xs text-red-600 mt-1.5 font-medium">
+                                  <p className="text-xs text-red-400 mt-1.5 font-medium">
                                     Wait {countdown}s before confirming…
                                   </p>
                                 )}
@@ -695,7 +695,7 @@ export default function ChatbotWidget() {
                               <button
                                 onClick={() => handleCancel(msg.id)}
                                 disabled={isStreaming}
-                                className="text-xs px-3 py-1.5 rounded-full border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                className="text-xs px-3 py-1.5 rounded-full border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                               >
                                 ✗ No, cancel
                               </button>
@@ -704,7 +704,7 @@ export default function ChatbotWidget() {
                         )}
 
                         {msg.confirmationState === 'loading' && (
-                          <div className="flex items-center gap-2 text-indigo-600 text-sm">
+                          <div className="flex items-center gap-2 text-indigo-400 text-sm">
                             <Loader2 size={14} className="animate-spin shrink-0" />
                             <span>Executing action…</span>
                           </div>
@@ -713,7 +713,7 @@ export default function ChatbotWidget() {
                           <p className="text-xs text-slate-400 italic">Action completed.</p>
                         )}
                         {msg.confirmationState === 'cancelled' && (
-                          <p className="text-sm text-slate-500">No problem — the action was cancelled. Is there anything else I can help with? 😊</p>
+                          <p className="text-sm text-slate-300">No problem — the action was cancelled. Is there anything else I can help with? 😊</p>
                         )}
                         {msg.confirmationState === 'expired' && (
                           <p className="text-xs text-slate-400 italic">This action expired. Please ask again.</p>
@@ -724,10 +724,10 @@ export default function ChatbotWidget() {
                 ) : (
                   <div
                     className={[
-                      'max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
+                      'max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
                       msg.role === 'user'
                         ? 'bg-indigo-600 text-white rounded-br-sm'
-                        : 'bg-slate-100 text-slate-800 rounded-bl-sm',
+                        : 'bg-slate-800 text-slate-200 border border-slate-700/60 rounded-bl-sm',
                     ].join(' ')}
                   >
                     {/* Typing indicator: animated dots + label while waiting for first token */}
@@ -745,7 +745,7 @@ export default function ChatbotWidget() {
                         </span>
                         {/* Tool activity pill */}
                         {toolActivity && (
-                          <span className="flex items-center gap-1 text-[11px] text-indigo-500 pl-0.5">
+                          <span className="flex items-center gap-1 text-[11px] text-indigo-400 pl-0.5">
                             <span className="animate-pulse">🔍</span>
                             <span>{toolActivity}</span>
                           </span>
@@ -766,7 +766,7 @@ export default function ChatbotWidget() {
                       key={chip}
                       onClick={() => sendMessage(chip)}
                       disabled={isStreaming}
-                      className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left"
+                      className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-950/40 text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left"
                     >
                       {chip}
                     </button>
@@ -783,7 +783,7 @@ export default function ChatbotWidget() {
         {/* ── Input ───────────────────────────────────────────────────── */}
         <form
           onSubmit={handleSubmit}
-          className="shrink-0 flex items-center gap-2 px-3 py-3 border-t border-slate-200 bg-white"
+          className="shrink-0 flex items-center gap-2 px-3 py-3 border-t border-slate-800 bg-slate-950"
         >
           <input
             ref={inputRef}
@@ -793,13 +793,13 @@ export default function ChatbotWidget() {
             placeholder="Ask a question…"
             disabled={isStreaming}
             autoComplete="off"
-            className="flex-1 text-sm px-3.5 py-2 rounded-full border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent disabled:opacity-50 transition"
+            className="flex-1 text-base sm:text-sm px-3.5 py-2 rounded-full border border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-transparent disabled:opacity-50 transition"
           />
           <button
             type="submit"
             disabled={!input.trim() || isStreaming}
             aria-label="Send message"
-            className="flex items-center justify-center w-9 h-9 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+            className="flex items-center justify-center w-9 h-9 rounded-full bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
           >
             <Send size={15} />
           </button>
@@ -807,7 +807,7 @@ export default function ChatbotWidget() {
       </div>
 
       {/* ── Floating Action Button ───────────────────────────────────────── */}
-      <div data-tour="chatbot-fab" className="fixed bottom-20 right-5 sm:bottom-8 sm:right-6 z-[60]">
+      <div data-tour="chatbot-fab" className="fixed bottom-[4.75rem] right-4 sm:bottom-8 sm:right-6 z-[60]">
         {/* Pulse ring — a faint expanding ring shown on first visit */}
         {showPulse && !isOpen && (
           <span
@@ -820,11 +820,11 @@ export default function ChatbotWidget() {
           onClick={isOpen ? closeChat : openChat}
           aria-expanded={isOpen}
           aria-label={isOpen ? 'Close help chat' : 'Open help chat'}
-          className="relative flex items-center gap-2 px-4 py-3 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 hover:scale-105 active:scale-95 transition-all duration-200 font-medium text-sm"
+          className="relative flex items-center gap-1.5 sm:gap-2 px-3 py-2.5 sm:px-4 sm:py-3 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 hover:scale-105 active:scale-95 transition-all duration-200 font-medium text-xs sm:text-sm"
         >
           {isOpen
             ? <X size={18} />
-            : <><MessageCircle size={18} /><span>Help</span></>
+            : <><MessageCircle size={17} /><span>Help</span></>
           }
         </button>
       </div>

@@ -20,24 +20,41 @@ export const metadata: Metadata = {
     ],
   },
   other: {
-    // Prevent phone number detection on iOS
     'format-detection': 'telephone=no',
-    // Chrome's modern equivalent of apple-mobile-web-app-capable (silences deprecation warning)
     'mobile-web-app-capable': 'yes',
   },
 }
 
 export const viewport: Viewport = {
-  themeColor: '#0f172a',
+  themeColor: '#020617',
   width: 'device-width',
   initialScale: 1,
   minimumScale: 1,
   viewportFit: 'cover',
 }
 
+const THEME_INIT_SCRIPT = `
+(function() {
+  try {
+    var stored = localStorage.getItem('cmms-theme') || 'system';
+    var resolved = stored === 'light' || stored === 'dark'
+      ? stored
+      : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    var root = document.documentElement;
+    root.classList.remove('light', 'dark');
+    root.classList.add(resolved);
+    root.setAttribute('data-theme', resolved);
+    root.style.colorScheme = resolved;
+  } catch (e) {}
+})();
+`
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="antialiased">
         <Providers>
           {children}

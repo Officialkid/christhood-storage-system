@@ -176,11 +176,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={ctx}>
       {children}
 
-      {/* Toast tray — bottom-right, above any z-50 modals */}
+      {/* Toast tray — bottom-right, above mobile nav & any z-50 modals */}
       {toasts.length > 0 && (
         <div
           aria-label="Notifications"
-          className="fixed bottom-6 right-6 z-[9999] flex flex-col-reverse gap-2 pointer-events-none"
+          className="fixed bottom-20 right-4 left-4 sm:left-auto sm:bottom-6 sm:right-6 z-[9999] flex flex-col-reverse items-end gap-2 pointer-events-none"
         >
           {[...toasts].reverse().map((t) => (
             <div key={t.id} className="pointer-events-auto">

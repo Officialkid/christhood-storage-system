@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession }          from 'next-auth'
 import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
-import { deleteObject }              from '@/lib/r2'
+import { purgeTrashedMediaFile }     from '@/lib/trashPurge'
 import { log }                       from '@/lib/activityLog'
 import { logger }                    from '@/lib/logger'
 
@@ -29,17 +29,7 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ trash
   const { mediaFile } = trashItem
 
   try {
-    // 1. Delete from Cloudflare R2
-    await deleteObject(mediaFile.r2Key)
-
-    // 2. Mark as PURGED + remove TrashItem atomically
-    await prisma.$transaction([
-      prisma.mediaFile.update({
-        where: { id: mediaFile.id },
-        data:  { status: 'PURGED' as any, purgedAt: new Date() } as any,
-      }),
-      prisma.trashItem.delete({ where: { id: trashItemId } }),
-    ])
+    await purgeTrashedMediaFile(trashItemId, mediaFile.id)
   } catch (err) {
     logger.error('FILE_PURGE_FAILED', { userId: adminId, userRole: 'ADMIN', route: '/api/admin/trash/[trashItemId]', fileId: mediaFile.id, error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'Failed to permanently delete file' })
     return NextResponse.json(

@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { log } from '@/lib/activityLog'
 import { logger } from '@/lib/logger'
+import { getTrashRetentionDays } from '@/lib/appSettings'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,12 +62,15 @@ export async function GET(req: NextRequest) {
         : null,
     }))
 
+    const retentionDays = await getTrashRetentionDays()
+
     return NextResponse.json({
       items: serializedItems,
       total,
       page,
       limit,
       pages: Math.max(1, Math.ceil(total / limit)),
+      retentionDays,
     })
   } catch (err) {
     logger.error('TRASH_QUERY_FAILED', { route: '/api/admin/trash', error: (err as Error)?.message, errorCode: (err as any)?.code, message: 'Failed to load trash' })

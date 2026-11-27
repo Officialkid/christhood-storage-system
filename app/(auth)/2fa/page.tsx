@@ -73,7 +73,7 @@ function TwoFactorInner() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#020817] px-4 relative overflow-hidden">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-slate-950 px-4 py-8 relative overflow-hidden">
       {/* ambient blobs */}
       <div className="pointer-events-none absolute -top-40 -left-40 w-[500px] h-[500px]
                       rounded-full bg-indigo-600/20 blur-[120px]" />

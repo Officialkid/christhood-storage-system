@@ -4,6 +4,7 @@ import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { log }                       from '@/lib/activityLog'
 import { SETTING_DEFAULTS }          from '@/lib/settingDefaults'
+import { invalidateAppSettingsCache } from '@/lib/appSettings'
 
 async function requireAdmin(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -57,6 +58,8 @@ export async function PATCH(req: NextRequest) {
       metadata: { key, oldValue, newValue: value },
     })
   }
+
+  invalidateAppSettingsCache()
 
   // Return refreshed settings
   const rows = await prisma.appSetting.findMany()

@@ -4,7 +4,7 @@ import { getServerSession }    from 'next-auth'
 import { authOptions }         from '@/lib/auth'
 import { prisma }              from '@/lib/prisma'
 import { Breadcrumb }          from '@/components/Breadcrumb'
-import { MediaCard }           from '@/components/MediaCard'
+import { MediaGrid }           from '@/components/MediaGrid'
 import { BatchDownloadButton } from '@/components/BatchDownloadButton'
 import { ArchiveSection }      from '@/components/ArchiveSection'
 import { getPresignedDownloadUrl } from '@/lib/r2'
@@ -200,13 +200,9 @@ export default async function EventDetailPage(props: Props) {
         isAdmin={isAdmin}
       />
 
-      {/* Active media grid */}
+      {/* Active media grid (with Preview Lightbox, Select Mode & Verified Bulk Delete) */}
       {enriched.length > 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {enriched.map(m => (
-            <MediaCard key={m.id} media={m as any} />
-          ))}
-        </div>
+        <MediaGrid files={enriched as any} />
       ) : (
         <div className="flex flex-col items-center justify-center py-20 text-slate-600">
           <Image className="w-10 h-10 mb-3 opacity-40" />

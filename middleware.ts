@@ -18,6 +18,23 @@ import { checkIpRateLimit } from '@/lib/rate-limit'
 const CSRF_EXEMPT_RE = /^\/api\/(?:auth|cron|health|gallery\/public|share\/[^/]+(?:\/download)?|public-share(?:\/|$))\b/
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
+const TWO_FACTOR_TTL_MS = 12 * 60 * 60 * 1000 // 12 hours
+
+function isAllowedOrigin(candidateOrigin: string, expectedUrl: URL): boolean {
+  try {
+    const parsed = new URL(candidateOrigin)
+    if (parsed.protocol !== expectedUrl.protocol) return false
+    if (parsed.host === expectedUrl.host) return true
+    // Also allow official gallery.* and sharelink.* subdomains on the same base domain
+    return (
+      parsed.host === `gallery.${expectedUrl.host}` ||
+      parsed.host === `sharelink.${expectedUrl.host}`
+    )
+  } catch {
+    return false
+  }
+}
+
 function checkCsrfOrigin(req: NextRequest): boolean {
   if (!MUTATING_METHODS.has(req.method)) return true
   if (!req.nextUrl.pathname.startsWith('/api/')) return true
@@ -26,9 +43,9 @@ function checkCsrfOrigin(req: NextRequest): boolean {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXTAUTH_URL ?? ''
   if (!appUrl) return true  // can't validate without known origin; fail open in dev
 
-  let expectedOrigin: string
+  let expectedUrl: URL
   try {
-    expectedOrigin = new URL(appUrl).origin
+    expectedUrl = new URL(appUrl)
   } catch {
     return true
   }
@@ -36,16 +53,68 @@ function checkCsrfOrigin(req: NextRequest): boolean {
   const origin  = req.headers.get('origin')
   const referer = req.headers.get('referer')
 
-  // A present Origin header must match exactly
-  if (origin) return origin === expectedOrigin
+  // A present Origin header must match expected host or allowed subdomain
+  if (origin) return isAllowedOrigin(origin, expectedUrl)
 
   // Fallback: check Referer for older clients that omit Origin
-  if (referer) {
-    try { return new URL(referer).origin === expectedOrigin } catch { return false }
-  }
+  if (referer) return isAllowedOrigin(referer, expectedUrl)
 
   // No Origin/Referer on a mutating API call: reject (same-site browsers always send one)
   return false
+}
+
+/**
+ * Cryptographically verifies the `2fa_verified` cookie in Edge Runtime using Web Crypto:
+ *   base64url(`${userId}:${timestampMs}.${hmacSha256Hex}`)
+ */
+async function verifyTwoFactorCookie(
+  cookieVal: string | undefined,
+  expectedUserId: string,
+  secret: string | undefined,
+): Promise<boolean> {
+  if (!cookieVal || !expectedUserId || !secret) return false
+  try {
+    const padLen = (4 - (cookieVal.length % 4)) % 4
+    const b64 = cookieVal.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat(padLen)
+    const decoded = atob(b64)
+    const dotIdx = decoded.lastIndexOf('.')
+    if (dotIdx <= 0) return false
+
+    const payload = decoded.slice(0, dotIdx)
+    const sigHex  = decoded.slice(dotIdx + 1)
+    if (sigHex.length !== 64) return false
+
+    const colonIdx = payload.lastIndexOf(':')
+    if (colonIdx <= 0) return false
+    const uid = payload.slice(0, colonIdx)
+    const ts  = Number(payload.slice(colonIdx + 1))
+
+    if (uid !== expectedUserId || !Number.isFinite(ts)) return false
+    const age = Date.now() - ts
+    if (age < -60_000 || age > TWO_FACTOR_TTL_MS) return false
+
+    const enc = new TextEncoder()
+    const key = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    )
+    const macBuf = await crypto.subtle.sign('HMAC', key, enc.encode(payload))
+    const expectedHex = Array.from(new Uint8Array(macBuf))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+
+    // Constant-time string comparison
+    let diff = 0
+    for (let i = 0; i < 64; i++) {
+      diff |= expectedHex.charCodeAt(i) ^ sigHex.charCodeAt(i)
+    }
+    return diff === 0
+  } catch {
+    return false
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -262,14 +331,19 @@ export async function middleware(req: NextRequest) {
     }
 
     // ── 2FA gate ─────────────────────────────────────────────────────────────
-    // If the JWT says requiresTwoFactor=true AND there is no valid 2fa_verified
-    // cookie, hold the user on the /2fa challenge page.
+    // If the JWT says requiresTwoFactor=true AND there is no cryptographically
+    // valid 2fa_verified cookie for this userId, hold the user on /2fa.
     if (token.requiresTwoFactor) {
       const verifiedCookie = req.cookies.get('2fa_verified')?.value
       const is2faPage      = pathname === '/2fa'
       const is2faApi       = pathname.startsWith('/api/auth/2fa/')
+      const isValid2fa     = await verifyTwoFactorCookie(
+        verifiedCookie,
+        String(token.id ?? ''),
+        process.env.NEXTAUTH_SECRET,
+      )
 
-      if (!verifiedCookie && !is2faPage && !is2faApi) {
+      if (!isValid2fa && !is2faPage && !is2faApi) {
         if (pathname.startsWith('/api/')) {
           return applySecurityHeaders(
             NextResponse.json({ error: 'Two-factor authentication required' }, { status: 403 }),

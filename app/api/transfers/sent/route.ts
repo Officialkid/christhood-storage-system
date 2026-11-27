@@ -12,9 +12,8 @@ import { prisma }                    from '@/lib/prisma'
  */
 export async function GET(_req: NextRequest) {
   const session = await getServerSession(authOptions)
-  const role = session?.user?.role as string | undefined
-  if (!session || !role || !(['ADMIN', 'EDITOR'] as string[]).includes(role)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const transfers = await prisma.transfer.findMany({

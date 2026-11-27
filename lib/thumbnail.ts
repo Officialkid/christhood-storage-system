@@ -17,12 +17,14 @@ import * as fs        from 'fs/promises'
 import * as os        from 'os'
 import * as nodePath  from 'path'
 import { prisma }     from './prisma'
-import { getObjectBuffer, putObjectBuffer } from './r2'
+import { getObjectBuffer, getPresignedDownloadUrl, putObjectBuffer } from './r2'
+import { getAppSettings } from './appSettings'
 
 // ── ffmpeg binary ──────────────────────────────────────────────────────────────
+// Prefer system ffmpeg (e.g. /usr/bin/ffmpeg in Cloud Run container) with fallback to npm installer
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg') as { path: string; version: string }
-ffmpeg.setFfmpegPath(ffmpegInstaller.path)
+ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || ffmpegInstaller.path)
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const THUMB_SIZE = 480   // pixels — square crop
@@ -46,19 +48,16 @@ async function resizeImage(buf: Buffer): Promise<Buffer> {
 }
 
 /**
- * Extract the frame at t=1 s from a video file.
- * Writes input + output to os.tmpdir() and cleans up afterwards.
+ * Extract the frame at t=1 s directly from a presigned R2 URL via HTTP Range requests.
+ * Avoids downloading multi-hundred-MB or multi-GB videos into Cloud Run RAM / tmpfs!
  */
-async function extractVideoFrame(videoBuf: Buffer, ext: string): Promise<Buffer> {
+async function extractVideoFrameFromUrl(presignedUrl: string): Promise<Buffer> {
   const id      = `cmms-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  const inFile  = nodePath.join(os.tmpdir(), `${id}${ext || '.mp4'}`)
   const outFile = nodePath.join(os.tmpdir(), `${id}.jpg`)
-
-  await fs.writeFile(inFile, videoBuf)
 
   try {
     await new Promise<void>((resolve, reject) => {
-      ffmpeg(inFile)
+      ffmpeg(presignedUrl)
         .inputOptions(['-ss 00:00:01'])
         .outputOptions([
           '-vframes 1',
@@ -70,7 +69,6 @@ async function extractVideoFrame(videoBuf: Buffer, ext: string): Promise<Buffer>
     })
     return await fs.readFile(outFile)
   } finally {
-    await fs.unlink(inFile).catch(() => {})
     await fs.unlink(outFile).catch(() => {})
   }
 }
@@ -95,12 +93,15 @@ export async function generateAndStoreThumbnail(
     const ext = nodePath.extname(originalName).toLowerCase()
     if (SKIP_EXTS.has(ext)) return   // RAW/proprietary formats — skip
 
-    const srcBuf = await getObjectBuffer(r2Key)
+    const settings = await getAppSettings()
+    if (settings.auto_thumbnails === 'false') return
 
     let thumbBuf: Buffer
     if (fileType === 'VIDEO') {
-      thumbBuf = await extractVideoFrame(srcBuf, ext)
+      const presignedUrl = await getPresignedDownloadUrl(r2Key, 300)
+      thumbBuf = await extractVideoFrameFromUrl(presignedUrl)
     } else {
+      const srcBuf = await getObjectBuffer(r2Key)
       thumbBuf = await resizeImage(srcBuf)
     }
 

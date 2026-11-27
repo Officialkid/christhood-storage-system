@@ -126,7 +126,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
           f => f.status !== 'DELETED' && f.status !== 'PURGED'
         )
         if (trashable.length > 0) {
-          const scheduledPurgeAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+          const { computeScheduledPurgeAt } = await import('@/lib/appSettings')
+          const scheduledPurgeAt = await computeScheduledPurgeAt()
           await tx.trashItem.createMany({
             data: trashable.map(f => ({
               mediaFileId:     f.id,

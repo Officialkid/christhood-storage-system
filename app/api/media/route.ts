@@ -74,16 +74,21 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
   const role = session.user.role as string
+  const validStatuses = ['RAW', 'EDITING_IN_PROGRESS', 'EDITED', 'PUBLISHED']
+  const effectiveStatus = status === 'READY' ? 'RAW' : status
+
+  if (effectiveStatus && !validStatuses.includes(effectiveStatus) && !(role === 'ADMIN' && effectiveStatus === 'ARCHIVED')) {
+    return NextResponse.json({ error: 'Invalid status transition' }, { status: 400 })
+  }
 
   if (role !== 'ADMIN' && role !== 'EDITOR') {
-    // UPLOADERs may only update their own files
+    // UPLOADERs may only update their own files to RAW on upload completion
     const file = await prisma.mediaFile.findUnique({ where: { id }, select: { uploaderId: true } })
     if (!file) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     if (file.uploaderId !== session.user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
-    // UPLOADERs can only flip their files to READY (to complete the upload flow)
-    if (status && status !== 'READY') {
+    if (effectiveStatus && effectiveStatus !== 'RAW') {
       return NextResponse.json({ error: 'Forbidden: insufficient role to set this status' }, { status: 403 })
     }
   }
@@ -91,7 +96,7 @@ export async function PATCH(req: NextRequest) {
   const updated = await prisma.mediaFile.update({
     where: { id },
     data: {
-      ...(status ? { status } : {}),
+      ...(effectiveStatus ? { status: effectiveStatus as any } : {}),
     }
   })
 
@@ -107,18 +112,27 @@ export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  if (session.user.role === 'UPLOADER') {
+    return NextResponse.json({ error: 'Uploaders cannot delete files.' }, { status: 403 })
+  }
+
   const { id } = await req.json()
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
-  // Only ADMIN or the original uploader may delete
   const mediaFile = await prisma.mediaFile.findUnique({ where: { id } })
   if (!mediaFile) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const isAdmin    = session.user.role === 'ADMIN'
-  const isUploader = mediaFile.uploaderId === session.user.id
-  if (!isAdmin && !isUploader) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (session.user.role === 'EDITOR') {
+    if (mediaFile.status === 'PUBLISHED') {
+      return NextResponse.json({ error: 'Published files cannot be deleted.' }, { status: 403 })
+    }
+    if (mediaFile.uploaderId !== session.user.id && mediaFile.status !== 'RAW') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
   }
+
+  const { computeScheduledPurgeAt } = await import('@/lib/appSettings')
+  const scheduledPurgeAt = await computeScheduledPurgeAt()
 
   // Atomically mark file as DELETED and move to trash
   await prisma.$transaction([
@@ -130,7 +144,7 @@ export async function DELETE(req: NextRequest) {
       data: {
         mediaFileId:      id,
         deletedById:      session.user.id,
-        scheduledPurgeAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        scheduledPurgeAt,
         preDeleteStatus:  mediaFile.status,
       }
     }),

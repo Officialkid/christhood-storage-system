@@ -1,18 +1,45 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useRef, useEffect } from 'react'
+import Link from 'next/link'
 import {
-  Upload, X, FolderOpen, ChevronDown, ChevronRight, FileText, Film,
-  Image as ImageIcon, File as FileIcon, Send, User, Search,
-  AlertTriangle, CheckCircle2, Loader2, RefreshCw, WifiOff, Lock,
+  Upload, X, FolderOpen, Film, Image as ImageIcon, File as FileIcon,
+  Send, User, Search, AlertTriangle, CheckCircle2, Loader2, Lock,
+  Link2, Copy, Check, Share2, Layers, ExternalLink, Plus,
 } from 'lucide-react'
+import {
+  xhrPut,
+  formatUploadSize,
+  formatUploadSpeed,
+  formatUploadEta,
+  resolveUploadMimeType,
+} from '@/lib/upload/client-utils'
+import { useToast } from '@/lib/toast'
+import type { HierarchyYear } from '@/types'
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-interface StagedFile {
-  uid:        string
-  file:       File
-  folderPath: string | null   // relative folder path, null = top-level
+const MULTIPART_THRESHOLD = 10 * 1024 * 1024 // 10 MB -> chunked R2 multipart
+const CHUNK_SIZE          = 10 * 1024 * 1024 // 10 MB per part
+const PART_CONCURRENCY    = 4
+
+interface StagedDeviceFile {
+  uid:         string
+  file:        File
+  folderPath:  string | null
+  progress:    number
+  bytesLoaded: number
+  status:      'pending' | 'uploading' | 'done' | 'error'
+  r2Key?:      string
+  error?:      string
+}
+
+interface LibraryMediaItem {
+  id:             string
+  originalName:   string
+  fileType:       'PHOTO' | 'VIDEO'
+  fileSize:       number
+  status:         string
+  subfolderLabel: string | null
+  thumbnailUrl:   string | null
 }
 
 interface RecipientUser {
@@ -23,898 +50,1032 @@ interface RecipientUser {
   role:     string
 }
 
-// Saved after all R2 uploads succeed — lets us retry the DB-create step
-// without re-uploading if the network drops just before the final POST.
-interface PendingTransfer {
-  id:             string
-  recipientId:    string
-  recipientLabel: string   // display name for the banner
-  subject:        string
-  message:        string | null
-  isPinProtected: boolean
-  pin:            string | null
-  files:          {
-    originalName: string; r2Key: string; fileSize: number
-    mimeType: string; folderPath: string | null; checksum: string
-  }[]
-  totalFiles:      number
-  totalSize:       number
-  folderStructure: Record<string, string[]> | null
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+  })
 }
 
-const PENDING_KEY = 'cmms_pending_transfer'
+async function uploadMultipartTransferFile(opts: {
+  transferId: string
+  file:       File
+  folderPath: string | null
+  mimeType:   string
+  onProgress: (loaded: number) => void
+}): Promise<string> {
+  const { transferId, file, folderPath, mimeType, onProgress } = opts
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-const WARN_SIZE = 2 * 1024 * 1024 * 1024  // 2 GB
-const TRANSFER_UPLOAD_CONCURRENCY = 4
+  // 1. Initiate multipart upload
+  const createRes = await fetch('/api/transfers/multipart', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      action:      'create',
+      transferId,
+      filename:    file.name,
+      folderPath,
+      contentType: mimeType,
+    }),
+  })
+  const createData = await createRes.json()
+  if (!createRes.ok) throw new Error(createData.error ?? 'Failed to start multipart upload')
+  const { uploadId, r2Key } = createData as { uploadId: string; r2Key: string }
 
-const ACCEPTED_EXTENSIONS = new Set([
-  '.jpg', '.jpeg', '.png', '.tiff', '.tif', '.raw', '.heic',
-  '.cr2', '.nef', '.arw', '.dng', '.orf', '.rw2',
-  '.mp4', '.mov', '.avi',
-  '.pdf', '.docx', '.xlsx', '.pptx', '.ai', '.psd',
-])
+  try {
+    const totalParts = Math.ceil(file.size / CHUNK_SIZE)
+    const completedParts: { PartNumber: number; ETag: string }[] = []
+    const partLoaded = new Array<number>(totalParts).fill(0)
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-function isAccepted(file: File): boolean {
-  const ext = '.' + (file.name.split('.').pop()?.toLowerCase() ?? '')
-  return ACCEPTED_EXTENSIONS.has(ext)
-}
-
-async function computeSHA256(file: File): Promise<string> {
-  const buf  = await file.arrayBuffer()
-  const hash = await crypto.subtle.digest('SHA-256', buf)
-  return Array.from(new Uint8Array(hash))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024)         return `${bytes} B`
-  if (bytes < 1024 ** 2)   return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 ** 3)   return `${(bytes / 1024 ** 2).toFixed(1)} MB`
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`
-}
-
-async function uploadWithConcurrency<T>(
-  items: StagedFile[],
-  limit: number,
-  worker: (item: StagedFile, index: number) => Promise<T>,
-  onDone: (completed: number, total: number) => void,
-): Promise<T[]> {
-  const results = new Array<T>(items.length)
-  const total = items.length
-  let nextIndex = 0
-  let completed = 0
-
-  async function runWorker() {
-    while (true) {
-      const index = nextIndex++
-      if (index >= total) return
-      results[index] = await worker(items[index], index)
-      completed += 1
-      onDone(completed, total)
+    const reportTotal = () => {
+      const sum = partLoaded.reduce((a, b) => a + b, 0)
+      onProgress(Math.min(file.size, sum))
     }
-  }
 
-  await Promise.all(
-    Array.from({ length: Math.min(limit, total) }, () => runWorker()),
-  )
-
-  return results
-}
-
-function FileTypeIcon({ file }: { file: File }) {
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
-  if (['jpg','jpeg','png','tiff','tif','raw','heic','cr2','nef','arw','dng','orf','rw2'].includes(ext))
-    return <ImageIcon className="w-4 h-4 text-blue-400 shrink-0" />
-  if (['mp4','mov','avi'].includes(ext))
-    return <Film className="w-4 h-4 text-purple-400 shrink-0" />
-  if (['pdf','docx','xlsx','pptx','ai','psd'].includes(ext))
-    return <FileText className="w-4 h-4 text-orange-400 shrink-0" />
-  return <FileIcon className="w-4 h-4 text-slate-400 shrink-0" />
-}
-
-// Recursively read a dropped FileSystemEntry (file or directory) with paths
-async function collectFromEntry(
-  entry: FileSystemEntry,
-  basePath = '',
-): Promise<{ file: File; folderPath: string | null }[]> {
-  if (entry.isFile) {
-    return new Promise(resolve => {
-      ;(entry as FileSystemFileEntry).file(f =>
-        resolve([{ file: f, folderPath: basePath || null }]),
-      )
-    })
-  }
-  if (entry.isDirectory) {
-    const subPath  = basePath ? `${basePath}/${entry.name}` : entry.name
-    const reader   = (entry as FileSystemDirectoryEntry).createReader()
-    // readEntries may return results in batches — keep reading until empty
-    const allEntries: FileSystemEntry[] = []
-    await new Promise<void>((resolve, reject) => {
-      const readBatch = () =>
-        reader.readEntries(batch => {
-          if (batch.length === 0) { resolve(); return }
-          allEntries.push(...batch)
-          readBatch()
-        }, reject)
-      readBatch()
-    })
-    // Process sub-entries sequentially — concurrent FileSystemDirectoryReader instances
-    // can silently drop results on Chromium (especially mobile). Sequential reads are safe.
-    const results: { file: File; folderPath: string | null }[][] = []
-    for (const e of allEntries) {
-      results.push(await collectFromEntry(e, subPath))
+    // Presign parts in batches of 40
+    const presignedUrls: Record<number, string> = {}
+    for (let start = 1; start <= totalParts; start += 40) {
+      const batchNums: number[] = []
+      for (let p = start; p < start + 40 && p <= totalParts; p++) batchNums.push(p)
+      const pRes = await fetch('/api/transfers/multipart', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ action: 'presign-parts', r2Key, uploadId, partNumbers: batchNums }),
+      })
+      const pData = await pRes.json()
+      if (!pRes.ok) throw new Error(pData.error ?? 'Failed to presign parts')
+      Object.assign(presignedUrls, pData.urls)
     }
-    return results.flat()
-  }
-  return []
-}
 
-// ─── Folder tree sub-component ────────────────────────────────────────────────
-interface TreeNode {
-  __files: StagedFile[]
-  [key: string]: TreeNode | StagedFile[]
-}
+    let nextIdx = 0
+    async function partWorker() {
+      while (nextIdx < totalParts) {
+        const idx     = nextIdx++
+        const partNum = idx + 1
+        const start   = idx * CHUNK_SIZE
+        const end     = Math.min(file.size, start + CHUNK_SIZE)
+        const blob    = file.slice(start, end)
+        const url     = presignedUrls[partNum]
 
-function buildTree(files: StagedFile[]): TreeNode {
-  const root = { __files: [] as StagedFile[] } as TreeNode
-  for (const f of files) {
-    if (!f.folderPath) { root.__files.push(f); continue }
-    const parts = f.folderPath.split('/')
-    let node = root
-    for (const part of parts) {
-      if (!node[part]) (node[part] as TreeNode) = { __files: [] }
-      node = node[part] as TreeNode
-    }
-    node.__files.push(f)
-  }
-  return root
-}
-
-function countFiles(node: TreeNode): number {
-  const kids = Object.keys(node).filter(k => k !== '__files') as string[]
-  return node.__files.length + kids.reduce((s, k) => s + countFiles(node[k] as TreeNode), 0)
-}
-
-function FolderNode({ name, node, depth = 0 }: { name: string; node: TreeNode; depth?: number }) {
-  const [open, setOpen] = useState(true)
-  const childKeys = Object.keys(node).filter(k => k !== '__files')
-  const total     = countFiles(node)
-
-  return (
-    <div>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 text-sm text-slate-300 hover:text-white py-0.5 w-full text-left"
-        style={{ paddingLeft: `${depth * 16}px` }}
-      >
-        {open
-          ? <ChevronDown  className="w-3.5 h-3.5 shrink-0 text-slate-500" />
-          : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-slate-500" />}
-        <FolderOpen className="w-3.5 h-3.5 shrink-0 text-amber-400" />
-        <span className="font-medium truncate">{name}</span>
-        <span className="text-slate-500 text-xs ml-1 shrink-0">
-          ({total} file{total !== 1 ? 's' : ''})
-        </span>
-      </button>
-
-      {open && (
-        <div>
-          {childKeys.map(k => (
-            <FolderNode key={k} name={k} node={node[k] as TreeNode} depth={depth + 1} />
-          ))}
-          {node.__files.map(f => (
-            <div
-              key={f.uid}
-              className="flex items-center gap-1.5 text-xs text-slate-400 py-0.5"
-              style={{ paddingLeft: `${(depth + 1) * 16 + 4}px` }}
-            >
-              <FileTypeIcon file={f.file} />
-              <span className="truncate">{f.file.name}</span>
-              <span className="text-slate-600 shrink-0 ml-1">{formatBytes(f.file.size)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
-export function NewTransferForm() {
-  const router = useRouter()
-
-  // Files
-  const dropRef        = useRef<HTMLDivElement>(null)
-  const fileInputRef   = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
-  const [staged,      setStaged]      = useState<StagedFile[]>([])
-  const [isDragging,  setIsDragging]  = useState(false)
-  const [showTree,    setShowTree]    = useState(false)
-
-  // Form
-  const [subject, setSubject] = useState('')
-  const [message, setMessage] = useState('')
-
-  // PIN protection
-  const [pinEnabled, setPinEnabled] = useState(false)
-  const [pinValue,   setPinValue]   = useState('')
-
-  // Recipient
-  const [recipientSearch, setRecipientSearch] = useState('')
-  const [searchResults,   setSearchResults]   = useState<RecipientUser[]>([])
-  const [recipient,       setRecipient]       = useState<RecipientUser | null>(null)
-  const [searchLoading,   setSearchLoading]   = useState(false)
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Send flow
-  const [sendStatus, setSendStatus] = useState<'idle' | 'uploading' | 'creating' | 'done' | 'error'>('idle')
-  const [progress,   setProgress]   = useState({ done: 0, total: 0 })
-  const [errorMsg,   setErrorMsg]   = useState<string | null>(null)
-  const [completedTransferId, setCompletedTransferId] = useState<string | null>(null)
-
-  // Pending transfer (saved after all R2 uploads, in case network drops before DB create)
-  const [pendingCreate, setPendingCreate] = useState<PendingTransfer | null>(null)
-
-  // Load any pending transfer that was interrupted
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(PENDING_KEY)
-      if (saved) setPendingCreate(JSON.parse(saved) as PendingTransfer)
-    } catch { /* ignore corrupt data */ }
-  }, [])
-
-  // Derived
-  const totalSize = staged.reduce((s, f) => s + f.file.size, 0)
-  const hasFolders = staged.some(f => f.folderPath)
-  const canSend    = staged.length > 0 && !!recipient && subject.trim().length > 0 && sendStatus === 'idle'
-    && (!pinEnabled || /^\d{4,6}$/.test(pinValue))
-
-  // ── Ingest files ─────────────────────────────────────────────────────────
-  function ingest(incoming: { file: File; folderPath: string | null }[]) {
-    const valid = incoming.filter(({ file }) => isAccepted(file))
-    if (!valid.length) return
-    setStaged(prev => {
-      const existing = new Set(prev.map(f => `${f.file.name}|${f.file.size}|${f.folderPath ?? ''}`))
-      const fresh = valid
-        .filter(({ file, folderPath }) =>
-          !existing.has(`${file.name}|${file.size}|${folderPath ?? ''}`))
-        .map(({ file, folderPath }) => ({ uid: crypto.randomUUID(), file, folderPath }))
-      return [...prev, ...fresh]
-    })
-  }
-
-  // ── Drag & drop ──────────────────────────────────────────────────────────
-  const onDragOver  = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }, [])
-  const onDragLeave = useCallback((e: React.DragEvent) => {
-    if (!dropRef.current?.contains(e.relatedTarget as Node)) setIsDragging(false)
-  }, [])
-  const onDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const items = Array.from(e.dataTransfer.items)
-    const collected: { file: File; folderPath: string | null }[] = []
-    for (const item of items) {
-      if (item.kind !== 'file') continue
-      const entry = item.webkitGetAsEntry()
-      if (!entry) continue
-      const files = await collectFromEntry(entry, '')
-      collected.push(...files)
-    }
-    ingest(collected)
-  // ingest is stable (only calls setStaged)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── File / folder picker ─────────────────────────────────────────────────
-  function onFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    if (!e.target.files) return
-    const files = Array.from(e.target.files).map(f => ({
-      file: f,
-      folderPath: f.webkitRelativePath
-        ? f.webkitRelativePath.split('/').slice(0, -1).join('/') || null
-        : null,
-    }))
-    ingest(files)
-    e.target.value = ''
-  }
-
-  // ── Recipient search ─────────────────────────────────────────────────────
-  useEffect(() => {
-    clearTimeout(searchTimer.current ?? undefined)
-    if (recipientSearch.trim().length < 2) { setSearchResults([]); return }
-    setSearchLoading(true)
-    searchTimer.current = setTimeout(async () => {
-      try {
-        const res  = await fetch(`/api/users/search?q=${encodeURIComponent(recipientSearch.trim())}`)
-        const data = await res.json()
-        setSearchResults(data.users ?? [])
-      } finally {
-        setSearchLoading(false)
+        let lastErr: unknown
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const etag = await new Promise<string>((resolve, reject) => {
+              const xhr = new XMLHttpRequest()
+              xhr.open('PUT', url)
+              xhr.upload.onprogress = e => {
+                if (e.lengthComputable) {
+                  partLoaded[idx] = e.loaded
+                  reportTotal()
+                }
+              }
+              xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                  const hdr = xhr.getResponseHeader('ETag') ?? xhr.getResponseHeader('etag') ?? ''
+                  partLoaded[idx] = blob.size
+                  reportTotal()
+                  resolve(hdr.replace(/"/g, ''))
+                } else {
+                  reject(new Error(`Part ${partNum} HTTP ${xhr.status}`))
+                }
+              }
+              xhr.onerror = () => reject(new Error('Network error during part upload'))
+              xhr.send(blob)
+            })
+            completedParts.push({ PartNumber: partNum, ETag: etag })
+            lastErr = null
+            break
+          } catch (err) {
+            lastErr = err
+            await new Promise(r => setTimeout(r, 800 * (attempt + 1)))
+          }
+        }
+        if (lastErr) throw lastErr
       }
-    }, 300)
-    return () => clearTimeout(searchTimer.current ?? undefined)
-  }, [recipientSearch])
+    }
 
-  // ── Send ─────────────────────────────────────────────────────────────────
-  async function handleSend() {
-    if (!canSend || !recipient) return
+    await Promise.all(
+      Array.from({ length: Math.min(PART_CONCURRENCY, totalParts) }, () => partWorker()),
+    )
 
-    // Check network before we start
-    if (!navigator.onLine) {
-      setErrorMsg('You are offline. Please reconnect and try again.')
-      setSendStatus('error')
+    // 3. Complete multipart upload
+    const compRes = await fetch('/api/transfers/multipart', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'complete', r2Key, uploadId, parts: completedParts }),
+    })
+    const compData = await compRes.json()
+    if (!compRes.ok) throw new Error(compData.error ?? 'Failed to finalize multipart upload')
+
+    return r2Key
+  } catch (err) {
+    fetch('/api/transfers/multipart', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'abort', r2Key, uploadId }),
+    }).catch(() => {})
+    throw err
+  }
+}
+
+export function NewTransferForm() {
+  const toast       = useToast()
+  const fileInput   = useRef<HTMLInputElement>(null)
+  const folderInput = useRef<HTMLInputElement>(null)
+
+  // Tabs: Source ('device' | 'library') & Delivery ('link' | 'teammate')
+  const [sourceTab,    setSourceTab]    = useState<'device' | 'library'>('device')
+  const [deliveryMode, setDeliveryMode] = useState<'link' | 'teammate'>('link')
+
+  // Device staged files
+  const [deviceFiles, setDeviceFiles] = useState<StagedDeviceFile[]>([])
+
+  // CMMS Library picker state
+  const [years,           setYears]           = useState<HierarchyYear[]>([])
+  const [libYear,         setLibYear]         = useState('')
+  const [libCat,          setLibCat]          = useState('')
+  const [libEventId,      setLibEventId]      = useState('')
+  const [libSubId,        setLibSubId]        = useState('')
+  const [libFiles,        setLibFiles]        = useState<LibraryMediaItem[]>([])
+  const [libLoading,      setLibLoading]      = useState(false)
+  const [selectedLibrary, setSelectedLibrary] = useState<Map<string, LibraryMediaItem>>(new Map())
+
+  // Metadata & recipient
+  const [subject,           setSubject]           = useState('')
+  const [message,           setMessage]           = useState('')
+  const [expiresInDays,     setExpiresInDays]     = useState(14)
+  const [pinEnabled,        setPinEnabled]        = useState(false)
+  const [pin,               setPin]               = useState('')
+  const [alsoCreateLink,    setAlsoCreateLink]    = useState(true)
+  const [userQuery,         setUserQuery]         = useState('')
+  const [userResults,       setUserResults]       = useState<RecipientUser[]>([])
+  const [selectedRecipient, setSelectedRecipient] = useState<RecipientUser | null>(null)
+
+  // Upload progress & completion
+  const [sending,     setSending]     = useState(false)
+  const [speedBps,    setSpeedBps]    = useState(0)
+  const [error,       setError]       = useState('')
+  const [completedResult, setCompletedResult] = useState<{
+    transferId: string
+    shareUrl:   string | null
+    totalFiles: number
+    totalSize:  number
+    recipientLabel: string | null
+  } | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  // Load CMMS hierarchy when switching to Library tab
+  useEffect(() => {
+    if (sourceTab !== 'library' || years.length > 0) return
+    fetch('/api/hierarchy')
+      .then(r => r.json())
+      .then(d => {
+        const yrs: HierarchyYear[] = d.years ?? []
+        setYears(yrs)
+        if (yrs[0]) setLibYear(String(yrs[0].year))
+      })
+      .catch(() => {})
+  }, [sourceTab, years.length])
+
+  // Load files in selected CMMS event/subfolder
+  useEffect(() => {
+    if (!libEventId) {
+      setLibFiles([])
+      return
+    }
+    setLibLoading(true)
+    const params = new URLSearchParams({ eventId: libEventId })
+    if (libSubId) params.set('subfolderId', libSubId)
+    fetch(`/api/transfers/library-files?${params.toString()}`)
+      .then(r => r.json())
+      .then(d => setLibFiles(d.files ?? []))
+      .catch(() => setLibFiles([]))
+      .finally(() => setLibLoading(false))
+  }, [libEventId, libSubId])
+
+  // Search CMMS users for Teammate mode
+  useEffect(() => {
+    if (deliveryMode !== 'teammate' || userQuery.trim().length < 1) {
+      setUserResults([])
+      return
+    }
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => {
+      fetch(`/api/users/search?q=${encodeURIComponent(userQuery.trim())}`, { signal: ctrl.signal })
+        .then(r => r.json())
+        .then(d => setUserResults(d.users ?? []))
+        .catch(() => {})
+    }, 200)
+    return () => {
+      clearTimeout(timer)
+      ctrl.abort()
+    }
+  }, [userQuery, deliveryMode])
+
+  // Screen Wake Lock during active transfer upload
+  useEffect(() => {
+    if (!sending || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return
+    let sentinel: { release?: () => Promise<void> } | null = null
+    ;(navigator as any).wakeLock.request('screen').then((s: any) => { sentinel = s }).catch(() => {})
+    return () => { sentinel?.release?.().catch(() => {}) }
+  }, [sending])
+
+  function addDeviceFiles(rawFiles: File[]) {
+    if (rawFiles.length === 0) return
+    const next: StagedDeviceFile[] = rawFiles.map(f => {
+      const rel = (f as any).webkitRelativePath as string | undefined
+      const folderPath = rel && rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : null
+      return {
+        uid:         `${f.name}-${f.size}-${Math.random().toString(36).slice(2, 8)}`,
+        file:        f,
+        folderPath,
+        progress:    0,
+        bytesLoaded: 0,
+        status:      'pending',
+      }
+    })
+    setDeviceFiles(prev => [...prev, ...next])
+    if (!subject.trim() && rawFiles[0]) {
+      const baseName = rawFiles[0].name.replace(/\.[^.]+$/, '')
+      setSubject(rawFiles.length > 1 ? `${baseName} + ${rawFiles.length - 1} more` : baseName)
+    }
+  }
+
+  function toggleLibraryItem(item: LibraryMediaItem) {
+    setSelectedLibrary(prev => {
+      const next = new Map(prev)
+      if (next.has(item.id)) next.delete(item.id)
+      else next.set(item.id, item)
+      return next
+    })
+    if (!subject.trim()) {
+      const selEvent = years
+        .flatMap(y => y.categories)
+        .flatMap(c => c.events)
+        .find(e => e.id === libEventId)
+      if (selEvent) setSubject(selEvent.name)
+    }
+  }
+
+  const totalDeviceBytes  = deviceFiles.reduce((s, f) => s + f.file.size, 0)
+  const loadedDeviceBytes = deviceFiles.reduce((s, f) => s + (f.status === 'done' ? f.file.size : f.bytesLoaded), 0)
+  const totalLibBytes     = Array.from(selectedLibrary.values()).reduce((s, f) => s + f.fileSize, 0)
+  const totalCount        = deviceFiles.length + selectedLibrary.size
+  const totalBytes        = totalDeviceBytes + totalLibBytes
+  const overallPct        = totalDeviceBytes > 0 ? Math.round((loadedDeviceBytes / totalDeviceBytes) * 100) : 100
+  const remainingBytes    = Math.max(0, totalDeviceBytes - loadedDeviceBytes)
+
+  async function handleSend(e: React.FormEvent) {
+    e.preventDefault()
+    if (totalCount === 0) {
+      setError('Please add at least one photo or video.')
+      return
+    }
+    if (!subject.trim()) {
+      setError('Please enter a title / subject for this transfer.')
+      return
+    }
+    if (deliveryMode === 'teammate' && !selectedRecipient) {
+      setError('Please select a CMMS teammate or switch to "Instant Share Link".')
+      return
+    }
+    if (pinEnabled && !/^\d{4}$/.test(pin)) {
+      setError('PIN must be 4 digits.')
       return
     }
 
-    const transferId = crypto.randomUUID()
-    setSendStatus('uploading')
-    setProgress({ done: 0, total: staged.length })
-    setErrorMsg(null)
+    setSending(true)
+    setError('')
+    const transferId = generateUUID()
+    const startTime  = Date.now()
 
     try {
-      const uploadedFiles = await uploadWithConcurrency(
-        staged,
-        TRANSFER_UPLOAD_CONCURRENCY,
-        async (sf) => {
+      const uploadedRecords: {
+        originalName: string
+        r2Key:        string
+        fileSize:     number
+        mimeType:     string
+        folderPath:   string | null
+        checksum:     string
+      }[] = []
+
+      // Upload device files sequentially for large (>=10MB) with parallel chunks, or direct XHR PUT for <10MB
+      for (let i = 0; i < deviceFiles.length; i++) {
+        const item     = deviceFiles[i]
+        const mimeType = resolveUploadMimeType(item.file.name, item.file.type) || 'application/octet-stream'
+
+        setDeviceFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'uploading' } : f))
+
+        let r2Key: string
+        if (item.file.size >= MULTIPART_THRESHOLD) {
+          r2Key = await uploadMultipartTransferFile({
+            transferId,
+            file:       item.file,
+            folderPath: item.folderPath,
+            mimeType,
+            onProgress: (loaded) => {
+              const elapsedSec = Math.max(0.5, (Date.now() - startTime) / 1000)
+              setDeviceFiles(prev => {
+                const updated = prev.map((f, idx) =>
+                  idx === i
+                    ? { ...f, bytesLoaded: loaded, progress: Math.round((loaded / item.file.size) * 100) }
+                    : f
+                )
+                const totalLoadedNow = updated.reduce((s, f) => s + (f.status === 'done' ? f.file.size : f.bytesLoaded), 0)
+                setSpeedBps(Math.round(totalLoadedNow / elapsedSec))
+                return updated
+              })
+            },
+          })
+        } else {
           const presignRes = await fetch('/api/transfers/presign', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({
               transferId,
-              filename:    sf.file.name,
-              folderPath:  sf.folderPath,
-              contentType: sf.file.type || 'application/octet-stream',
+              filename:    item.file.name,
+              folderPath:  item.folderPath,
+              contentType: mimeType,
             }),
           })
-          if (!presignRes.ok) {
-            const d = await presignRes.json().catch(() => ({}) as { error?: string })
-            throw new Error((d as { error?: string }).error ?? `Could not prepare upload for "${sf.file.name}" — please try again.`)
-          }
-          const { presignedUrl, r2Key } = await presignRes.json()
+          const presignData = await presignRes.json()
+          if (!presignRes.ok) throw new Error(presignData.error ?? 'Failed to prepare upload')
+          r2Key = presignData.r2Key
 
-          const checksum = await computeSHA256(sf.file)
-
-          let putRes: Response
-          try {
-            putRes = await fetch(presignedUrl, {
-              method:  'PUT',
-              body:    sf.file,
-              headers: { 'Content-Type': sf.file.type || 'application/octet-stream' },
+          await xhrPut(presignData.presignedUrl, item.file, mimeType, (loaded) => {
+            const elapsedSec = Math.max(0.5, (Date.now() - startTime) / 1000)
+            setDeviceFiles(prev => {
+              const updated = prev.map((f, idx) =>
+                idx === i
+                  ? { ...f, bytesLoaded: loaded, progress: Math.round((loaded / Math.max(1, item.file.size)) * 100) }
+                  : f
+              )
+              const totalLoadedNow = updated.reduce((s, f) => s + (f.status === 'done' ? f.file.size : f.bytesLoaded), 0)
+              setSpeedBps(Math.round(totalLoadedNow / elapsedSec))
+              return updated
             })
-          } catch {
-            throw new Error(`Network error while uploading "${sf.file.name}" — please check your connection and try again.`)
-          }
-          if (!putRes.ok) throw new Error(`Upload failed for "${sf.file.name}" (HTTP ${putRes.status}) — please try again.`)
+          })
+        }
 
-          return {
-            originalName: sf.file.name,
-            r2Key,
-            fileSize:     sf.file.size,
-            mimeType:     sf.file.type || 'application/octet-stream',
-            folderPath:   sf.folderPath,
-            checksum,
-          }
-        },
-        (done, total) => setProgress({ done, total }),
-      )
+        setDeviceFiles(prev =>
+          prev.map((f, idx) => idx === i ? { ...f, status: 'done', progress: 100, bytesLoaded: item.file.size, r2Key } : f)
+        )
 
-      // All files are safely in R2. Persist the create payload so we can retry
-      // if the network drops before the DB write completes.
-      const pending: PendingTransfer = {
-        id:              transferId,
-        recipientId:     recipient.id,
-        recipientLabel:  recipient.username ?? recipient.name ?? recipient.email,
-        subject:         subject.trim(),
-        message:         message.trim() || null,
-        isPinProtected:  pinEnabled && /^\d{4,6}$/.test(pinValue),
-        pin:             pinEnabled && /^\d{4,6}$/.test(pinValue) ? pinValue : null,
-        files:           uploadedFiles,
-        totalFiles:      staged.length,
-        totalSize:       totalSize,
-        folderStructure: hasFolders ? buildFolderStructureJson(staged) : null,
+        uploadedRecords.push({
+          originalName: item.file.name,
+          r2Key,
+          fileSize:     item.file.size,
+          mimeType,
+          folderPath:   item.folderPath,
+          checksum:     '',
+        })
       }
-      localStorage.setItem(PENDING_KEY, JSON.stringify(pending))
-      setPendingCreate(pending)
 
-      // 4. Create transfer record in DB
-      await finishTransferCreate(pending)
-    } catch (err: unknown) {
-      // TypeError: Failed to fetch = browser couldn't reach the server at all (no connectivity)
-      const isNetworkErr = err instanceof TypeError &&
-        (err.message === 'Failed to fetch' || err.message === 'Load failed' || err.message.includes('NetworkError'))
-      const msg = isNetworkErr
-        ? "Couldn't connect to the server. Please check your internet connection and try again."
-        : err instanceof Error ? err.message : 'Transfer failed. Please try again.'
-      setErrorMsg(msg)
-      setSendStatus('error')
+      // Finalize Transfer + optional ShareLink + any selected CMMS library files
+      const createRes = await fetch('/api/transfers', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          id:               transferId,
+          deliveryMode,
+          recipientId:      deliveryMode === 'teammate' ? selectedRecipient?.id : undefined,
+          createShareLink:  deliveryMode === 'link' || alsoCreateLink,
+          subject:          subject.trim(),
+          message:          message.trim() || null,
+          files:            uploadedRecords,
+          existingMediaIds: Array.from(selectedLibrary.keys()),
+          isPinProtected:   pinEnabled,
+          pin:              pinEnabled ? pin : null,
+          expiresInDays,
+        }),
+      })
+      const createJson = await createRes.json()
+      if (!createRes.ok) throw new Error(createJson.error ?? 'Failed to finalize transfer')
+
+      toast.success('Transfer ready to share!')
+      setCompletedResult({
+        transferId:     createJson.transferId,
+        shareUrl:       createJson.shareUrl ?? null,
+        totalFiles:     createJson.totalFiles,
+        totalSize:      createJson.totalSize,
+        recipientLabel: deliveryMode === 'teammate' && selectedRecipient
+          ? (selectedRecipient.username ?? selectedRecipient.name ?? selectedRecipient.email)
+          : null,
+      })
+    } catch (err: any) {
+      setError(err?.message ?? 'Transfer failed. Please check your connection and try again.')
+    } finally {
+      setSending(false)
     }
   }
 
-  // ── Retry just the DB-create step (files already in R2) ──────────────────
-  async function retryPendingCreate() {
-    if (!pendingCreate) return
-    if (!navigator.onLine) {
-      setErrorMsg('Still offline. Please reconnect and try again.')
-      setSendStatus('error')
-      return
-    }
-    setSendStatus('creating')
-    setErrorMsg(null)
-    try {
-      await finishTransferCreate(pendingCreate)
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Retry failed. Please try again.')
-      setSendStatus('error')
-    }
+  // ── Completion View (Instant Link + WhatsApp + Native Share) ──────────────
+  if (completedResult) {
+    return (
+      <div className="max-w-2xl rounded-2xl border border-emerald-500/30 bg-slate-900/80 p-6 sm:p-8 space-y-6 shadow-xl">
+        <div className="flex items-start gap-4">
+          <div className="p-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 shrink-0">
+            <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white">Transfer Ready!</h2>
+            <p className="text-sm text-slate-300 mt-1">
+              {completedResult.totalFiles} file{completedResult.totalFiles !== 1 ? 's' : ''} ({formatUploadSize(completedResult.totalSize)})
+              {completedResult.recipientLabel ? ` sent to ${completedResult.recipientLabel}` : ' packaged and ready to share'}.
+            </p>
+          </div>
+        </div>
+
+        {completedResult.shareUrl && (
+          <div className="space-y-3 rounded-2xl bg-slate-950/70 border border-slate-800 p-4">
+            <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Shareable Download Link
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                readOnly
+                value={completedResult.shareUrl}
+                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(completedResult.shareUrl!)
+                  setCopied(true)
+                  toast.success('Link copied to clipboard!')
+                  setTimeout(() => setCopied(false), 2500)
+                }}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold
+                           bg-indigo-600 hover:bg-indigo-500 text-white transition shrink-0"
+              >
+                {copied ? <><Check className="w-4 h-4" /> Copied</> : <><Copy className="w-4 h-4" /> Copy Link</>}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(`${subject.trim()}: ${completedResult.shareUrl}${pinEnabled ? ` (PIN: ${pin})` : ''}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold
+                           bg-emerald-600 hover:bg-emerald-500 text-white transition"
+              >
+                Share on WhatsApp
+              </a>
+
+              {typeof navigator !== 'undefined' && 'share' in navigator && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.share({
+                      title: subject.trim(),
+                      text:  message.trim() || subject.trim(),
+                      url:   completedResult.shareUrl!,
+                    }).catch(() => {})
+                  }}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium
+                             bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 transition"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  More Apps
+                </button>
+              )}
+
+              <a
+                href={completedResult.shareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium
+                           bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 transition"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Preview Page
+              </a>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3 pt-2">
+          <Link
+            href={`/transfers/sent/${completedResult.transferId}`}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold
+                       bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition"
+          >
+            View Transfer Details
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              setCompletedResult(null)
+              setDeviceFiles([])
+              setSelectedLibrary(new Map())
+              setSubject('')
+              setMessage('')
+              setPin('')
+              setPinEnabled(false)
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
+                       text-indigo-300 hover:text-white bg-indigo-600/20 border border-indigo-500/30 transition"
+          >
+            <Plus className="w-4 h-4" />
+            Send Another Transfer
+          </button>
+        </div>
+      </div>
+    )
   }
 
-  async function finishTransferCreate(pending: PendingTransfer) {
-    setSendStatus('creating')
-    const createRes = await fetch('/api/transfers', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        id:              pending.id,
-        recipientId:     pending.recipientId,
-        subject:         pending.subject,
-        message:         pending.message,
-        isPinProtected:  pending.isPinProtected,
-        pin:             pending.pin,
-        files:           pending.files,
-        totalFiles:      pending.totalFiles,
-        totalSize:       pending.totalSize,
-        folderStructure: pending.folderStructure,
-      }),
-    })
-    if (!createRes.ok) {
-      const d = await createRes.json().catch(() => ({}) as { error?: string })
-      throw new Error((d as { error?: string }).error ?? 'Failed to save transfer record — your files are safe, please retry.')
-    }
-
-    localStorage.removeItem(PENDING_KEY)
-    setPendingCreate(null)
-    setCompletedTransferId(pending.id)
-    setSendStatus('done')
-  }
-
-  function buildFolderStructureJson(files: StagedFile[]) {
-    const map: Record<string, string[]> = {}
-    files.forEach(f => {
-      const key = f.folderPath ?? '(root)'
-      if (!map[key]) map[key] = []
-      map[key].push(f.file.name)
-    })
-    return map
-  }
-
-  // ── Render ───────────────────────────────────────────────────────────────
-  const tree     = buildTree(staged)
-  const rootFiles: StagedFile[] = tree.__files
-  const folderKeys = Object.keys(tree).filter(k => k !== '__files')
-  const busy = sendStatus === 'uploading' || sendStatus === 'creating'
+  const yearObj    = years.find(y => String(y.year) === libYear)
+  const categories = yearObj?.categories.filter(c => !c.isArchived) ?? []
+  const catObj     = categories.find(c => c.name === libCat)
+  const events     = catObj?.events ?? []
+  const eventObj   = events.find(e => e.id === libEventId)
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-
-      {/* ── Offline / interrupted transfer recovery banner ────────────────── */}
-      {pendingCreate && sendStatus === 'idle' && (
-        <div className="flex items-start gap-3 px-4 py-4 rounded-2xl
-                        bg-amber-500/10 border border-amber-500/30 text-amber-200">
-          <WifiOff className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold">Interrupted transfer detected</p>
-            <p className="text-xs text-amber-300/80 mt-0.5">
-              Files were uploaded to &ldquo;{pendingCreate.subject}&rdquo; for{' '}
-              <span className="font-medium">{pendingCreate.recipientLabel}</span> but the
-              transfer record could not be saved. Your files are safe.
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-2 shrink-0">
+    <form onSubmit={handleSend} className="max-w-3xl space-y-6">
+      {/* ── Step 1: Choose Source (Upload from Device OR Pick from CMMS Events) ── */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="text-sm font-semibold text-white">1. Add Photos or Videos</h2>
+          <div className="inline-flex rounded-xl bg-slate-950 border border-slate-800 p-1">
             <button
-              onClick={retryPendingCreate}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-                         bg-amber-500 hover:bg-amber-400 text-amber-950 transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Retry
-            </button>
-            <button
-              onClick={() => { localStorage.removeItem(PENDING_KEY); setPendingCreate(null) }}
-              className="text-xs text-amber-500/70 hover:text-amber-300 transition-colors"
-            >
-              Discard
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Drop zone ─────────────────────────────────────────────────────── */}
-      <div
-        ref={dropRef}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        className={`relative rounded-2xl border-2 border-dashed transition-all duration-200 p-10 text-center cursor-pointer
-          ${isDragging
-            ? 'border-indigo-400 bg-indigo-500/10'
-            : 'border-slate-700 bg-slate-900/40 hover:border-slate-600 hover:bg-slate-900/60'
-          }`}
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <Upload className="w-10 h-10 text-slate-500 mx-auto mb-3" />
-        <p className="text-slate-300 font-medium text-lg mb-1">
-          Drop files or a folder here
-        </p>
-        <p className="text-slate-500 text-sm mb-6 max-w-lg mx-auto">
-          Photos (JPG, PNG, RAW, HEIC, TIFF) · Videos (MP4, MOV, AVI) · Documents (PDF, DOCX, XLSX, PPTX, AI, PSD)
-        </p>
-        <div className="flex justify-center gap-3" onClick={e => e.stopPropagation()}>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm
-                       text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
-          >
-            Select Files
-          </button>
-          <button
-            type="button"
-            onClick={() => folderInputRef.current?.click()}
-            className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm
-                       text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
-          >
-            Select Folder
-          </button>
-        </div>
-
-        {/* Hidden inputs */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={onFilesSelected}
-        />
-        <input
-          ref={el => {
-            folderInputRef.current = el
-            if (el) el.setAttribute('webkitdirectory', '')
-          }}
-          type="file"
-          className="hidden"
-          onChange={onFilesSelected}
-        />
-      </div>
-
-      {/* ── Large-transfer warning ────────────────────────────────────────── */}
-      {totalSize > WARN_SIZE && (
-        <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">
-          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-          <span>
-            Large transfer ({formatBytes(totalSize)}) — recipient download may take time on slow connections.
-          </span>
-        </div>
-      )}
-
-      {/* ── Staged file list ──────────────────────────────────────────────── */}
-      {staged.length > 0 && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden">
-          {/* List header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-white">
-                {staged.length} file{staged.length !== 1 ? 's' : ''} staged
-              </span>
-              <span className="text-slate-600">·</span>
-              <span className="text-xs text-slate-500">{formatBytes(totalSize)} total</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {hasFolders && (
-                <button
-                  onClick={() => setShowTree(t => !t)}
-                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white
-                             px-2.5 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 transition-colors"
-                >
-                  <FolderOpen className="w-3.5 h-3.5" />
-                  {showTree ? 'Hide' : 'Show'} folder tree
-                </button>
-              )}
-              <button
-                onClick={() => { setStaged([]); setShowTree(false) }}
-                className="text-xs text-slate-500 hover:text-red-400 px-2.5 py-1.5 rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                Clear all
-              </button>
-            </div>
-          </div>
-
-          {/* Folder tree */}
-          {showTree && hasFolders && (
-            <div className="px-4 py-3 border-b border-slate-800 bg-slate-950/40">
-              {folderKeys.map(k => (
-                <FolderNode key={k} name={k} node={tree[k] as TreeNode} />
-              ))}
-              {rootFiles.map(f => (
-                <div key={f.uid} className="flex items-center gap-1.5 text-xs text-slate-400 py-0.5 pl-1">
-                  <FileTypeIcon file={f.file} />
-                  <span className="truncate">{f.file.name}</span>
-                  <span className="text-slate-600 ml-1">{formatBytes(f.file.size)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Flat file rows */}
-          <div className="divide-y divide-slate-800/50 max-h-72 overflow-y-auto">
-            {staged.map(s => (
-              <div key={s.uid} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-800/30 group">
-                <FileTypeIcon file={s.file} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-slate-200 truncate">{s.file.name}</p>
-                  {s.folderPath && (
-                    <p className="text-xs text-slate-500 truncate">{s.folderPath}/</p>
-                  )}
-                </div>
-                <span className="text-xs text-slate-500 shrink-0">{formatBytes(s.file.size)}</span>
-                <button
-                  onClick={() => setStaged(prev => prev.filter(f => f.uid !== s.uid))}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded
-                             text-slate-500 hover:text-red-400 hover:bg-slate-700 shrink-0"
-                  title="Remove"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Transfer details form ─────────────────────────────────────────── */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-5">
-        <h2 className="text-base font-semibold text-white">Transfer Details</h2>
-
-        {/* Subject */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">
-            Subject <span className="text-red-400">*</span>
-          </label>
-          <input
-            type="text"
-            maxLength={100}
-            placeholder='e.g. "Saturday Fellowship Photos — March 2026"'
-            value={subject}
-            onChange={e => setSubject(e.target.value)}
-            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white
-                       placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500
-                       focus:ring-1 focus:ring-indigo-500/30 transition-colors"
-          />
-          <p className="text-xs text-slate-600 mt-1 text-right">{subject.length}/100</p>
-        </div>
-
-        {/* Message */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">
-            Message to recipient <span className="text-slate-500 font-normal">(optional)</span>
-          </label>
-          <textarea
-            maxLength={500}
-            rows={3}
-            placeholder='e.g. "Please edit and return by Friday"'
-            value={message}
-            onChange={e => setMessage(e.target.value)}
-            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white
-                       placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500
-                       focus:ring-1 focus:ring-indigo-500/30 transition-colors resize-none"
-          />
-          <p className="text-xs text-slate-600 mt-1 text-right">{message.length}/500</p>
-        </div>
-
-        {/* PIN protection */}
-        <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <Lock className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-sm text-slate-200">PIN protection</p>
-                <p className="text-xs text-slate-500 mt-0.5">Recipient must enter a PIN before downloading</p>
-              </div>
-            </div>
-            <button
-              role="switch"
-              aria-checked={pinEnabled}
               type="button"
-              onClick={() => { setPinEnabled(v => !v); setPinValue('') }}
-              className={`relative shrink-0 rounded-full border transition-colors cursor-pointer`
-                + (pinEnabled ? ' bg-indigo-600 border-indigo-500' : ' bg-slate-700 border-slate-600')}
-              style={{ width: 40, height: 22 }}
+              onClick={() => setSourceTab('device')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                sourceTab === 'device' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
             >
-              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200`
-                + (pinEnabled ? ' translate-x-[18px]' : ' translate-x-0')} />
+              <Upload className="w-3.5 h-3.5" />
+              Upload from Device
+            </button>
+            <button
+              type="button"
+              onClick={() => setSourceTab('library')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                sourceTab === 'library' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              Pick from CMMS Events
+              {selectedLibrary.size > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">{selectedLibrary.size}</span>
+              )}
             </button>
           </div>
-          {pinEnabled && (
-            <div>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                minLength={4}
-                placeholder="Enter 4–6 digit PIN"
-                value={pinValue}
-                onChange={e => setPinValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-600 text-white
-                           placeholder-slate-500 text-sm font-mono tracking-widest
-                           focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30
-                           transition-colors"
-              />
-              {pinValue.length > 0 && !/^\d{4,6}$/.test(pinValue) && (
-                <p className="text-xs text-red-400 mt-1">PIN must be 4–6 digits</p>
-              )}
-              {/^\d{4,6}$/.test(pinValue) && (
-                <p className="text-xs text-emerald-400 mt-1">Share this PIN with the recipient separately.</p>
-              )}
-            </div>
-          )}
         </div>
 
-        {/* Recipient */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">
-            Recipient <span className="text-red-400">*</span>
-          </label>
-
-          {recipient ? (
-            /* Selected chip */
-            <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-indigo-600/20 border border-indigo-500/40">
-              <User className="w-4 h-4 text-indigo-400 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white">
-                  {recipient.username ?? recipient.name ?? recipient.email}
-                </p>
-                <p className="text-xs text-slate-400 truncate">
-                  {recipient.email} · <span className="font-medium">{recipient.role}</span>
-                </p>
+        {sourceTab === 'device' ? (
+          <div className="space-y-3">
+            <div
+              onClick={() => fileInput.current?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => {
+                e.preventDefault()
+                addDeviceFiles(Array.from(e.dataTransfer.files))
+              }}
+              className="cursor-pointer rounded-2xl border-2 border-dashed border-slate-700 hover:border-indigo-500
+                         bg-slate-950/40 py-10 px-4 text-center transition space-y-2"
+            >
+              <Upload className="w-8 h-8 text-indigo-400 mx-auto" />
+              <p className="text-sm font-medium text-white">Tap to browse or drag & drop photos/videos</p>
+              <p className="text-xs text-slate-400">
+                Supports large 4K videos (MP4, MOV, MKV), RAW photos, audio & project files via 10 MB resumable chunks
+              </p>
+              <div className="pt-2 flex justify-center gap-2" onClick={e => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => fileInput.current?.click()}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition"
+                >
+                  Select Files
+                </button>
+                <button
+                  type="button"
+                  onClick={() => folderInput.current?.click()}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+                >
+                  Select Whole Folder
+                </button>
               </div>
-              <button
-                onClick={() => setRecipient(null)}
-                className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white transition-colors shrink-0"
-                title="Remove recipient"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
             </div>
-          ) : (
-            /* Search input */
-            <div className="relative">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Search by name or email…"
-                  value={recipientSearch}
-                  onChange={e => setRecipientSearch(e.target.value)}
-                  className="w-full pl-9 pr-9 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white
-                             placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500
-                             focus:ring-1 focus:ring-indigo-500/30 transition-colors"
-                />
-                {searchLoading && (
-                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 animate-spin pointer-events-none" />
-                )}
-              </div>
 
-              {/* Dropdown results */}
-              {searchResults.length > 0 && (
-                <div className="absolute z-20 mt-1.5 w-full rounded-xl bg-slate-800 border border-slate-700
-                                shadow-2xl shadow-black/40 overflow-hidden">
-                  {searchResults.map(u => (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => { setRecipient(u); setRecipientSearch(''); setSearchResults([]) }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-700 text-left transition-colors"
-                    >
-                      <User className="w-4 h-4 text-slate-400 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">
-                          {u.username ?? u.name ?? u.email}
-                        </p>
-                        <p className="text-xs text-slate-400 truncate">
-                          {u.email} · {u.role}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={e => {
+                if (e.target.files) addDeviceFiles(Array.from(e.target.files))
+                e.target.value = ''
+              }}
+            />
+            <input
+              ref={folderInput}
+              type="file"
+              multiple
+              // @ts-expect-error webkitdirectory is non-standard HTML attribute
+              webkitdirectory=""
+              className="hidden"
+              onChange={e => {
+                if (e.target.files) addDeviceFiles(Array.from(e.target.files))
+                e.target.value = ''
+              }}
+            />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <select
+                value={libYear}
+                onChange={e => { setLibYear(e.target.value); setLibCat(''); setLibEventId(''); setLibSubId('') }}
+                className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-base sm:text-xs text-white"
+              >
+                <option value="">Year</option>
+                {years.map(y => <option key={y.id} value={String(y.year)}>{y.year}</option>)}
+              </select>
+
+              <select
+                value={libCat}
+                onChange={e => { setLibCat(e.target.value); setLibEventId(''); setLibSubId('') }}
+                className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-base sm:text-xs text-white"
+              >
+                <option value="">Select Category</option>
+                {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+
+              <select
+                value={libEventId}
+                disabled={!libCat}
+                onChange={e => { setLibEventId(e.target.value); setLibSubId('') }}
+                className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-base sm:text-xs text-white disabled:opacity-50"
+              >
+                <option value="">Select Event</option>
+                {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+              </select>
+            </div>
+
+            {eventObj && eventObj.subfolders.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setLibSubId('')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                    !libSubId ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  All folders
+                </button>
+                {eventObj.subfolders.map(sf => (
+                  <button
+                    key={sf.id}
+                    type="button"
+                    onClick={() => setLibSubId(sf.id)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                      libSubId === sf.id ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    {sf.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {libLoading ? (
+              <div className="py-8 flex justify-center text-slate-400">
+                <Loader2 className="w-5 h-5 animate-spin" />
+              </div>
+            ) : libEventId && libFiles.length === 0 ? (
+              <p className="text-xs text-slate-500 py-4 text-center">No files in this folder yet.</p>
+            ) : libFiles.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-slate-400">
+                  <span>{libFiles.length} file{libFiles.length !== 1 ? 's' : ''} available (zero re-upload)</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedLibrary(prev => {
+                        const next = new Map(prev)
+                        for (const item of libFiles) next.set(item.id, item)
+                        return next
+                      })
+                    }}
+                    className="text-indigo-400 hover:text-indigo-300 font-medium"
+                  >
+                    Select all in folder
+                  </button>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Error message ─────────────────────────────────────────────────── */}
-      {sendStatus === 'error' && errorMsg && (
-        <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm">
-          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-          <div className="flex-1">
-            <span>{errorMsg}</span>
-            {/* If files made it to R2 but the DB create failed, offer inline retry */}
-            {pendingCreate && (
-              <button
-                onClick={() => { setSendStatus('idle'); retryPendingCreate() }}
-                className="ml-3 underline text-amber-400 hover:text-amber-300 text-xs"
-              >
-                Retry now
-              </button>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                  {libFiles.map(item => {
+                    const checked = selectedLibrary.has(item.id)
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => toggleLibraryItem(item)}
+                        className={`text-left rounded-xl border p-2 transition ${
+                          checked
+                            ? 'border-indigo-500 bg-indigo-600/20'
+                            : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="aspect-video rounded-lg bg-slate-800 overflow-hidden mb-1.5 relative flex items-center justify-center">
+                          {item.thumbnailUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={item.thumbnailUrl} alt={item.originalName} className="w-full h-full object-cover" />
+                          ) : item.fileType === 'VIDEO' ? (
+                            <Film className="w-5 h-5 text-slate-500" />
+                          ) : (
+                            <ImageIcon className="w-5 h-5 text-slate-500" />
+                          )}
+                          {checked && (
+                            <span className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center">
+                              <Check className="w-3 h-3" />
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] font-medium text-white truncate">{item.originalName}</p>
+                        <p className="text-[10px] text-slate-400">{formatUploadSize(item.fileSize)}</p>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500 py-2">Choose a Category and Event above to attach existing CMMS media instantly.</p>
             )}
           </div>
-          <button
-            onClick={() => setSendStatus('idle')}
-            className="p-0.5 text-red-400/60 hover:text-red-300 shrink-0"
-            title="Dismiss"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+        )}
 
-      {/* ── Success ───────────────────────────────────────────────────────── */}
-      {sendStatus === 'done' && (
-        <div className="flex items-center justify-between px-5 py-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
-          <div className="flex items-center gap-3 text-emerald-300">
-            <CheckCircle2 className="w-5 h-5 shrink-0" />
-            <div>
-              <p className="font-medium text-sm">Transfer sent successfully!</p>
-              <p className="text-xs text-emerald-400/70 mt-0.5">
-                {staged.length} file{staged.length !== 1 ? 's' : ''} delivered to {recipient?.username ?? recipient?.name ?? recipient?.email}
-              </p>
+        {/* Selected items summary */}
+        {totalCount > 0 && (
+          <div className="pt-3 border-t border-slate-800 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-slate-300">
+                {totalCount} file{totalCount !== 1 ? 's' : ''} attached ({formatUploadSize(totalBytes)})
+              </span>
+              {!sending && (
+                <button
+                  type="button"
+                  onClick={() => { setDeviceFiles([]); setSelectedLibrary(new Map()) }}
+                  className="text-slate-400 hover:text-white underline"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+
+            <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+              {deviceFiles.map((df, idx) => (
+                <div key={df.uid} className="flex items-center gap-2.5 bg-slate-950/60 border border-slate-800/80 rounded-xl px-3 py-2">
+                  {df.file.type.startsWith('video/') ? (
+                    <Film className="w-4 h-4 text-violet-400 shrink-0" />
+                  ) : df.file.type.startsWith('image/') ? (
+                    <ImageIcon className="w-4 h-4 text-sky-400 shrink-0" />
+                  ) : (
+                    <FileIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-white truncate">{df.file.name}</p>
+                    {df.status === 'uploading' && (
+                      <div className="mt-1 h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-500 transition-all" style={{ width: `${df.progress}%` }} />
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-slate-400 shrink-0">
+                    {df.status === 'uploading' ? `${df.progress}%` : df.status === 'done' ? '✓ Done' : formatUploadSize(df.file.size)}
+                  </span>
+                  {!sending && (
+                    <button
+                      type="button"
+                      onClick={() => setDeviceFiles(prev => prev.filter((_, i) => i !== idx))}
+                      className="p-1 text-slate-500 hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              {Array.from(selectedLibrary.values()).map(item => (
+                <div key={item.id} className="flex items-center gap-2.5 bg-indigo-950/30 border border-indigo-500/20 rounded-xl px-3 py-2">
+                  <FolderOpen className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <p className="text-xs text-white truncate flex-1">{item.originalName}</p>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300">CMMS Instant</span>
+                  {!sending && (
+                    <button
+                      type="button"
+                      onClick={() => toggleLibraryItem(item)}
+                      className="p-1 text-slate-400 hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
-          <button
-            onClick={() => router.push(completedTransferId ? `/communications/transfers/sent/${completedTransferId}` : '/communications/transfers/sent')}
-            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors shrink-0"
-          >
-            View sent transfer
-          </button>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* ── Send button row ───────────────────────────────────────────────── */}
-      {sendStatus !== 'done' && (
-        <div className="flex items-center justify-between pt-1">
-          {/* Progress indicator */}
-          {busy && (
-            <p className="text-sm text-slate-400">
-              {sendStatus === 'uploading'
-                ? `Uploading ${progress.done} / ${progress.total} files…`
-                : 'Saving transfer record…'}
-            </p>
-          )}
-          {!busy && <span />}
-
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!canSend}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium text-sm transition-all
-              ${canSend
-                ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 active:scale-95'
-                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+      {/* ── Step 2: How to Share (Instant Link vs CMMS Teammate) ── */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="text-sm font-semibold text-white">2. How Would You Like to Share?</h2>
+          <div className="inline-flex rounded-xl bg-slate-950 border border-slate-800 p-1">
+            <button
+              type="button"
+              onClick={() => setDeliveryMode('link')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                deliveryMode === 'link' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
               }`}
-          >
-            {busy
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <Send className="w-4 h-4" />
-            }
-            {sendStatus === 'uploading' ? `${progress.done} / ${progress.total}`
-              : sendStatus === 'creating' ? 'Saving…'
-              : 'Send Transfer'}
-          </button>
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              Instant Link / WhatsApp
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeliveryMode('teammate')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                deliveryMode === 'teammate' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <User className="w-3.5 h-3.5" />
+              CMMS Teammate
+            </button>
+          </div>
+        </div>
+
+        {deliveryMode === 'teammate' && (
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-slate-400">Recipient Teammate</label>
+            {selectedRecipient ? (
+              <div className="flex items-center justify-between bg-indigo-950/40 border border-indigo-500/30 rounded-xl px-3.5 py-2.5">
+                <div>
+                  <p className="text-sm font-medium text-white">
+                    {selectedRecipient.username ?? selectedRecipient.name ?? selectedRecipient.email}
+                  </p>
+                  <p className="text-xs text-slate-400">{selectedRecipient.email} · {selectedRecipient.role}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRecipient(null)}
+                  className="text-xs text-slate-400 hover:text-white underline"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  value={userQuery}
+                  onChange={e => setUserQuery(e.target.value)}
+                  placeholder="Search teammate by name or email…"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-base sm:text-sm text-white placeholder:text-slate-500"
+                />
+                {userResults.length > 0 && (
+                  <div className="mt-1 rounded-xl border border-slate-700 bg-slate-900 shadow-xl divide-y divide-slate-800 max-h-48 overflow-y-auto">
+                    {userResults.map(u => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => { setSelectedRecipient(u); setUserQuery(''); setUserResults([]) }}
+                        className="w-full px-4 py-2.5 text-left hover:bg-slate-800 transition flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="text-sm text-white font-medium">{u.username ?? u.name ?? u.email}</p>
+                          <p className="text-xs text-slate-400">{u.email}</p>
+                        </div>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">{u.role}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <label className="flex items-center gap-2 text-xs text-slate-300 pt-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={alsoCreateLink}
+                onChange={e => setAlsoCreateLink(e.target.checked)}
+                className="rounded border-slate-600 text-indigo-600"
+              />
+              Also generate a shareable link (for WhatsApp / quick access)
+            </label>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="sm:col-span-2">
+            <label className="text-xs font-medium text-slate-400">Title / Subject *</label>
+            <input
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              placeholder="e.g. Jewels Kids Camp Day 1 Videos"
+              className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-white placeholder:text-slate-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-400">Link Expiry</label>
+            <select
+              value={expiresInDays}
+              onChange={e => setExpiresInDays(Number(e.target.value))}
+              className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-base sm:text-sm text-white"
+            >
+              <option value={7}>7 days</option>
+              <option value={14}>14 days</option>
+              <option value={30}>30 days</option>
+              <option value={60}>60 days</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-slate-400">Note / Instructions (optional)</label>
+          <textarea
+            rows={2}
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            placeholder="Optional message for the recipient…"
+            className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2 text-base sm:text-sm text-white placeholder:text-slate-500"
+          />
+        </div>
+
+        <div className="flex items-center gap-4 flex-wrap">
+          <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={pinEnabled}
+              onChange={e => setPinEnabled(e.target.checked)}
+              className="rounded border-slate-600 text-indigo-600"
+            />
+            <Lock className="w-3.5 h-3.5 text-amber-400" />
+            Protect with 4-digit PIN
+          </label>
+          {pinEnabled && (
+            <input
+              value={pin}
+              onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              inputMode="numeric"
+              placeholder="0000"
+              className="w-28 bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-base sm:text-sm tracking-[0.3em] text-white text-center"
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Live Upload Progress Card */}
+      {sending && totalDeviceBytes > 0 && (
+        <div className="rounded-2xl border border-indigo-500/30 bg-slate-900/80 p-4 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-white font-semibold">
+              Uploading transfer… {overallPct}%
+            </span>
+            {speedBps > 0 && remainingBytes > 0 && (
+              <span className="text-slate-400">
+                {formatUploadSpeed(speedBps)} · ~{formatUploadEta(remainingBytes, speedBps)} remaining
+              </span>
+            )}
+          </div>
+          <div className="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-300"
+              style={{ width: `${overallPct}%` }}
+            />
+          </div>
         </div>
       )}
-    </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-300 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          {error}
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={sending || totalCount === 0}
+        className="w-full py-3.5 rounded-2xl text-sm font-semibold text-white
+                   bg-gradient-to-r from-indigo-600 to-violet-600
+                   hover:from-indigo-500 hover:to-violet-500
+                   disabled:opacity-40 disabled:cursor-not-allowed transition
+                   flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+      >
+        {sending ? (
+          <><Loader2 className="w-4 h-4 animate-spin" /> Uploading & Preparing Link…</>
+        ) : deliveryMode === 'link' ? (
+          <><Link2 className="w-4 h-4" /> Upload & Create Share Link ({totalCount} file{totalCount !== 1 ? 's' : ''})</>
+        ) : (
+          <><Send className="w-4 h-4" /> Send Transfer ({totalCount} file{totalCount !== 1 ? 's' : ''})</>
+        )}
+      </button>
+    </form>
   )
 }

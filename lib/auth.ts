@@ -199,6 +199,7 @@ export const authOptions: NextAuthOptions = {
         token.username          = (user as { username?: string }).username ?? null
         token.requiresTwoFactor = (user as { requiresTwoFactor?: boolean }).requiresTwoFactor ?? false
         token.isActive          = (user as { isActive?: boolean }).isActive ?? true
+        token.lastDbCheckAt     = Date.now()
       }
       // On Google sign-in, fetch fresh role from DB (may differ from default)
       if (account?.provider === 'google' && token.sub) {
@@ -209,17 +210,34 @@ export const authOptions: NextAuthOptions = {
           token.username          = dbUser.username ?? null
           token.requiresTwoFactor = dbUser.twoFactorEnabled
           token.isActive          = dbUser.isActive
+          token.lastDbCheckAt     = Date.now()
         }
       }
-      // Re-read from DB when session is explicitly updated (e.g. after username change)
-      if (trigger === 'update' && token.id) {
-        const dbUser = await prisma.user.findUnique({
-          where:  { id: token.id as string },
-          select: { username: true, role: true },
-        })
-        if (dbUser) {
-          token.username = dbUser.username ?? null
-          token.role     = dbUser.role
+      // Re-read from DB when session is explicitly updated OR every 5 minutes
+      // so deactivated accounts and role changes take effect promptly.
+      const lastCheck = typeof token.lastDbCheckAt === 'number' ? token.lastDbCheckAt : 0
+      const shouldRecheck =
+        Boolean(token.id) &&
+        !user &&
+        (trigger === 'update' || Date.now() - lastCheck > 5 * 60 * 1000)
+
+      if (shouldRecheck) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where:  { id: token.id as string },
+            select: { username: true, role: true, isActive: true, twoFactorEnabled: true },
+          })
+          if (!dbUser || !dbUser.isActive) {
+            token.isActive = false
+          } else {
+            token.username          = dbUser.username ?? null
+            token.role              = dbUser.role
+            token.isActive          = dbUser.isActive
+            token.requiresTwoFactor = dbUser.twoFactorEnabled
+          }
+          token.lastDbCheckAt = Date.now()
+        } catch {
+          // Non-fatal: keep existing token claims on transient DB connectivity blip
         }
       }
       return token

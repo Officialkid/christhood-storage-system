@@ -4,6 +4,7 @@ import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { log }                       from '@/lib/activityLog'
 import { logger }                    from '@/lib/logger'
+import { computeScheduledPurgeAt }   from '@/lib/appSettings'
 
 // DELETE /api/files/[fileId]
 // Soft-deletes a file by moving it to Trash. Accessible by EDITOR and ADMIN.
@@ -63,7 +64,7 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ fileI
   }
 
   const now            = new Date()
-  const scheduledPurge = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) // +30 days
+  const scheduledPurge = await computeScheduledPurgeAt(now)
 
   // ── Atomic: create TrashItem + update MediaFile ───────────────────────────
   let trashItemId: string

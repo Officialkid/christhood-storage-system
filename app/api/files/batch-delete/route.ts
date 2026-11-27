@@ -4,6 +4,7 @@ import { authOptions }               from '@/lib/auth'
 import { prisma }                    from '@/lib/prisma'
 import { log }                       from '@/lib/activityLog'
 import { logger }                    from '@/lib/logger'
+import { computeScheduledPurgeAt }   from '@/lib/appSettings'
 
 // POST /api/files/batch-delete
 // Body: { fileIds: string[] }
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
   })
 
   const now = new Date()
+  const scheduledPurge = await computeScheduledPurgeAt(now)
   const deleted: { id: string; purgesAt: string }[] = []
   const failed:  { id: string; reason: string }[]   = []
 
@@ -68,8 +70,6 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      const scheduledPurge = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-
       await prisma.$transaction(async (tx) => {
         await tx.trashItem.create({
           data: {

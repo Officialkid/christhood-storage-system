@@ -14,11 +14,16 @@ export default async function CommunicationsPage({ params }: Props) {
   if (!session?.user?.id) redirect('/login')
 
   const { slug } = await params
+  // Forward deep transfer detail links (/communications/transfers/inbox/<id> or /sent/<id>) to their dedicated detail pages
+  if (slug?.[0] === 'transfers' && (slug?.[1] === 'inbox' || slug?.[1] === 'sent') && slug?.[2]) {
+    redirect(`/transfers/${slug[1]}/${slug[2]}`)
+  }
+
   const tab             = slug?.[0] === 'messages' ? 'messages' : 'transfers'
   const transferSubTab  = slug?.[0] === 'transfers' && slug?.[1] === 'sent' ? 'sent' : 'inbox'
   const messageSubTab   = slug?.[0] === 'messages' && slug?.[1] === 'sent' ? 'sent' : 'inbox'
   const isAdmin         = session.user.role === 'ADMIN'
-  const canSendTransfer = (['ADMIN', 'EDITOR'] as string[]).includes(session.user.role as string)
+  const canSendTransfer = true
 
   return (
     <div className="px-0 sm:px-0">

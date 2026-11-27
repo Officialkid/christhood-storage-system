@@ -29,11 +29,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <DashboardShell>
-      <div className="flex h-screen bg-slate-950 overflow-hidden">
+      <div className="cmms-app flex h-[100dvh] bg-slate-950 overflow-hidden">
         <Sidebar />
-        <div className="flex flex-col flex-1 overflow-hidden">
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <TopBar />
-          <main className="flex-1 overflow-y-auto p-4 pb-20 sm:p-6 sm:pb-20 md:p-8">
+          <main className="flex-1 overflow-y-auto p-4 pb-24 sm:p-6 sm:pb-24 md:p-8">
             <PendingDeletionBanner pendingDeletionAt={pendingDeletionAt} />
             {children}
           </main>

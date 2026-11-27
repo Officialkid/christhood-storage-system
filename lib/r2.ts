@@ -3,6 +3,8 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  CopyObjectCommand,
+  HeadObjectCommand,
   CreateMultipartUploadCommand,
   UploadPartCommand,
   CompleteMultipartUploadCommand,
@@ -57,7 +59,37 @@ export async function getPresignedDownloadUrl(
         `attachment; filename*=UTF-8''${encodeURIComponent(originalName)}`,
     }),
   })
-  return getSignedUrl(R2, command, { expiresIn: expiresInSeconds })
+  // Bucket signingDate into 15-minute windows for standard >=30-min presigned URLs
+  // so browser disk caching works across navigations and 15-second dashboard refreshes!
+  const signingDate = expiresInSeconds >= 1800
+    ? new Date(Math.floor(Date.now() / 900_000) * 900_000)
+    : undefined
+  return getSignedUrl(R2, command, {
+    expiresIn: expiresInSeconds,
+    ...(signingDate ? { signingDate } : {}),
+  })
+}
+
+/** Server-side zero-bandwidth copy within Cloudflare R2. */
+export async function copyObject(sourceKey: string, destKey: string): Promise<void> {
+  const encodedSource = sourceKey.split('/').map(encodeURIComponent).join('/')
+  await R2.send(
+    new CopyObjectCommand({
+      Bucket:     BUCKET,
+      CopySource: `${BUCKET}/${encodedSource}`,
+      Key:        destKey,
+    }),
+  )
+}
+
+/** Lightweight HEAD check on an R2 object (returns contentLength & etag without downloading bytes). */
+export async function headObject(key: string): Promise<{ size: number; etag: string | null } | null> {
+  try {
+    const res = await R2.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }))
+    return { size: res.ContentLength ?? 0, etag: res.ETag?.replace(/"/g, '') ?? null }
+  } catch {
+    return null
+  }
 }
 
 /** Permanently delete an object from R2. */

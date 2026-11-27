@@ -78,10 +78,11 @@ export function MediaCard({
   }, [media.id, media.thumbnailUrl])
 
   // ── Video duration detection ───────────────────────────────────────────────
-  // Programmatic createElement is reliable on mobile; hidden DOM elements are
-  // skipped by mobile browsers and never fire loadedmetadata.
+  // Only spin up a programmatic <video> element when we already have a separate
+  // image thumbnailUrl; when thumbnailUrl is absent, the visible <video ref={videoRef}>
+  // below already loads metadata, avoiding duplicate video fetches on mobile data!
   useEffect(() => {
-    if (!isVideo || !media.downloadUrl) return
+    if (!isVideo || !media.downloadUrl || !media.thumbnailUrl) return
     const v = document.createElement('video')
     v.preload = 'metadata'
     v.muted   = true
@@ -100,7 +101,7 @@ export function MediaCard({
       v.src = ''
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVideo, media.downloadUrl])
+  }, [isVideo, media.downloadUrl, media.thumbnailUrl])
 
   // Close menu on outside click
   useEffect(() => {
@@ -362,6 +363,7 @@ export function MediaCard({
     <>
       {/* ── Card ────────────────────────────────────────────────────────────── */}
       <div
+        data-dark-overlay="true"
         className={`relative rounded-xl overflow-hidden bg-slate-800 aspect-square
                     cursor-pointer transition-shadow duration-150
                     ${selected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-slate-900' : ''}`}
@@ -392,8 +394,12 @@ export function MediaCard({
               playsInline
               className="w-full h-full object-cover"
               onLoadedMetadata={() => {
-                // Seek slightly so the first frame is visible as a poster
-                if (videoRef.current) videoRef.current.currentTime = 0.001
+                if (videoRef.current) {
+                  const d = videoRef.current.duration
+                  if (Number.isFinite(d) && d > 0) setVideoDuration(formatVideoDuration(d))
+                  // Seek slightly so the first frame is visible as a poster
+                  videoRef.current.currentTime = 0.001
+                }
               }}
               onError={() => setVideoThumbErr(true)}
             />
@@ -456,14 +462,14 @@ export function MediaCard({
           </div>
         </div>
 
-        {/* ⋯ button — bottom right */}
+        {/* ⋯ button — bottom right (always visible on mobile/touch, hover on desktop) */}
         <button
           ref={dotsRef}
           onClick={openMenu}
           className={`absolute bottom-1.5 right-1.5 z-30 p-1.5 rounded-lg
-                      bg-black/60 text-white hover:bg-black/80
+                      bg-black/65 text-white hover:bg-black/85
                       transition-opacity duration-150
-                      ${hovered || menuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                      ${hovered || menuOpen ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:pointer-events-none'}`}
           aria-label="File options"
         >
           <MoreHorizontal className="w-4 h-4" />

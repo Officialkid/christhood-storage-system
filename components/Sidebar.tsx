@@ -12,6 +12,7 @@ import {
 import { useSidebar }       from './DashboardShell'
 import { useUnreadCount }   from '@/hooks/useUnreadCount'
 import { CommsBadge, CommsBadgeSmall } from './CommsBadge'
+import { ThemeToggle }      from './ThemeToggle'
 
 type NavItem = { label: string; href: string; icon: React.ElementType; badge?: boolean; external?: boolean }
 
@@ -107,22 +108,22 @@ export function Sidebar() {
       data-tour="sidebar"
       className={`
         flex flex-col bg-slate-950 border-r border-slate-800/70 transition-all duration-200
-        /* ── Mobile: off-canvas drawer ── */
-        fixed inset-y-0 left-0 z-50 w-72 shrink-0
+        /* ── Mobile: off-canvas drawer (capped at 85vw so close button never clips on 320px phones) ── */
+        fixed inset-y-0 left-0 z-50 w-72 max-w-[84vw] shrink-0
         ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
         /* ── Desktop (md+): inline sidebar, no translate ── */
-        md:relative md:inset-auto md:z-auto md:translate-x-0 md:shadow-none
+        md:relative md:inset-auto md:z-auto md:translate-x-0 md:shadow-none md:max-w-none
         ${isCollapsed ? 'md:w-16' : sizeMode === 'wide' ? 'md:w-72' : 'md:w-64'}
       `}
     >
-      {/* ── Mobile close button — pops outside the sidebar edge ── */}
+      {/* ── Mobile close button — inside header right edge so it never clips ── */}
       {mobileOpen && (
         <button
           onClick={closeMobile}
           aria-label="Close menu"
-          className="md:hidden absolute -right-12 top-4 z-50 flex items-center justify-center
-                     w-10 h-10 rounded-full bg-slate-800 border border-slate-700 text-white
-                     shadow-xl hover:bg-slate-700 transition-colors"
+          className="md:hidden absolute right-3 top-4 z-50 flex items-center justify-center
+                     w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 text-slate-200
+                     shadow-md hover:bg-slate-700 hover:text-white transition-colors"
         >
           <X className="w-5 h-5" />
         </button>
@@ -226,6 +227,11 @@ export function Sidebar() {
 
       {/* User footer */}
       <div className={`border-t border-slate-800/70 ${isCollapsed ? 'px-1.5 py-3' : 'px-4 py-4'}`}>
+        <div className={`mb-2.5 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between px-1'}`}>
+          {!isCollapsed && <span className="text-[11px] uppercase tracking-wide text-slate-500">Appearance</span>}
+          <ThemeToggle showLabel={!isCollapsed} />
+        </div>
+
         <div className={`mb-2 ${isCollapsed ? 'flex justify-center' : 'flex items-center justify-between px-1'} `}>
           {!isCollapsed && <span className="text-[11px] uppercase tracking-wide text-slate-500">Navigation size</span>}
           <div className="flex items-center gap-1.5">

@@ -153,30 +153,35 @@ export function NotificationBell() {
   }
 
   return (
-    <div data-tour="notification-bell" className="relative">
+    <div data-tour="notification-bell" className="relative flex items-center">
       {/* Bell — navigates to /notifications inbox */}
       <Link
         href="/notifications"
         aria-label="Notifications"
-        className="relative p-2 rounded-xl transition-colors text-slate-400
-                   hover:bg-slate-800 hover:text-white block"
+        className="relative flex items-center justify-center h-[38px] w-[38px] rounded-xl border border-slate-800 bg-slate-900/80 transition-colors text-slate-300
+                   hover:bg-slate-800 hover:text-white"
       >
-        <Bell className="w-5 h-5" />
+        <Bell className="w-4 h-4" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center
+          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center
                            rounded-full bg-indigo-500 px-1 text-[10px] font-bold text-white leading-none">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
+        {/* Subtle push-status indicator dot inside bottom-right of bell button */}
+        <span
+          title={pushEnabled ? 'Push notifications enabled' : 'Push notifications off'}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            if (pushEnabled) disablePush()
+            else enablePush()
+          }}
+          className={`absolute bottom-1 right-1 w-2 h-2 rounded-full ring-2 ring-slate-950 transition-colors ${
+            pushEnabled ? 'bg-emerald-400' : 'bg-slate-600'
+          }`}
+        />
       </Link>
-
-      {/* Push toggle dot */}
-      <button
-        onClick={pushEnabled ? disablePush : enablePush}
-        title={pushEnabled ? 'Disable push notifications' : 'Enable push notifications'}
-        className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full
-                    transition-colors ${pushEnabled ? 'bg-green-400' : 'bg-slate-600'}`}
-      />
     </div>
   )
 }

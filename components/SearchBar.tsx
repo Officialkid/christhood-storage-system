@@ -52,8 +52,8 @@ export function SearchBar() {
   }
 
   return (
-    <form data-tour="search-bar" onSubmit={handleSubmit} className="relative flex items-center gap-1">
-      <div className="relative">
+    <form data-tour="search-bar" onSubmit={handleSubmit} className="relative flex items-center gap-1.5 w-full">
+      <div className="relative flex-1 min-w-0">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
         <input
           ref={inputRef}
@@ -61,8 +61,8 @@ export function SearchBar() {
           value={value}
           onChange={e => setValue(e.target.value)}
           placeholder="Search files, events, tags…"
-          className="w-44 sm:w-64 pl-9 pr-8 py-2 rounded-xl bg-slate-800/70 border border-slate-700/60
-                     text-sm text-slate-200 placeholder-slate-500 outline-none
+          className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-800/70 border border-slate-700/60
+                     text-base sm:text-sm text-slate-200 placeholder-slate-500 outline-none
                      focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
         />
         {value ? (
@@ -83,7 +83,7 @@ export function SearchBar() {
       {/* Explicit submit button — essential on mobile where pressing Enter may not work */}
       <button
         type="submit"
-        className="flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-600 hover:bg-indigo-500
+        className="flex items-center justify-center w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-500
                    text-white transition shrink-0"
         aria-label="Search"
       >
